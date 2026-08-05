@@ -9,18 +9,20 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@aws-sdk/credential-provider-node": "^3.972.78",
+    "aws4fetch": "^1.0.20",
+    "next": "16.0.7",
     "react": "19.2.1",
-    "react-dom": "19.2.1",
-    "next": "16.0.7"
+    "react-dom": "19.2.1"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@tailwindcss/postcss": "4.1.17",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
-    "@tailwindcss/postcss": "4.1.17",
-    "tailwindcss": "4.1.17",
     "eslint": "^9",
-    "eslint-config-next": "16.0.7"
+    "eslint-config-next": "16.0.7",
+    "tailwindcss": "4.1.17",
+    "typescript": "^5"
   }
 }
