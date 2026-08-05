@@ -1,0 +1,235 @@
+# Hand-authored, read-only GraphQL schema for the dlp-access-next AppSync API.
+#
+# Derived from dlp-access/amplify/backend/api/vtdlp/schema.graphql, with the
+# Amplify GraphQL Transformer directives (@model, @searchable, @auth, @hasOne,
+# @hasMany, @index) stripped out, since plain AppSync/CDK doesn't understand
+# them. Data sources point at the DynamoDB tables that Amplify already
+# provisioned for that schema, so field shapes and relations mirror the
+# original 1:1 where they're exposed here.
+#
+# Scope: read-only (Query only), limited to the Archive, Collection, and Site
+# models, and no full-text search (searchObjects / fulltextArchives /
+# fulltextCollections are OpenSearch-backed and are not implemented). Add
+# Mutation/Subscription types and a search integration later if the app
+# needs them.
+
+interface CatalogItem {
+  alt_text: AWSJSON
+  archived: Boolean!
+  bibliographic_citation: [String!]
+  create_date: String
+  creator: [String!]
+  custom_key: String
+  description: [String!]
+  display_date: [String!]
+  embargo_end_date: String
+  embargo_note: String
+  embargo_start_date: String
+  end_date: String
+  heirarchy_path: [String!]
+  id: ID!
+  identifier: String!
+  is_part_of: [String!]
+  language: [String!]
+  location: [String!]
+  modified_date: String
+  parent_collection: [String!]
+  parent_collection_identifier: [String!]
+  partner_id: String
+  provenance: [String!]
+  relation: [String!]
+  rights_holder: [String!]
+  rights: [String!]
+  source: [String!]
+  spatial: [String!]
+  start_date: String
+  subject: [String!]
+  thumbnail_path: String
+  title: String!
+  title_template: [String!]
+  visibility: Boolean!
+}
+
+type Archive implements CatalogItem {
+  age: [String!]
+  alternative: [String!]
+  alt_text: AWSJSON
+  archived: Boolean!
+  archiveOptions: AWSJSON
+  basis_of_record: [String!]
+  bibliographic_citation: [String!]
+  conforms_to: [String!]
+  contributor: [String!]
+  coverage: [String!]
+  create_date: String
+  created: [String!]
+  creator: [String!]
+  custom_key: String
+  date: [String!]
+  description: [String!]
+  display_date: [String!]
+  download_link: [String!]
+  embargo_end_date: String
+  embargo_note: String
+  embargo_start_date: String
+  end_date: String
+  explicit: Boolean
+  extent: [String!]
+  extracted_text: AWSJSON
+  format: [String!]
+  format_physical: [String!]
+  has_format: [String!]
+  has_part: [String!]
+  has_version: [String!]
+  heirarchy_path: [String!]
+  id: ID!
+  identifier: String!
+  is_format_of: [String!]
+  is_part_of: [String!]
+  is_version_of: [String!]
+  item_category: String!
+  language: [String!]
+  license: [String!]
+  location: [String!]
+  manifest_file_characterization: AWSJSON
+  manifest_url: String
+  medium: [String!]
+  modified_date: String
+  other_identifier: [String!]
+  parent_collection: [String!]
+  parent_collection_identifier: [String!]
+  partner_id: String
+  provenance: [String!]
+  publisher: [String!]
+  references: [String!]
+  relation: [String!]
+  repository: [String!]
+  rights_holder: [String!]
+  rights: [String!]
+  source: [String!]
+  spatial: [String!]
+  start_date: String
+  subject: [String!]
+  tags: [String!]
+  taxonomy: [String!]
+  temporal: [String!]
+  thumbnail_path: String
+  title: String!
+  title_template: [String!]
+  type: [String!]
+  visibility: Boolean!
+  visual_description: AWSJSON
+  collection: Collection
+}
+
+type Collection implements CatalogItem {
+  alt_text: AWSJSON
+  archived: Boolean!
+  bibliographic_citation: [String!]
+  collection_category: String!
+  collectionmap_id: String
+  collectionOptions: AWSJSON
+  create_date: String
+  creator: [String!]
+  custom_key: String
+  description: [String!]
+  display_date: [String!]
+  embargo_end_date: String
+  embargo_note: String
+  embargo_start_date: String
+  end_date: String
+  explicit_content: Boolean
+  heirarchy_path: [String!]
+  id: ID!
+  identifier: String!
+  is_part_of: [String!]
+  language: [String!]
+  location: [String!]
+  modified_date: String
+  ownerinfo: AWSJSON
+  parent_collection: [String!]
+  parent_collection_identifier: [String!]
+  partner_id: String
+  provenance: [String!]
+  relation: [String!]
+  rights_holder: [String!]
+  rights: [String!]
+  source: [String!]
+  spatial: [String!]
+  start_date: String
+  subject: [String!]
+  thumbnail_path: String
+  title: String!
+  title_template: [String!]
+  visibility: Boolean!
+  archives(limit: Int, nextToken: String): ArchiveConnection
+}
+
+type Site {
+  analyticsID: String
+  assetBasePath: String
+  browseCollections: AWSJSON!
+  contact: [AWSJSON!]!
+  displayedAttributes: AWSJSON!
+  groups: [String]!
+  homePage: AWSJSON!
+  id: ID!
+  lang: String
+  miradorOptions: AWSJSON
+  searchPage: AWSJSON!
+  siteColor: String
+  siteId: String!
+  siteName: String!
+  siteOptions: AWSJSON
+  sitePages: AWSJSON
+  siteTitle: String!
+}
+
+enum ModelSortDirection {
+  ASC
+  DESC
+}
+
+type ArchiveConnection {
+  items: [Archive]
+  nextToken: String
+}
+
+type CollectionConnection {
+  items: [Collection]
+  nextToken: String
+}
+
+type SiteConnection {
+  items: [Site]
+  nextToken: String
+}
+
+type Query {
+  getArchive(id: ID!): Archive
+  listArchives(limit: Int, nextToken: String): ArchiveConnection
+  archiveByIdentifier(
+    identifier: String!
+    sortDirection: ModelSortDirection
+    limit: Int
+    nextToken: String
+  ): ArchiveConnection
+
+  getCollection(id: ID!): Collection
+  listCollections(limit: Int, nextToken: String): CollectionConnection
+  collectionByIdentifier(
+    identifier: String!
+    sortDirection: ModelSortDirection
+    limit: Int
+    nextToken: String
+  ): CollectionConnection
+
+  getSite(id: ID!): Site
+  listSites(limit: Int, nextToken: String): SiteConnection
+  siteBySiteId(
+    siteId: String!
+    sortDirection: ModelSortDirection
+    limit: Int
+    nextToken: String
+  ): SiteConnection
+}
