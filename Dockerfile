@@ -7,6 +7,9 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
+EXPOSE 5000
+CMD ["npm", "run", "start"]
+
 # FROM node:22.14-alpine AS runner
 # WORKDIR /app
 
