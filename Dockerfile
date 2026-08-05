@@ -7,6 +7,14 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
+COPY .next/standalone ./
+
+COPY public ./public
+COPY .next/static ./.next/static
+
+ENV NODE_ENV=production
+ENV PORT=5000
+
 EXPOSE 5000
 CMD ["npm", "run", "start"]
 
