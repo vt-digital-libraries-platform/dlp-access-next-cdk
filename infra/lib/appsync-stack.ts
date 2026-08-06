@@ -31,6 +31,16 @@ export interface AppSyncStackProps extends StackProps {
 const MODELS = ['Archive', 'Collection', 'Site'] as const;
 type ModelName = (typeof MODELS)[number];
 
+// GSIs each model's DynamoDB data source role needs `dynamodb:Query` on.
+// Table.fromTableAttributes() only grants access to these index ARNs when
+// they're listed here (see `globalIndexes` below) — without it, grantReadData()
+// only covers the base table, and Query calls against a GSI are denied.
+const GLOBAL_INDEXES: Record<ModelName, string[]> = {
+  Archive: ['Identifier', 'gsi-Collection.archives'],
+  Collection: ['Identifier'],
+  Site: ['SiteId'],
+};
+
 export class AppSyncStack extends Stack {
   constructor(scope: Construct, id: string, props: AppSyncStackProps) {
     super(scope, id, props);
@@ -53,7 +63,10 @@ export class AppSyncStack extends Stack {
     // creating new ones, so this API reads the same data as the vtdlp app.
     const tables: Record<ModelName, dynamodb.ITable> = MODELS.reduce(
       (acc, model) => {
-        acc[model] = dynamodb.Table.fromTableName(this, `${model}Table`, `${model}-${props.tableSuffix}`);
+        acc[model] = dynamodb.Table.fromTableAttributes(this, `${model}Table`, {
+          tableName: `${model}-${props.tableSuffix}`,
+          globalIndexes: GLOBAL_INDEXES[model],
+        });
         return acc;
       },
       {} as Record<ModelName, dynamodb.ITable>,
