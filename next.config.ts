@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+<<<<<<< HEAD
   redirects() {
     return [
       {
@@ -11,6 +12,9 @@ const nextConfig: NextConfig = {
     ]
   },
   output: "standalone",
+=======
+  /* config options here */
+>>>>>>> 9333d05 (modify config)
 };
 
 export default nextConfig;
