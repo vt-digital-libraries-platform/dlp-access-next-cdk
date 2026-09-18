@@ -7,11 +7,11 @@
 # provisioned for that schema, so field shapes and relations mirror the
 # original 1:1 where they're exposed here.
 #
-# Scope: read-only (Query only), limited to the Archive, Collection, and Site
-# models, and no full-text search (searchObjects / fulltextArchives /
-# fulltextCollections are OpenSearch-backed and are not implemented). Add
-# Mutation/Subscription types and a search integration later if the app
-# needs them.
+# Scope: read-only (Query only), covering every @model type from the source
+# schema except Collectionmap (intentionally skipped). No full-text search
+# (searchObjects / fulltextArchives / fulltextCollections are OpenSearch-backed
+# and are not implemented) and no Mutation/Subscription types. Add those later
+# if the app needs them.
 
 interface CatalogItem {
   alt_text: AWSJSON
@@ -120,6 +120,7 @@ type Archive implements CatalogItem {
   visibility: Boolean!
   visual_description: AWSJSON
   collection: Collection
+  partner: Partner
 }
 
 type Collection implements CatalogItem {
@@ -163,6 +164,45 @@ type Collection implements CatalogItem {
   title_template: [String!]
   visibility: Boolean!
   archives(limit: Int, nextToken: String): ArchiveConnection
+  partner: Partner
+}
+
+type Partner {
+  custom_key: String
+  description: [String!]
+  id: ID!
+  identifier: String!
+  title: String!
+  title_template: [String!]
+  thumbnail_path: String
+  visibility: Boolean!
+}
+
+type History {
+  event: AWSJSON!
+  groups: [String]!
+  id: ID!
+  siteID: ID!
+  userEmail: AWSEmail!
+}
+
+type MetadataField {
+  id: ID!
+  columnName: String!
+  labelName: String!
+  type: String!
+  required: String!
+  description: String!
+  example: String!
+  category: String!
+  sortOrder: Int
+}
+
+type PageContent {
+  page_content_category: String!
+  id: ID!
+  content: String!
+  pageContentSiteId: Site
 }
 
 type Site {
@@ -205,6 +245,26 @@ type SiteConnection {
   nextToken: String
 }
 
+type PartnerConnection {
+  items: [Partner]
+  nextToken: String
+}
+
+type HistoryConnection {
+  items: [History]
+  nextToken: String
+}
+
+type MetadataFieldConnection {
+  items: [MetadataField]
+  nextToken: String
+}
+
+type PageContentConnection {
+  items: [PageContent]
+  nextToken: String
+}
+
 type Query {
   getArchive(id: ID!): Archive
   listArchives(limit: Int, nextToken: String): ArchiveConnection
@@ -232,4 +292,22 @@ type Query {
     limit: Int
     nextToken: String
   ): SiteConnection
+
+  getPartner(id: ID!): Partner
+  listPartners(limit: Int, nextToken: String): PartnerConnection
+  partnerByIdentifier(
+    identifier: String!
+    sortDirection: ModelSortDirection
+    limit: Int
+    nextToken: String
+  ): PartnerConnection
+
+  getHistory(id: ID!): History
+  listHistories(limit: Int, nextToken: String): HistoryConnection
+
+  getMetadataField(id: ID!): MetadataField
+  listMetadataFields(limit: Int, nextToken: String): MetadataFieldConnection
+
+  getPageContent(id: ID!): PageContent
+  listPageContents(limit: Int, nextToken: String): PageContentConnection
 }
