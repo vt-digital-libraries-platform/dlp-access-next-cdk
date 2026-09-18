@@ -126,3 +126,69 @@ export function hasManyCode(opts: { indexName: string; foreignKeyField: string }
     DEFAULT_RESPONSE
   );
 }
+
+/**
+ * Query.fulltextX: OpenSearch _search against a single index, mirroring the
+ * Amplify searchable VTL resolvers (structured `filter` via
+ * toElasticsearchQueryDSL, optional `allFields` phrase multi_match across
+ * `searchFields`, sort on the `.keyword` subfield, search_after paging).
+ */
+export function openSearchQueryCode(opts: {
+  index: string;
+  searchFields: string[];
+  /** Tag each hit with __typename (Collection if it has collection_category, else Archive) for interface results. */
+  resolveTypename?: boolean;
+}): string {
+  const { index, searchFields, resolveTypename = false } = opts;
+  const itemExpr = resolveTypename
+    ? `hits.map((hit) => ({
+      ...hit._source,
+      __typename: hit._source.collection_category ? 'Collection' : 'Archive',
+    }))`
+    : `hits.map((hit) => hit._source)`;
+  return (
+    HEADER +
+    `const NON_KEYWORD_FIELDS = ['visibility', 'start_date'];
+const SEARCH_FIELDS = ${JSON.stringify(searchFields)};
+
+export function request(ctx) {
+  const { allFields, filter, sort, limit, nextToken } = ctx.args;
+  const direction = sort?.direction ?? 'desc';
+  const field = sort?.field ?? 'id';
+  const sortField = NON_KEYWORD_FIELDS.includes(field) ? field : field + '.keyword';
+
+  let query = { match_all: {} };
+  if (filter || allFields) {
+    const bool = {};
+    if (filter) {
+      bool.must = util.transform.toElasticsearchQueryDSL(filter);
+    }
+    if (allFields) {
+      bool.should = [{ multi_match: { query: allFields, type: 'phrase', fields: SEARCH_FIELDS } }];
+      bool.minimum_should_match = 1;
+    }
+    query = { bool };
+  }
+
+  const body = { size: limit ?? 100, sort: [{ [sortField]: { order: direction } }], query };
+  if (nextToken) {
+    body.search_after = [nextToken];
+  }
+  return { operation: 'GET', path: ${JSON.stringify(`/${index}/_search`)}, params: { body } };
+}
+
+export function response(ctx) {
+  if (ctx.error) {
+    util.error(ctx.error.message, ctx.error.type);
+  }
+  const hits = ctx.result?.hits?.hits ?? [];
+  const total = ctx.result?.hits?.total;
+  return {
+    items: ${itemExpr},
+    total: (typeof total === 'object' ? total?.value : total) ?? 0,
+    nextToken: hits.length > 0 ? hits[hits.length - 1].sort?.[0] ?? null : null,
+  };
+}
+`
+  );
+}

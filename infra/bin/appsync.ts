@@ -6,6 +6,10 @@ const app = new cdk.App();
 
 const tableSuffix = app.node.tryGetContext('tableSuffix') ?? 'bxbkjhe235e3jcwcjcji5txvlm-vtdlpdev';
 const ebInstanceRoleName = app.node.tryGetContext('ebInstanceRoleName') ?? 'aws-elasticbeanstalk-ec2-role';
+const openSearchDomainEndpoint = app.node.tryGetContext('openSearchDomainEndpoint');
+if (!openSearchDomainEndpoint) {
+  throw new Error('Missing CDK context: pass -c openSearchDomainEndpoint=<existing OpenSearch domain endpoint>');
+}
 
 new AppSyncStack(app, 'DlpAccessNextAppSyncStack', {
   env: {
@@ -14,4 +18,5 @@ new AppSyncStack(app, 'DlpAccessNextAppSyncStack', {
   },
   tableSuffix,
   ebInstanceRoleName,
+  openSearchDomainEndpoint,
 });
