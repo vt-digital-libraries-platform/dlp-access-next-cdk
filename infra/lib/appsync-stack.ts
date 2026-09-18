@@ -3,6 +3,7 @@ import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
 import * as appsync from 'aws-cdk-lib/aws-appsync';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as opensearch from 'aws-cdk-lib/aws-opensearchservice';
 import { Construct } from 'constructs';
 import {
   getByIdCode,
@@ -10,6 +11,7 @@ import {
   queryByIndexCode,
   hasOneCode,
   hasManyCode,
+  openSearchQueryCode,
 } from './resolvers';
 
 export interface AppSyncStackProps extends StackProps {
@@ -26,6 +28,12 @@ export interface AppSyncStackProps extends StackProps {
    * `appsync:GraphQL` access to this API.
    */
   readonly ebInstanceRoleName: string;
+  /**
+   * Endpoint of the existing OpenSearch domain holding the `archive` and
+   * `collection` indices (e.g. "search-xyz.us-east-1.es.amazonaws.com", with
+   * or without https://). Passed via CDK context: `-c openSearchDomainEndpoint=...`.
+   */
+  readonly openSearchDomainEndpoint: string;
 }
 
 const MODELS = [
@@ -107,7 +115,7 @@ export class AppSyncStack extends Stack {
     const jsResolver = (
       typeName: string,
       fieldName: string,
-      dataSource: appsync.DynamoDbDataSource,
+      dataSource: appsync.BaseDataSource,
       code: string,
     ) =>
       new appsync.Resolver(this, `${typeName}${fieldName}Resolver`, {
@@ -166,6 +174,60 @@ export class AppSyncStack extends Stack {
       'pageContentSiteId',
       dataSources.Site,
       hasOneCode('pageContentPageContentSiteIdId'),
+    );
+
+    // --- Full-text search (existing OpenSearch domain) --------------------
+    // The domain's own access policy (or fine-grained access control role
+    // mapping) must also allow this data source's service role to call
+    // es:ESHttpGet on the archive/collection indices.
+    const searchDomain = opensearch.Domain.fromDomainEndpoint(
+      this,
+      'SearchDomain',
+      props.openSearchDomainEndpoint.startsWith('https://')
+        ? props.openSearchDomainEndpoint
+        : `https://${props.openSearchDomainEndpoint}`,
+    );
+    const searchDataSource = api.addOpenSearchDataSource('OpenSearchDataSource', searchDomain);
+
+    jsResolver(
+      'Query',
+      'fulltextArchives',
+      searchDataSource,
+      openSearchQueryCode({
+        index: 'archive',
+        searchFields: [
+          'title', 'description', 'creator', 'medium', 'type', 'tags', 'identifier', 'is_part_of',
+          'format', 'spatial', 'source', 'subject', 'bibliographic_citation', 'rights', 'rights_holder',
+        ],
+      }),
+    );
+    jsResolver(
+      'Query',
+      'fulltextCollections',
+      searchDataSource,
+      openSearchQueryCode({
+        index: 'collection',
+        searchFields: [
+          'title', 'description', 'creator', 'identifier', 'spatial', 'subject', 'source', 'is_part_of',
+          'bibliographic_citation', 'rights', 'rights_holder',
+        ],
+      }),
+    );
+
+    // Searches both indices at once; hits are tagged with __typename so they
+    // resolve to Archive or Collection through the CatalogItem interface.
+    jsResolver(
+      'Query',
+      'searchObjects',
+      searchDataSource,
+      openSearchQueryCode({
+        index: 'archive,collection',
+        resolveTypename: true,
+        searchFields: [
+          'title', 'description', 'creator', 'medium', 'type', 'tags', 'identifier', 'is_part_of',
+          'format', 'spatial', 'subject', 'source', 'bibliographic_citation', 'rights', 'rights_holder',
+        ],
+      }),
     );
 
     // --- IAM auth for the Elastic Beanstalk app -----------------------------
