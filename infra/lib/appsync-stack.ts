@@ -28,8 +28,28 @@ export interface AppSyncStackProps extends StackProps {
   readonly ebInstanceRoleName: string;
 }
 
-const MODELS = ['Archive', 'Collection', 'Site'] as const;
+const MODELS = [
+  'Archive',
+  'Collection',
+  'Site',
+  'Partner',
+  'History',
+  'MetadataField',
+  'PageContent',
+] as const;
 type ModelName = (typeof MODELS)[number];
+
+// `list${model}s` is right for every model except History, whose Amplify
+// (and this schema's) query field is the properly pluralized `listHistories`.
+const LIST_QUERY_FIELD: Record<ModelName, string> = {
+  Archive: 'listArchives',
+  Collection: 'listCollections',
+  Site: 'listSites',
+  Partner: 'listPartners',
+  History: 'listHistories',
+  MetadataField: 'listMetadataFields',
+  PageContent: 'listPageContents',
+};
 
 // GSIs each model's DynamoDB data source role needs `dynamodb:Query` on.
 // Table.fromTableAttributes() only grants access to these index ARNs when
@@ -39,6 +59,10 @@ const GLOBAL_INDEXES: Record<ModelName, string[]> = {
   Archive: ['Identifier', 'gsi-Collection.archives'],
   Collection: ['Identifier'],
   Site: ['SiteId'],
+  Partner: ['Identifier'],
+  History: [],
+  MetadataField: [],
+  PageContent: [],
 };
 
 export class AppSyncStack extends Stack {
@@ -98,7 +122,7 @@ export class AppSyncStack extends Stack {
     // --- Query: getX / listX --------------------------------------------
     for (const model of MODELS) {
       jsResolver('Query', `get${model}`, dataSources[model], getByIdCode());
-      jsResolver('Query', `list${model}s`, dataSources[model], listScanCode());
+      jsResolver('Query', LIST_QUERY_FIELD[model], dataSources[model], listScanCode());
     }
 
     // --- Query: indexed lookups (xByY) ------------------------------------
@@ -120,14 +144,28 @@ export class AppSyncStack extends Stack {
       dataSources.Site,
       queryByIndexCode({ indexName: 'SiteId', keyField: 'siteId', argName: 'siteId' }),
     );
+    jsResolver(
+      'Query',
+      'partnerByIdentifier',
+      dataSources.Partner,
+      queryByIndexCode({ indexName: 'Identifier', keyField: 'identifier', argName: 'identifier' }),
+    );
 
     // --- Relation fields ---------------------------------------------------
     jsResolver('Archive', 'collection', dataSources.Collection, hasOneCode('archiveCollectionId'));
+    jsResolver('Archive', 'partner', dataSources.Partner, hasOneCode('archivePartnerId'));
     jsResolver(
       'Collection',
       'archives',
       dataSources.Archive,
       hasManyCode({ indexName: 'gsi-Collection.archives', foreignKeyField: 'collectionArchivesId' }),
+    );
+    jsResolver('Collection', 'partner', dataSources.Partner, hasOneCode('collectionPartnerId'));
+    jsResolver(
+      'PageContent',
+      'pageContentSiteId',
+      dataSources.Site,
+      hasOneCode('pageContentPageContentSiteIdId'),
     );
 
     // --- IAM auth for the Elastic Beanstalk app -----------------------------
