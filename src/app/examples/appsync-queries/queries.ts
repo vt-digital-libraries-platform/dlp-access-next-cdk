@@ -95,6 +95,19 @@ const GET_ARCHIVE_WITH_PARTNER = `query GetArchiveWithPartner($id: ID!) { getArc
 const PAGE_CONTENT_WITH_SITE_FIELDS = `id page_content_category pageContentSiteId { ${SITE_FIELDS} }`;
 const GET_PAGE_CONTENT_WITH_SITE = `query GetPageContentWithSite($id: ID!) { getPageContent(id: $id) { ${PAGE_CONTENT_WITH_SITE_FIELDS} } }`;
 
+const SEARCH_ARCHIVE_FIELDS = `id identifier title item_category`;
+const SEARCH_COLLECTION_FIELDS = `id identifier title collection_category`;
+
+const FULLTEXT_ARCHIVES = `query FulltextArchives($allFields: String) { fulltextArchives(allFields: $allFields, limit: 5) { items { ${SEARCH_ARCHIVE_FIELDS} } nextToken total } }`;
+const FULLTEXT_COLLECTIONS = `query FulltextCollections($allFields: String) { fulltextCollections(allFields: $allFields, limit: 5) { items { ${SEARCH_COLLECTION_FIELDS} } nextToken total } }`;
+const SEARCH_OBJECTS = `query SearchObjects($allFields: String) { searchObjects(allFields: $allFields, limit: 5) { items { __typename ... on Archive { ${SEARCH_ARCHIVE_FIELDS} } ... on Collection { ${SEARCH_COLLECTION_FIELDS} } } nextToken total } }`;
+const SEARCH_ARCHIVES_FILTERED = `query FulltextArchivesFiltered($identifier: String) { fulltextArchives(filter: { identifier: { eq: $identifier } }, limit: 5) { items { ${SEARCH_ARCHIVE_FIELDS} } total } }`;
+
+// First word of at least 4 letters, used as a search term seeded from real data.
+function searchTerm(title: string | undefined): string | undefined {
+  return title?.match(/[A-Za-z]{4,}/)?.[0];
+}
+
 export interface QueryDemo {
   label: string;
   description: string;
@@ -324,6 +337,58 @@ export async function runDemoQueries(): Promise<QueryDemo[]> {
           ),
     ]);
 
+  const archiveTerm = searchTerm(firstArchive?.title);
+  const collectionTerm = searchTerm(firstCollection?.title);
+  const objectTerm = archiveTerm ?? collectionTerm;
+
+  const [fulltextArchives, fulltextArchivesFiltered, fulltextCollections, searchObjects] = await Promise.all([
+    archiveTerm
+      ? run("fulltextArchives", `Full-text search archives for "${archiveTerm}" (a word from listArchives).`, () =>
+          graphqlRequest<{ fulltextArchives: unknown }>(FULLTEXT_ARCHIVES, { allFields: archiveTerm }).then(
+            (d) => d.fulltextArchives,
+          ),
+        )
+      : skip("fulltextArchives", "Full-text search archives.", "listArchives returned no title to seed a search term."),
+    firstArchive
+      ? run(
+          "fulltextArchives (filter)",
+          `Search archives with a structured filter: identifier eq "${firstArchive.identifier}".`,
+          () =>
+            graphqlRequest<{ fulltextArchives: unknown }>(SEARCH_ARCHIVES_FILTERED, {
+              identifier: firstArchive.identifier,
+            }).then((d) => d.fulltextArchives),
+        )
+      : skip(
+          "fulltextArchives (filter)",
+          "Search archives with a structured filter.",
+          "listArchives returned no items to seed an identifier.",
+        ),
+    collectionTerm
+      ? run(
+          "fulltextCollections",
+          `Full-text search collections for "${collectionTerm}" (a word from listCollections).`,
+          () =>
+            graphqlRequest<{ fulltextCollections: unknown }>(FULLTEXT_COLLECTIONS, {
+              allFields: collectionTerm,
+            }).then((d) => d.fulltextCollections),
+        )
+      : skip(
+          "fulltextCollections",
+          "Full-text search collections.",
+          "listCollections returned no title to seed a search term.",
+        ),
+    objectTerm
+      ? run(
+          "searchObjects",
+          `Search archives and collections together for "${objectTerm}"; each item is tagged by __typename.`,
+          () =>
+            graphqlRequest<{ searchObjects: unknown }>(SEARCH_OBJECTS, { allFields: objectTerm }).then(
+              (d) => d.searchObjects,
+            ),
+        )
+      : skip("searchObjects", "Search archives and collections together.", "No archive or collection title to seed a search term."),
+  ]);
+
   // Ordered to match the Query type declaration order in schema.graphql.
   return [
     getArchive,
@@ -346,5 +411,9 @@ export async function runDemoQueries(): Promise<QueryDemo[]> {
     pageContentList,
     archiveWithPartner,
     pageContentWithSite,
+    searchObjects,
+    fulltextCollections,
+    fulltextArchives,
+    fulltextArchivesFiltered,
   ];
 }
