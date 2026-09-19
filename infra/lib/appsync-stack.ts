@@ -180,13 +180,19 @@ export class AppSyncStack extends Stack {
     // The domain's own access policy (or fine-grained access control role
     // mapping) must also allow this data source's service role to call
     // es:ESHttpGet on the archive/collection indices.
-    const searchDomain = opensearch.Domain.fromDomainEndpoint(
-      this,
-      'SearchDomain',
-      props.openSearchDomainEndpoint.startsWith('https://')
-        ? props.openSearchDomainEndpoint
-        : `https://${props.openSearchDomainEndpoint}`,
-    );
+    // Endpoints look like search-<domainName>-<26-char id>.<region>.es.amazonaws.com.
+    // Domain.fromDomainEndpoint mis-derives the name (keeps "search-"), which
+    // makes the IAM grant target the wrong ARN, so build the ARN explicitly.
+    const endpointHost = props.openSearchDomainEndpoint.replace(/^https?:\/\//, '');
+    const endpointMatch = /^search-(.+)-[a-z0-9]{26}\.([a-z0-9-]+)\.es\.amazonaws\.com$/.exec(endpointHost);
+    if (!endpointMatch) {
+      throw new Error(`Unrecognized OpenSearch domain endpoint: ${props.openSearchDomainEndpoint}`);
+    }
+    const [, searchDomainName, searchDomainRegion] = endpointMatch;
+    const searchDomain = opensearch.Domain.fromDomainAttributes(this, 'SearchDomain', {
+      domainArn: `arn:${this.partition}:es:${searchDomainRegion}:${this.account}:domain/${searchDomainName}`,
+      domainEndpoint: endpointHost,
+    });
     const searchDataSource = api.addOpenSearchDataSource('OpenSearchDataSource', searchDomain);
 
     jsResolver(
