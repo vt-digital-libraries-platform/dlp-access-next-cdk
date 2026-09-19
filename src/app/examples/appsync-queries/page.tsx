@@ -1,5 +1,6 @@
 import { runDemoQueries } from "./queries";
 import { QueryResultCard } from "./QueryResultCard";
+import { SearchPanel } from "./SearchPanel";
 
 // Queries run against live AppSync data on every request rather than being
 // cached at build time.
@@ -21,23 +22,28 @@ export default async function AppSyncQueriesExamplePage() {
             <code className="rounded bg-zinc-200 px-1 py-0.5 text-sm dark:bg-zinc-800">
               infra/schema/schema.graphql
             </code>{" "}
-            against the AppSync API on page load and renders the result of each below.
+            against the AppSync API on page load and renders the result of each
+            below.
           </p>
         </div>
 
         {!apiUrlConfigured ? (
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
             Set the <code>APPSYNC_API_URL</code> environment variable to the{" "}
-            <code>GraphQLApiUrl</code> output from <code>DlpAccessNextAppSyncStack</code>{" "}
-            (and optionally <code>AWS_REGION</code>, default <code>us-east-1</code>) to run
+            <code>GraphQLApiUrl</code> output from{" "}
+            <code>DlpAccessNextAppSyncStack</code> (and optionally{" "}
+            <code>AWS_REGION</code>, default <code>us-east-1</code>) to run
             these queries.
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
-            {results.map((result) => (
-              <QueryResultCard key={result.label} result={result} />
-            ))}
-          </div>
+          <>
+            <SearchPanel />
+            <div className="flex flex-col gap-4">
+              {results.map((result) => (
+                <QueryResultCard key={result.label} result={result} />
+              ))}
+            </div>
+          </>
         )}
       </main>
     </div>
