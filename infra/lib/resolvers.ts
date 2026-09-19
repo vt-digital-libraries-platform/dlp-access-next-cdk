@@ -140,54 +140,59 @@ export function openSearchQueryCode(opts: {
   resolveTypename?: boolean;
 }): string {
   const { index, searchFields, resolveTypename = false } = opts;
-  const itemExpr = resolveTypename
-    ? `hits.map((hit) => ({
-      ...hit._source,
-      __typename: hit._source.collection_category ? 'Collection' : 'Archive',
-    }))`
-    : `hits.map((hit) => hit._source)`;
+  const typenameStep = resolveTypename
+    ? `
+    if (source.collection_category) {
+      source.__typename = 'Collection';
+    } else {
+      source.__typename = 'Archive';
+    }`
+    : '';
   return (
     HEADER +
-    `const NON_KEYWORD_FIELDS = ['visibility', 'start_date'];
-const SEARCH_FIELDS = ${JSON.stringify(searchFields)};
+    `export function request(ctx) {
+  const args = ctx.args;
+  const direction = args.sort && args.sort.direction ? args.sort.direction : 'desc';
+  const field = args.sort && args.sort.field ? args.sort.field : 'id';
+  const sortField = field === 'visibility' || field === 'start_date' ? field : field + '.keyword';
+  const sortClause = {};
+  sortClause[sortField] = { order: direction };
 
-export function request(ctx) {
-  const { allFields, filter, sort, limit, nextToken } = ctx.args;
-  const direction = sort?.direction ?? 'desc';
-  const field = sort?.field ?? 'id';
-  const sortField = NON_KEYWORD_FIELDS.includes(field) ? field : field + '.keyword';
-
-  let query = { match_all: {} };
-  if (filter || allFields) {
-    const bool = {};
-    if (filter) {
-      bool.must = util.transform.toElasticsearchQueryDSL(filter);
-    }
-    if (allFields) {
-      bool.should = [{ multi_match: { query: allFields, type: 'phrase', fields: SEARCH_FIELDS } }];
-      bool.minimum_should_match = 1;
-    }
-    query = { bool };
+  const bool = {};
+  if (args.filter) {
+    // toElasticsearchQueryDSL returns a JSON string, not an object.
+    bool.must = JSON.parse(util.transform.toElasticsearchQueryDSL(args.filter));
   }
-
-  const body = { size: limit ?? 100, sort: [{ [sortField]: { order: direction } }], query };
-  if (nextToken) {
-    body.search_after = [nextToken];
+  if (args.allFields) {
+    bool.should = [
+      { multi_match: { query: args.allFields, type: 'phrase', fields: ${JSON.stringify(searchFields)} } },
+    ];
+    bool.minimum_should_match = 1;
   }
-  return { operation: 'GET', path: ${JSON.stringify(`/${index}/_search`)}, params: { body } };
+  // AppSync JS forbids reassigning variables, so choose the query in one expression.
+  const query = args.filter || args.allFields ? { bool: bool } : { match_all: {} };
+
+  const body = { size: args.limit ? args.limit : 100, sort: [sortClause], query: query };
+  if (args.nextToken) {
+    body.search_after = [args.nextToken];
+  }
+  return { operation: 'GET', path: ${JSON.stringify(`/${index}/_search`)}, params: { body: body } };
 }
 
 export function response(ctx) {
   if (ctx.error) {
     util.error(ctx.error.message, ctx.error.type);
   }
-  const hits = ctx.result?.hits?.hits ?? [];
-  const total = ctx.result?.hits?.total;
-  return {
-    items: ${itemExpr},
-    total: (typeof total === 'object' ? total?.value : total) ?? 0,
-    nextToken: hits.length > 0 ? hits[hits.length - 1].sort?.[0] ?? null : null,
-  };
+  const hits = ctx.result && ctx.result.hits && ctx.result.hits.hits ? ctx.result.hits.hits : [];
+  const total = ctx.result && ctx.result.hits && ctx.result.hits.total ? ctx.result.hits.total.value : 0;
+  const items = [];
+  for (const hit of hits) {
+    const source = hit._source;${typenameStep}
+    items.push(source);
+  }
+  const last = hits.length > 0 ? hits[hits.length - 1] : null;
+  const nextToken = last && last.sort ? last.sort[0] : null;
+  return { items: items, total: total, nextToken: nextToken };
 }
 `
   );
