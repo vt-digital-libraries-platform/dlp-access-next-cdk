@@ -49,6 +49,9 @@ npm run deploy -- -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-c
 
 # Your branch of the app plus a new feature environment for it
 npm run deploy -- -c env=f-search -c account=$ACCOUNT -c branch=$(git branch --show-current) -c backend=provision
+
+# Production: its own account, with production sizing
+npm run deploy -- -c env=production -c account=<production account ID> -c production=true
 ```
 
 `npm run deploy` checks the options, lists them with the stacks they produce, and runs `cdk deploy --all` with the same arguments only if you answer `y` or `yes`. Any other answer deploys nothing. With `-c env=production` a red warning banner comes first, and it also points out when `-c production=true` is missing. Other `cdk deploy` flags pass through. Running `npx cdk deploy` directly skips the confirmation.
