@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { optionsFromContext, planApp } from '../lib/app';
-import { contextFromArgs, describePlan, isConfirmed } from '../lib/deploy';
+import { contextFromArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
 
 const INFRA_DIR = path.join(__dirname, '..');
 
@@ -30,9 +30,18 @@ async function main(): Promise<number> {
   const context: Record<string, unknown> = { ...cdkJson.context, ...contextFromArgs(args) };
 
   const plan = planApp(optionsFromContext((key) => context[key]));
+  const warning = productionWarning(plan);
+  // Bold red on a terminal.
+  const alert = (text: string) => (process.stdout.isTTY ? `\x1b[1;31m${text}\x1b[0m` : text);
+  if (warning) {
+    console.log(`${alert(warning)}\n`);
+  }
   console.log(`About to deploy to AWS:\n\n${describePlan(plan)}\n`);
 
-  if (!isConfirmed(await ask('Deploy? Type "yes" or "y" to continue: '))) {
+  const question = warning
+    ? alert('Deploy to PRODUCTION? Type "yes" or "y" to continue: ')
+    : 'Deploy? Type "yes" or "y" to continue: ';
+  if (!isConfirmed(await ask(question))) {
     console.log('Not deployed.');
     return 1;
   }

@@ -1,5 +1,5 @@
 import { optionsFromContext, planApp } from '../lib/app';
-import { contextFromArgs, describePlan, isConfirmed } from '../lib/deploy';
+import { contextFromArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
 
 const account = '123456789012';
 
@@ -61,6 +61,23 @@ describe('describePlan', () => {
     const text = describePlan(planApp({ env: 'dev', account, branch: 'main' }));
     expect(text).toMatch(/Backend\s+attach/);
     expect(text).toMatch(/Stacks\s+DlpAccessNext-Web-main$/m);
+  });
+});
+
+describe('productionWarning', () => {
+  test('warns for the production environment, naming the account', () => {
+    const warning = productionWarning(planApp({ env: 'production', account, production: true }));
+    expect(warning).toMatch(/WARNING: THIS DEPLOYS TO THE PRODUCTION ENVIRONMENT/);
+    expect(warning).toMatch(/Account 123456789012/);
+    expect(warning).not.toMatch(/production=true is not set/);
+  });
+
+  test('also warns when production sizing is off', () => {
+    expect(productionWarning(planApp({ env: 'production', account }))).toMatch(/production=true is not set/);
+  });
+
+  test.each(['dev', 'pre-production', 'f-production'])('says nothing for %p', (env) => {
+    expect(productionWarning(planApp({ env, account, production: true }))).toBeUndefined();
   });
 });
 

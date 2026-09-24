@@ -46,6 +46,24 @@ export function describePlan(plan: AppPlan): string {
   return rows.map(([label, value]) => `  ${label.padEnd(width)}  ${value}`).join('\n');
 }
 
+/** A warning to show above the plan when the environment is production; undefined otherwise. */
+export function productionWarning(plan: AppPlan): string | undefined {
+  if (plan.config.name !== 'production') {
+    return undefined;
+  }
+  const rule = '!'.repeat(64);
+  const lines = [
+    rule,
+    '!!  WARNING: THIS DEPLOYS TO THE PRODUCTION ENVIRONMENT',
+    `!!  Account ${plan.account}. Check it is the production account.`,
+  ];
+  if (!plan.production) {
+    lines.push('!!  -c production=true is not set: this uses the small, non-production sizing.');
+  }
+  lines.push(rule);
+  return lines.join('\n');
+}
+
 /** Only "y" or "yes", in any case, confirms. */
 export function isConfirmed(answer: string): boolean {
   return /^(y|yes)$/i.test(answer.trim());
