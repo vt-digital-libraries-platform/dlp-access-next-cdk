@@ -54,6 +54,7 @@ npx cdk deploy --all -c env=f-search -c account=$ACCOUNT -c branch=$(git branch 
 - `-c backend=attach` is the default. It deploys only the Web stack and needs the environment's Api stack to exist already; otherwise the deploy fails with "Unable to fetch parameters".
 - `-c backend=provision` also deploys the environment's Data and Api stacks, before the Web stack.
 - Deploying the same branch with a different `env` repoints its Web stack at that environment.
+- `-c production=true` switches to production sizing: three OpenSearch nodes across three AZs instead of one, and a `t3.medium` Beanstalk instance instead of `t3.small`. It defaults to false and is separate from the environment name, so pass it for the real `production` deploy.
 - No account IDs are stored in the repo, and nothing ties an environment to an account: `-c account` alone decides where the stacks go, so double-check it, especially for `production`.
 - Branch names become slugs (`whunter/Multi_Env` becomes `whunter-multi-env`) of at most 32 characters. Environment names are lowercase and at most 20 characters.
 - The Web stack's `EndpointUrl` output and the Beanstalk console give the app's address. It serves HTTP only, with no load balancer or custom domain.

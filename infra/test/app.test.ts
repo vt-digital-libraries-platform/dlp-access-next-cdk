@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
-import { buildApp } from '../lib/app';
+import { booleanContext, buildApp } from '../lib/app';
 
 const account = '123456789012';
 
@@ -33,6 +33,20 @@ describe('environment selection', () => {
     ['Dev', /Invalid environment name/],
   ])('rejects env %p', (envName, message) => {
     expect(() => buildApp(new App(), { env: envName, account })).toThrow(message);
+  });
+
+  test.each([
+    [undefined, undefined],
+    [true, true],
+    [false, false],
+    ['true', true],
+    ['false', false],
+  ])('reads boolean context %p as %p', (value, expected) => {
+    expect(booleanContext('production', value)).toBe(expected);
+  });
+
+  test.each(['yes', '1', 1])('rejects boolean context %p', (value) => {
+    expect(() => booleanContext('production', value)).toThrow(/Invalid production/);
   });
 
   test('production uses the account passed in', () => {
@@ -123,8 +137,9 @@ describe('search domain', () => {
     });
   });
 
-  test('non-production domains are one small node', () => {
-    for (const { data } of [dev, preProduction, feature]) {
+  test('without the production flag, domains are one small node', () => {
+    const production = synth('production');
+    for (const { data } of [dev, preProduction, feature, production]) {
       data.hasResourceProperties('AWS::OpenSearchService::Domain', {
         ClusterConfig: Match.objectLike({
           InstanceType: 't3.small.search',
@@ -134,6 +149,18 @@ describe('search domain', () => {
         EBSOptions: Match.objectLike({ VolumeSize: 10, VolumeType: 'gp3' }),
       });
     }
+  });
+
+  test('the production flag makes the domain three nodes across three AZs', () => {
+    const { data } = buildApp(new App(), { env: 'production', account, production: true });
+    Template.fromStack(data!).hasResourceProperties('AWS::OpenSearchService::Domain', {
+      ClusterConfig: Match.objectLike({
+        InstanceType: 'm7g.medium.search',
+        InstanceCount: 3,
+        ZoneAwarenessEnabled: true,
+        ZoneAwarenessConfig: { AvailabilityZoneCount: 3 },
+      }),
+    });
   });
 
   test('removal policy follows the environment', () => {
@@ -288,6 +315,13 @@ describe('Web stack', () => {
       Default: '/dlp-access-next/pre-production/graphql-api-url',
     });
     expect(JSON.stringify(web.toJSON())).not.toMatch(/Fn::ImportValue/);
+  });
+
+  test('the production flag uses a larger instance', () => {
+    const { web: prod } = buildApp(new App(), { env: 'production', account, production: true, branch: 'main' });
+    Template.fromStack(prod!).hasResourceProperties('AWS::ElasticBeanstalk::Environment', {
+      OptionSettings: Match.arrayWith([option('aws:ec2:instances', 'InstanceTypes', 't3.medium')]),
+    });
   });
 
   test('service role carries the default Beanstalk service role policies, at their real ARNs', () => {
