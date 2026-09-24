@@ -14,7 +14,7 @@ os.environ.update({
 })
 handler = importlib.import_module('python_streaming_function')
 
-STREAM_ARN = 'arn:aws:dynamodb:us-east-1:226388486048:table/{table}/stream/2026-09-24T00:00:00.000'
+STREAM_ARN = 'arn:aws:dynamodb:us-east-1:123456789012:table/{table}/stream/2026-09-24T00:00:00.000'
 
 
 def record(event_name, table, item):
