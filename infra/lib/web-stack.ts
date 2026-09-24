@@ -65,10 +65,12 @@ export class WebStack extends Stack {
     });
     version.addResourceDependency(application);
 
+    // Same policies as the default aws-elasticbeanstalk-service-role. The
+    // enhanced-health policy lives under the service-role/ path.
     const serviceRole = new iam.Role(this, 'ServiceRole', {
       assumedBy: new iam.ServicePrincipal('elasticbeanstalk.amazonaws.com'),
       managedPolicies: [
-        'AWSElasticBeanstalkEnhancedHealth',
+        'service-role/AWSElasticBeanstalkEnhancedHealth',
         'AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy',
       ].map((policy) => iam.ManagedPolicy.fromAwsManagedPolicyName(policy)),
     });

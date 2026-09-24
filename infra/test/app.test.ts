@@ -277,6 +277,12 @@ describe('Web stack', () => {
     expect(JSON.stringify(web.toJSON())).not.toMatch(/Fn::ImportValue/);
   });
 
+  test('service role carries the default Beanstalk service role policies, at their real ARNs', () => {
+    const arns = JSON.stringify(Object.values(web.findResources('AWS::IAM::Role')).map((r) => r.Properties.ManagedPolicyArns));
+    expect(arns).toContain(':iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth');
+    expect(arns).toContain(':iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy');
+  });
+
   test('source bundle is the app source without dependencies, infra or build output', () => {
     const staged = path.join((attached.node.root as App).outdir, attached.sourceBundle.assetPath);
     const entries = fs.readdirSync(staged);
