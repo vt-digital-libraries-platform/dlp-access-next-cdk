@@ -17,16 +17,17 @@ CDK: run everything from `infra/`, or `--app is required` is raised.
 
 ```bash
 cd infra
-npx cdk synth  --all -c env=dev
-npx cdk deploy --all -c env=dev
-npx cdk deploy --all -c env=dev -c branch=$(git branch --show-current)                          # Web stack on the existing dev stacks
-npx cdk deploy --all -c env=f-search -c branch=$(git branch --show-current) -c backend=provision # also deploys f-search's Data and Api
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+npx cdk synth  --all -c env=dev -c account=$ACCOUNT
+npx cdk deploy --all -c env=dev -c account=$ACCOUNT
+npx cdk deploy --all -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current)                          # Web stack on the existing dev stacks
+npx cdk deploy --all -c env=f-search -c account=$ACCOUNT -c branch=$(git branch --show-current) -c backend=provision # also deploys f-search's Data and Api
 npm test                 # Jest: assertions on each environment's synthesized templates
 npm run test:lambda      # pytest: streaming handler (one-time setup: python3 -m venv .venv && .venv/bin/pip install -r lambda/requirements-dev.txt)
 ```
 
-- `env` is required. Allowed values are `dev`, `pre-production`, `production`, or `f-<slug>` for a feature environment, which uses dev's settings except for data protection. Names are lowercase and at most 20 characters, because the domain is `dlpnext-<env>` and OpenSearch allows 28. Per-environment settings (account, sizing, removal policy) live in `infra/lib/environments.ts`.
-- `production` is in a separate AWS account. Its account ID is a placeholder, so synthesizing it throws until the ID is filled in.
+- `env` is required. Allowed values are `dev`, `pre-production`, `production`, or `f-<slug>` for a feature environment, which uses dev's settings except for data protection. Names are lowercase and at most 20 characters, because the domain is `dlpnext-<env>` and OpenSearch allows 28. Per-environment settings (region, sizing, removal policy) live in `infra/lib/environments.ts`.
+- `account` is required: the 12-digit AWS account ID to deploy to. No account IDs are stored in the repo. `production` belongs in a separate account from the others.
 - Only feature environments (`f-<slug>`) delete their data when their stacks are destroyed. `dev`, `pre-production` and `production` keep their tables and domain, and turn on table deletion protection and PITR.
 - `-c branch` adds a Web stack. The branch name is slugified (`whunter/Multi_Env` becomes `whunter-multi-env`); the Beanstalk application and environment are named `dlpnext-<slug>`, so the slug can be at most 32 characters. With `-c backend=attach` (the default), the app contains only the Web stack, and the environment's Api stack must already be deployed; otherwise the deploy fails with "Unable to fetch parameters". With `-c backend=provision`, the app also contains the environment's Data and Api stacks, and the Web stack deploys after them. Deploying the same branch with a different `env` repoints its existing Web stack.
 - Deploys are user-run (the auto-mode classifier blocks Claude from running them); hand the user the command to run with `!`.

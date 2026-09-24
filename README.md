@@ -34,20 +34,21 @@ Other checks: `npm run build`, `npm run lint`, `npx tsc --noEmit`.
 
 ## Deploying
 
-Run everything from `infra/`, and log in to AWS first. `-c env` is required.
+Run everything from `infra/`, and log in to AWS first. `-c env` and `-c account` (the 12-digit ID of the AWS account to deploy to) are required.
 
 ```bash
 cd infra
 npm install
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)   # the account you're logged in to
 
 # An environment's data and API
-npx cdk deploy --all -c env=dev
+npx cdk deploy --all -c env=dev -c account=$ACCOUNT
 
 # Your branch of the app, attached to an environment that is already deployed
-npx cdk deploy --all -c env=dev -c branch=$(git branch --show-current)
+npx cdk deploy --all -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current)
 
 # Your branch of the app plus a new feature environment for it
-npx cdk deploy --all -c env=f-search -c branch=$(git branch --show-current) -c backend=provision
+npx cdk deploy --all -c env=f-search -c account=$ACCOUNT -c branch=$(git branch --show-current) -c backend=provision
 ```
 
 - `-c backend=attach` is the default. It deploys only the Web stack and needs the environment's Api stack to exist already; otherwise the deploy fails with "Unable to fetch parameters".
@@ -59,7 +60,7 @@ npx cdk deploy --all -c env=f-search -c branch=$(git branch --show-current) -c b
 To tear down a branch deployment:
 
 ```bash
-npx cdk destroy DlpAccessNext-Web-<branch> -c env=<env> -c branch=<branch>
+npx cdk destroy DlpAccessNext-Web-<branch> -c env=<env> -c account=$ACCOUNT -c branch=<branch>
 ```
 
 ## Tests
