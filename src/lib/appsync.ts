@@ -1,8 +1,8 @@
 import { AwsClient } from "aws4fetch";
 import { defaultProvider } from "@aws-sdk/credential-provider-node";
 
-// The DlpAccessNextAppSyncStack (infra/lib/appsync-stack.ts) authorizes this
-// API with IAM auth only, granted to the Elastic Beanstalk instance role.
+// The Api stack (infra/lib/api-stack.ts) authorizes this API with IAM auth
+// only, granted to the environment's Elastic Beanstalk instance role.
 // Requests must be SigV4-signed, so this module resolves AWS credentials via
 // the standard Node credential chain (env vars / shared config locally,
 // EC2/EB instance role in production) and must only run server-side.
@@ -24,7 +24,7 @@ interface GraphQLResponse<T> {
 export async function graphqlRequest<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
   if (!API_URL) {
     throw new Error(
-      "APPSYNC_API_URL is not set. Set it to the GraphQLApiUrl output from DlpAccessNextAppSyncStack.",
+      "APPSYNC_API_URL is not set. Set it to the GraphQLApiUrl output from the environment's Api stack.",
     );
   }
 
