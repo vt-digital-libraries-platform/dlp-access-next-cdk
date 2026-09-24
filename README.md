@@ -11,7 +11,7 @@ The repo holds two independent npm projects, each with its own `package.json`:
 
 ## Environments and stacks
 
-Each **environment** has its own data and API. Environments are `dev`, `pre-production`, `production` (in a separate AWS account, not configured yet), or a short-lived feature environment named `f-<slug>`.
+Each **environment** has its own data and API. Environments are `dev`, `pre-production`, `production` (which belongs in a separate AWS account), or a short-lived feature environment named `f-<slug>`.
 
 | Stack | Contents |
 | --- | --- |
@@ -54,6 +54,7 @@ npx cdk deploy --all -c env=f-search -c account=$ACCOUNT -c branch=$(git branch 
 - `-c backend=attach` is the default. It deploys only the Web stack and needs the environment's Api stack to exist already; otherwise the deploy fails with "Unable to fetch parameters".
 - `-c backend=provision` also deploys the environment's Data and Api stacks, before the Web stack.
 - Deploying the same branch with a different `env` repoints its Web stack at that environment.
+- No account IDs are stored in the repo, and nothing ties an environment to an account: `-c account` alone decides where the stacks go, so double-check it, especially for `production`.
 - Branch names become slugs (`whunter/Multi_Env` becomes `whunter-multi-env`) of at most 32 characters. Environment names are lowercase and at most 20 characters.
 - The Web stack's `EndpointUrl` output and the Beanstalk console give the app's address. It serves HTTP only, with no load balancer or custom domain.
 
