@@ -16,6 +16,10 @@ export interface EnvironmentConfig {
     readonly availabilityZones: number;
     readonly volumeSizeGiB: number;
   };
+  /** Elastic Beanstalk settings for each branch deployment of the Next.js app. */
+  readonly web: {
+    readonly instanceType: string;
+  };
   /**
    * RETAIN also turns on table deletion protection and point-in-time
    * recovery; DESTROY turns both off.
@@ -33,6 +37,8 @@ const SMALL_SEARCH: EnvironmentConfig['search'] = {
   volumeSizeGiB: 10,
 };
 
+const SMALL_WEB: EnvironmentConfig['web'] = { instanceType: 't3.small' };
+
 type Settings = Omit<EnvironmentConfig, 'name'>;
 
 const ENVIRONMENTS: Record<string, Settings> = {
@@ -40,12 +46,14 @@ const ENVIRONMENTS: Record<string, Settings> = {
     account: DEV_ACCOUNT,
     region: 'us-east-1',
     search: SMALL_SEARCH,
+    web: SMALL_WEB,
     removalPolicy: RemovalPolicy.RETAIN,
   },
   'pre-production': {
     account: DEV_ACCOUNT,
     region: 'us-east-1',
     search: SMALL_SEARCH,
+    web: SMALL_WEB,
     removalPolicy: RemovalPolicy.RETAIN,
   },
   production: {
@@ -58,6 +66,7 @@ const ENVIRONMENTS: Record<string, Settings> = {
       availabilityZones: 2,
       volumeSizeGiB: 10,
     },
+    web: SMALL_WEB,
     removalPolicy: RemovalPolicy.RETAIN,
   },
 };
@@ -97,4 +106,18 @@ export function resolveEnvironment(name: string | undefined): EnvironmentConfig 
     throw new Error(`Environment "${name}" has no AWS account configured yet (see lib/environments.ts)`);
   }
   return { name, ...settings };
+}
+
+// Names that stacks deployed separately use to find each other. A Web stack
+// can attach to an environment whose Api stack is not in the same CDK app,
+// so these are fixed names rather than cross-stack references.
+
+/** The environment's Elastic Beanstalk instance role and profile. */
+export function ebInstanceProfileName(envName: string): string {
+  return `dlp-access-next-${envName}-eb`;
+}
+
+/** SSM parameter holding the environment's GraphQL API URL. */
+export function graphqlApiUrlParameterName(envName: string): string {
+  return `/dlp-access-next/${envName}/graphql-api-url`;
 }

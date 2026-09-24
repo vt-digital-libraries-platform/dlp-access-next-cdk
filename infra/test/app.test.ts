@@ -1,11 +1,16 @@
-import { App } from 'aws-cdk-lib';
+import * as fs from 'fs';
+import * as path from 'path';
+import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { buildApp } from '../lib/app';
 
 function synth(envName: string) {
-  const { data, api } = buildApp(new App(), envName);
-  return { data: Template.fromStack(data), api: Template.fromStack(api) };
+  const { data, api } = buildApp(new App(), { env: envName });
+  return { data: Template.fromStack(data!), api: Template.fromStack(api!) };
 }
+
+const stackNames = (app: App) =>
+  app.node.children.filter((c): c is Stack => c instanceof Stack).map((s) => s.stackName);
 
 const dev = synth('dev');
 const preProduction = synth('pre-production');
@@ -13,9 +18,10 @@ const feature = synth('f-search');
 
 describe('environment selection', () => {
   test('stacks are named after the environment', () => {
-    const { data, api } = buildApp(new App(), 'f-search');
-    expect(data.stackName).toBe('DlpAccessNext-f-search-Data');
-    expect(api.stackName).toBe('DlpAccessNext-f-search-Api');
+    const { data, api, web } = buildApp(new App(), { env: 'f-search' });
+    expect(web).toBeUndefined();
+    expect(data!.stackName).toBe('DlpAccessNext-f-search-Data');
+    expect(api!.stackName).toBe('DlpAccessNext-f-search-Api');
   });
 
   test.each([
@@ -25,7 +31,7 @@ describe('environment selection', () => {
     ['Dev', /Invalid environment name/],
     ['production', /no AWS account configured/],
   ])('rejects env %p', (envName, message) => {
-    expect(() => buildApp(new App(), envName)).toThrow(message);
+    expect(() => buildApp(new App(), { env: envName })).toThrow(message);
   });
 });
 
@@ -193,8 +199,93 @@ describe('API and Elastic Beanstalk access', () => {
     });
   });
 
+  test('publishes the API URL to SSM for Web stacks', () => {
+    const apiId = Object.keys(dev.api.findResources('AWS::AppSync::GraphQLApi'))[0];
+    dev.api.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: '/dlp-access-next/dev/graphql-api-url',
+      Value: { 'Fn::GetAtt': [apiId, 'GraphQLUrl'] },
+    });
+  });
+
   test('stack outputs what the Beanstalk config needs', () => {
     dev.api.hasOutput('GraphQLApiUrl', {});
     dev.api.hasOutput('EbInstanceProfileName', {});
+  });
+});
+
+describe('Web stack', () => {
+  test('attach deploys only the Web stack, named after the slugified branch', () => {
+    const app = new App();
+    const { data, api, web } = buildApp(app, { env: 'dev', branch: 'whunter/Multi_Env' });
+    expect(data).toBeUndefined();
+    expect(api).toBeUndefined();
+    expect(stackNames(app)).toEqual(['DlpAccessNext-Web-whunter-multi-env']);
+    expect(web!.dependencies).toHaveLength(0);
+  });
+
+  test('provision deploys Data and Api first', () => {
+    const app = new App();
+    const { api, web } = buildApp(app, { env: 'f-search', branch: 'search', backend: 'provision' });
+    expect(stackNames(app).sort()).toEqual([
+      'DlpAccessNext-Web-search',
+      'DlpAccessNext-f-search-Api',
+      'DlpAccessNext-f-search-Data',
+    ]);
+    expect(web!.dependencies).toContain(api);
+  });
+
+  test.each([
+    [{ env: 'dev', backend: 'attach' }, /only applies with -c branch/],
+    [{ env: 'dev', branch: 'x', backend: 'create' }, /Invalid backend "create"/],
+    [{ env: 'dev', branch: '///' }, /Invalid branch/],
+    [{ env: 'dev', branch: 'a'.repeat(33) }, /Invalid branch/],
+    [{ env: 'production', branch: 'x' }, /no AWS account configured/],
+  ])('rejects %p', (options, message) => {
+    expect(() => buildApp(new App(), options)).toThrow(message);
+  });
+
+  const attached = buildApp(new App(), { env: 'pre-production', branch: 'feature/search' }).web!;
+  const web = Template.fromStack(attached);
+  const option = (namespace: string, optionName: string, value: unknown) =>
+    Match.objectLike({ Namespace: namespace, OptionName: optionName, Value: value });
+
+  test('Node.js single-instance environment named after the branch', () => {
+    web.hasResourceProperties('AWS::ElasticBeanstalk::Application', { ApplicationName: 'dlpnext-feature-search' });
+    web.hasResourceProperties('AWS::ElasticBeanstalk::Environment', {
+      ApplicationName: 'dlpnext-feature-search',
+      EnvironmentName: 'dlpnext-feature-search',
+      SolutionStackName: Match.stringLikeRegexp('Amazon Linux 2023 .* running Node.js 24'),
+      OptionSettings: Match.arrayWith([
+        option('aws:elasticbeanstalk:environment', 'EnvironmentType', 'SingleInstance'),
+        option('aws:autoscaling:launchconfiguration', 'DisableIMDSv1', 'true'),
+        option('aws:ec2:instances', 'InstanceTypes', 't3.small'),
+      ]),
+    });
+  });
+
+  test('uses the environment instance profile and the API URL from SSM, not cross-stack exports', () => {
+    web.hasResourceProperties('AWS::ElasticBeanstalk::Environment', {
+      OptionSettings: Match.arrayWith([
+        option('aws:autoscaling:launchconfiguration', 'IamInstanceProfile', 'dlp-access-next-pre-production-eb'),
+        option('aws:elasticbeanstalk:application:environment', 'APPSYNC_API_URL', { Ref: Match.anyValue() }),
+      ]),
+    });
+    web.hasParameter('*', {
+      Type: 'AWS::SSM::Parameter::Value<String>',
+      Default: '/dlp-access-next/pre-production/graphql-api-url',
+    });
+    expect(JSON.stringify(web.toJSON())).not.toMatch(/Fn::ImportValue/);
+  });
+
+  test('source bundle is the app source without dependencies, infra or build output', () => {
+    const staged = path.join((attached.node.root as App).outdir, attached.sourceBundle.assetPath);
+    const entries = fs.readdirSync(staged);
+    expect(entries).toEqual(expect.arrayContaining(['package.json', 'package-lock.json', 'src', '.platform']));
+    for (const excluded of ['node_modules', '.next', '.git', 'infra', '.elasticbeanstalk', 'CLAUDE.md']) {
+      expect(entries).not.toContain(excluded);
+    }
+    expect(entries.filter((e) => e.startsWith('.env'))).toEqual([]);
+    const hook = fs.statSync(path.join(staged, '.platform', 'hooks', 'prebuild', '01_build.sh'));
+    expect(hook.mode & 0o111).not.toBe(0);
   });
 });

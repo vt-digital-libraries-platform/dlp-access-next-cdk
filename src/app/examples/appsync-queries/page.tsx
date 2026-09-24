@@ -31,7 +31,7 @@ export default async function AppSyncQueriesExamplePage() {
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
             Set the <code>APPSYNC_API_URL</code> environment variable to the{" "}
             <code>GraphQLApiUrl</code> output from{" "}
-            <code>DlpAccessNextAppSyncStack</code> (and optionally{" "}
+            <code>DlpAccessNext-<code>DlpAccessNextAppSyncStack</code> (and optionally{" "}lt;env<code>DlpAccessNextAppSyncStack</code> (and optionally{" "}gt;-Api</code> (and optionally{" "}
             <code>AWS_REGION</code>, default <code>us-east-1</code>) to run
             these queries.
           </div>

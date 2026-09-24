@@ -2,19 +2,69 @@ import { App } from 'aws-cdk-lib';
 import { ApiStack } from './api-stack';
 import { DataStack } from './data-stack';
 import { resolveEnvironment } from './environments';
+import { WebStack, branchSlug } from './web-stack';
 
-/** Adds one environment's Data and Api stacks to the app. */
-export function buildApp(app: App, envName: string | undefined): { data: DataStack; api: ApiStack } {
-  const config = resolveEnvironment(envName);
+/** CDK context, as passed with `-c env=... -c branch=... -c backend=...`. */
+export interface AppOptions {
+  readonly env?: string;
+  /** Git branch to deploy the Next.js app for. Omit to deploy only the environment. */
+  readonly branch?: string;
+  /**
+   * With a branch: `attach` (the default) deploys only the Web stack, onto
+   * the environment's already-deployed stacks. `provision` also deploys the
+   * environment's Data and Api stacks, before the Web stack.
+   */
+  readonly backend?: string;
+}
+
+export interface AppStacks {
+  readonly data?: DataStack;
+  readonly api?: ApiStack;
+  readonly web?: WebStack;
+}
+
+const BACKENDS = ['attach', 'provision'];
+
+/**
+ * Adds stacks to the app:
+ * - no branch: the environment's Data and Api stacks
+ * - branch, backend=attach: the branch's Web stack only
+ * - branch, backend=provision: Data, Api and Web
+ */
+export function buildApp(app: App, options: AppOptions): AppStacks {
+  const config = resolveEnvironment(options.env);
   const env = { account: config.account, region: config.region };
   const prefix = `DlpAccessNext-${config.name}`;
 
-  const data = new DataStack(app, `${prefix}-Data`, { env, config });
-  const api = new ApiStack(app, `${prefix}-Api`, {
-    env,
-    config,
-    tables: data.tables,
-    searchDomain: data.searchDomain,
-  });
-  return { data, api };
+  if (options.branch === undefined && options.backend !== undefined) {
+    throw new Error('-c backend only applies with -c branch=<git branch>');
+  }
+  const backend = options.backend ?? 'attach';
+  if (!BACKENDS.includes(backend)) {
+    throw new Error(`Invalid backend "${backend}": use ${BACKENDS.join(' or ')}`);
+  }
+
+  const provision = options.branch === undefined || backend === 'provision';
+  let data: DataStack | undefined;
+  let api: ApiStack | undefined;
+  if (provision) {
+    data = new DataStack(app, `${prefix}-Data`, { env, config });
+    api = new ApiStack(app, `${prefix}-Api`, {
+      env,
+      config,
+      tables: data.tables,
+      searchDomain: data.searchDomain,
+    });
+  }
+
+  let web: WebStack | undefined;
+  if (options.branch !== undefined) {
+    const branch = branchSlug(options.branch);
+    web = new WebStack(app, `DlpAccessNext-Web-${branch}`, { env, config, branch });
+    // The Web stack reads the API URL from the SSM parameter the Api stack
+    // writes, so it must deploy after it.
+    if (api) web.addStackDependency(api);
+  }
+
+  return { data, api, web };
 }

@@ -7,8 +7,9 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { DynamoEventSource, SqsDlq } from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as opensearch from 'aws-cdk-lib/aws-opensearchservice';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
-import { EnvironmentConfig } from './environments';
+import { EnvironmentConfig, ebInstanceProfileName, graphqlApiUrlParameterName } from './environments';
 import { LIST_QUERY_FIELD, MODELS, ModelName, SEARCHABLE_MODELS } from './models';
 import {
   getByIdCode,
@@ -210,7 +211,7 @@ export class ApiStack extends Stack {
     // of the Next.js app in that environment. Carries the same managed
     // policies as the default aws-elasticbeanstalk-ec2-role, plus ECR read
     // for the Docker platform.
-    const ebRoleName = `dlp-access-next-${config.name}-eb`;
+    const ebRoleName = ebInstanceProfileName(config.name);
     const ebRole = new iam.Role(this, 'EbInstanceRole', {
       roleName: ebRoleName,
       assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
@@ -226,6 +227,13 @@ export class ApiStack extends Stack {
       role: ebRole,
     });
     api.grant(ebRole, appsync.IamResource.all(), 'appsync:GraphQL');
+
+    // Web stacks read the URL from here, so they can attach to an
+    // environment without a cross-stack reference to this stack.
+    new ssm.StringParameter(this, 'GraphQLApiUrlParameter', {
+      parameterName: graphqlApiUrlParameterName(config.name),
+      stringValue: api.graphqlUrl,
+    });
 
     new CfnOutput(this, 'GraphQLApiId', { value: api.apiId });
     new CfnOutput(this, 'GraphQLApiUrl', { value: api.graphqlUrl });
