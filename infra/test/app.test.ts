@@ -4,8 +4,10 @@ import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { buildApp } from '../lib/app';
 
+const account = '123456789012';
+
 function synth(envName: string) {
-  const { data, api } = buildApp(new App(), { env: envName });
+  const { data, api } = buildApp(new App(), { env: envName, account });
   return { data: Template.fromStack(data!), api: Template.fromStack(api!) };
 }
 
@@ -18,7 +20,7 @@ const feature = synth('f-search');
 
 describe('environment selection', () => {
   test('stacks are named after the environment', () => {
-    const { data, api, web } = buildApp(new App(), { env: 'f-search' });
+    const { data, api, web } = buildApp(new App(), { env: 'f-search', account });
     expect(web).toBeUndefined();
     expect(data!.stackName).toBe('DlpAccessNext-f-search-Data');
     expect(api!.stackName).toBe('DlpAccessNext-f-search-Api');
@@ -29,9 +31,21 @@ describe('environment selection', () => {
     ['staging', /Unknown environment "staging"/],
     ['f-this-name-is-far-too-long', /Invalid environment name/],
     ['Dev', /Invalid environment name/],
-    ['production', /no AWS account configured/],
   ])('rejects env %p', (envName, message) => {
-    expect(() => buildApp(new App(), { env: envName })).toThrow(message);
+    expect(() => buildApp(new App(), { env: envName, account })).toThrow(message);
+  });
+
+  test('production uses the account passed in', () => {
+    const { data } = buildApp(new App(), { env: 'production', account });
+    expect(data!.account).toBe(account);
+  });
+
+  test.each([
+    [undefined, /Missing CDK context: pass -c account/],
+    ['12345', /Invalid account "12345"/],
+    ['12345678901x', /Invalid account/],
+  ])('rejects account %p', (badAccount, message) => {
+    expect(() => buildApp(new App(), { env: 'dev', account: badAccount })).toThrow(message);
   });
 });
 
@@ -216,7 +230,7 @@ describe('API and Elastic Beanstalk access', () => {
 describe('Web stack', () => {
   test('attach deploys only the Web stack, named after the slugified branch', () => {
     const app = new App();
-    const { data, api, web } = buildApp(app, { env: 'dev', branch: 'whunter/Multi_Env' });
+    const { data, api, web } = buildApp(app, { env: 'dev', account, branch: 'whunter/Multi_Env' });
     expect(data).toBeUndefined();
     expect(api).toBeUndefined();
     expect(stackNames(app)).toEqual(['DlpAccessNext-Web-whunter-multi-env']);
@@ -225,7 +239,7 @@ describe('Web stack', () => {
 
   test('provision deploys Data and Api first', () => {
     const app = new App();
-    const { api, web } = buildApp(app, { env: 'f-search', branch: 'search', backend: 'provision' });
+    const { api, web } = buildApp(app, { env: 'f-search', account, branch: 'search', backend: 'provision' });
     expect(stackNames(app).sort()).toEqual([
       'DlpAccessNext-Web-search',
       'DlpAccessNext-f-search-Api',
@@ -239,12 +253,11 @@ describe('Web stack', () => {
     [{ env: 'dev', branch: 'x', backend: 'create' }, /Invalid backend "create"/],
     [{ env: 'dev', branch: '///' }, /Invalid branch/],
     [{ env: 'dev', branch: 'a'.repeat(33) }, /Invalid branch/],
-    [{ env: 'production', branch: 'x' }, /no AWS account configured/],
   ])('rejects %p', (options, message) => {
-    expect(() => buildApp(new App(), options)).toThrow(message);
+    expect(() => buildApp(new App(), { account, ...options })).toThrow(message);
   });
 
-  const attached = buildApp(new App(), { env: 'pre-production', branch: 'feature/search' }).web!;
+  const attached = buildApp(new App(), { env: 'pre-production', account, branch: 'feature/search' }).web!;
   const web = Template.fromStack(attached);
   const option = (namespace: string, optionName: string, value: unknown) =>
     Match.objectLike({ Namespace: namespace, OptionName: optionName, Value: value });

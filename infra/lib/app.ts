@@ -4,9 +4,11 @@ import { DataStack } from './data-stack';
 import { resolveEnvironment } from './environments';
 import { WebStack, branchSlug } from './web-stack';
 
-/** CDK context, as passed with `-c env=... -c branch=... -c backend=...`. */
+/** CDK context, as passed with `-c env=... -c account=... -c branch=... -c backend=...`. */
 export interface AppOptions {
   readonly env?: string;
+  /** AWS account ID to deploy the environment's stacks to. */
+  readonly account?: string;
   /** Git branch to deploy the Next.js app for. Omit to deploy only the environment. */
   readonly branch?: string;
   /**
@@ -24,6 +26,7 @@ export interface AppStacks {
 }
 
 const BACKENDS = ['attach', 'provision'];
+const ACCOUNT_PATTERN = /^\d{12}$/;
 
 /**
  * Adds stacks to the app:
@@ -33,7 +36,13 @@ const BACKENDS = ['attach', 'provision'];
  */
 export function buildApp(app: App, options: AppOptions): AppStacks {
   const config = resolveEnvironment(options.env);
-  const env = { account: config.account, region: config.region };
+  if (options.account === undefined) {
+    throw new Error('Missing CDK context: pass -c account=<AWS account ID>');
+  }
+  if (!ACCOUNT_PATTERN.test(options.account)) {
+    throw new Error(`Invalid account "${options.account}": use a 12-digit AWS account ID`);
+  }
+  const env = { account: options.account, region: config.region };
   const prefix = `DlpAccessNext-${config.name}`;
 
   if (options.branch === undefined && options.backend !== undefined) {
@@ -63,7 +72,9 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
     web = new WebStack(app, `DlpAccessNext-Web-${branch}`, { env, config, branch });
     // The Web stack reads the API URL from the SSM parameter the Api stack
     // writes, so it must deploy after it.
-    if (api) web.addStackDependency(api);
+    if (api) {
+      web.addStackDependency(api);
+    }
   }
 
   return { data, api, web };

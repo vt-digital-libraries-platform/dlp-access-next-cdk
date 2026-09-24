@@ -7,7 +7,6 @@ import { RemovalPolicy } from 'aws-cdk-lib';
 export interface EnvironmentConfig {
   /** Environment name as passed with `-c env=<name>`. */
   readonly name: string;
-  readonly account: string;
   readonly region: string;
   readonly search: {
     readonly instanceType: string;
@@ -27,9 +26,6 @@ export interface EnvironmentConfig {
   readonly removalPolicy: RemovalPolicy;
 }
 
-const DEV_ACCOUNT = '226388486048';
-const PRODUCTION_ACCOUNT_PLACEHOLDER = 'PRODUCTION_ACCOUNT_ID';
-
 const SMALL_SEARCH: EnvironmentConfig['search'] = {
   instanceType: 't3.small.search',
   dataNodes: 1,
@@ -43,22 +39,18 @@ type Settings = Omit<EnvironmentConfig, 'name'>;
 
 const ENVIRONMENTS: Record<string, Settings> = {
   dev: {
-    account: DEV_ACCOUNT,
     region: 'us-east-1',
     search: SMALL_SEARCH,
     web: SMALL_WEB,
     removalPolicy: RemovalPolicy.RETAIN,
   },
   'pre-production': {
-    account: DEV_ACCOUNT,
     region: 'us-east-1',
     search: SMALL_SEARCH,
     web: SMALL_WEB,
     removalPolicy: RemovalPolicy.RETAIN,
   },
   production: {
-    // Separate AWS account. Fill in before the first production deploy.
-    account: PRODUCTION_ACCOUNT_PLACEHOLDER,
     region: 'us-east-1',
     search: {
       instanceType: 'm7g.medium.search',
@@ -101,9 +93,6 @@ export function resolveEnvironment(name: string | undefined): EnvironmentConfig 
     throw new Error(
       `Unknown environment "${name}": use one of ${Object.keys(ENVIRONMENTS).join(', ')} or ${FEATURE_PREFIX}<slug> for a feature environment`,
     );
-  }
-  if (settings.account === PRODUCTION_ACCOUNT_PLACEHOLDER) {
-    throw new Error(`Environment "${name}" has no AWS account configured yet (see lib/environments.ts)`);
   }
   return { name, ...settings };
 }
