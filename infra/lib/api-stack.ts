@@ -1,10 +1,15 @@
 import * as path from 'path';
-import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
+import { Stack, StackProps, CfnOutput, Duration } from 'aws-cdk-lib';
 import * as appsync from 'aws-cdk-lib/aws-appsync';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { DynamoEventSource, SqsDlq } from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as opensearch from 'aws-cdk-lib/aws-opensearchservice';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
+import { EnvironmentConfig } from './environments';
+import { LIST_QUERY_FIELD, MODELS, ModelName, SEARCHABLE_MODELS } from './models';
 import {
   getByIdCode,
   listScanCode,
@@ -14,71 +19,27 @@ import {
   openSearchQueryCode,
 } from './resolvers';
 
-export interface AppSyncStackProps extends StackProps {
-  /**
-   * Suffix Amplify appended to each of its DynamoDB table names
-   * (`<Model>-<suffix>`), e.g. "bxbkjhe235e3jcwcjcji5txvlm-vtdlpdev" for the
-   * vtdlpdev environment. Swap this per environment via CDK context
-   * (`-c tableSuffix=...`) once a prod deployment is needed.
-   */
-  readonly tableSuffix: string;
-  /**
-   * Name of the existing IAM role used as the Elastic Beanstalk EC2 instance
-   * profile role for the dlp-access-next app, which will be granted
-   * `appsync:GraphQL` access to this API.
-   */
-  readonly ebInstanceRoleName: string;
-  /**
-   * Endpoint of the existing OpenSearch domain holding the `archive` and
-   * `collection` indices (e.g. "search-xyz.us-east-1.es.amazonaws.com", with
-   * or without https://). Passed via CDK context: `-c openSearchDomainEndpoint=...`.
-   */
-  readonly openSearchDomainEndpoint: string;
+export interface ApiStackProps extends StackProps {
+  readonly config: EnvironmentConfig;
+  /** The environment's tables, from its Data stack. */
+  readonly tables: Record<ModelName, dynamodb.ITable>;
+  /** The environment's OpenSearch domain, from its Data stack. */
+  readonly searchDomain: opensearch.IDomain;
 }
 
-const MODELS = [
-  'Archive',
-  'Collection',
-  'Site',
-  'Partner',
-  'History',
-  'MetadataField',
-  'PageContent',
-] as const;
-type ModelName = (typeof MODELS)[number];
-
-// `list${model}s` is right for every model except History, whose Amplify
-// (and this schema's) query field is the properly pluralized `listHistories`.
-const LIST_QUERY_FIELD: Record<ModelName, string> = {
-  Archive: 'listArchives',
-  Collection: 'listCollections',
-  Site: 'listSites',
-  Partner: 'listPartners',
-  History: 'listHistories',
-  MetadataField: 'listMetadataFields',
-  PageContent: 'listPageContents',
-};
-
-// GSIs each model's DynamoDB data source role needs `dynamodb:Query` on.
-// Table.fromTableAttributes() only grants access to these index ARNs when
-// they're listed here (see `globalIndexes` below) — without it, grantReadData()
-// only covers the base table, and Query calls against a GSI are denied.
-const GLOBAL_INDEXES: Record<ModelName, string[]> = {
-  Archive: ['Identifier', 'gsi-Collection.archives'],
-  Collection: ['Identifier'],
-  Site: ['SiteId'],
-  Partner: ['Identifier'],
-  History: [],
-  MetadataField: [],
-  PageContent: [],
-};
-
-export class AppSyncStack extends Stack {
-  constructor(scope: Construct, id: string, props: AppSyncStackProps) {
+/**
+ * The stateless half of an environment: the AppSync API over the Data
+ * stack's tables and domain, the Lambda that streams Archive and Collection
+ * changes into OpenSearch, and the Elastic Beanstalk instance role that is
+ * allowed to call the API.
+ */
+export class ApiStack extends Stack {
+  constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
+    const { config, tables, searchDomain } = props;
 
     const api = new appsync.GraphqlApi(this, 'VtdlpApi', {
-      name: 'dlp-access-next-vtdlp',
+      name: `dlp-access-next-${config.name}`,
       definition: appsync.Definition.fromFile(path.join(__dirname, '..', 'schema', 'schema.graphql')),
       authorizationConfig: {
         defaultAuthorization: {
@@ -90,19 +51,6 @@ export class AppSyncStack extends Stack {
       },
       xrayEnabled: true,
     });
-
-    // Import the existing Amplify-provisioned DynamoDB tables rather than
-    // creating new ones, so this API reads the same data as the vtdlp app.
-    const tables: Record<ModelName, dynamodb.ITable> = MODELS.reduce(
-      (acc, model) => {
-        acc[model] = dynamodb.Table.fromTableAttributes(this, `${model}Table`, {
-          tableName: `${model}-${props.tableSuffix}`,
-          globalIndexes: GLOBAL_INDEXES[model],
-        });
-        return acc;
-      },
-      {} as Record<ModelName, dynamodb.ITable>,
-    );
 
     const dataSources: Record<ModelName, appsync.DynamoDbDataSource> = MODELS.reduce(
       (acc, model) => {
@@ -176,23 +124,7 @@ export class AppSyncStack extends Stack {
       hasOneCode('pageContentPageContentSiteIdId'),
     );
 
-    // --- Full-text search (existing OpenSearch domain) --------------------
-    // The domain's own access policy (or fine-grained access control role
-    // mapping) must also allow this data source's service role to call
-    // es:ESHttpGet on the archive/collection indices.
-    // Endpoints look like search-<domainName>-<26-char id>.<region>.es.amazonaws.com.
-    // Domain.fromDomainEndpoint mis-derives the name (keeps "search-"), which
-    // makes the IAM grant target the wrong ARN, so build the ARN explicitly.
-    const endpointHost = props.openSearchDomainEndpoint.replace(/^https?:\/\//, '');
-    const endpointMatch = /^search-(.+)-[a-z0-9]{26}\.([a-z0-9-]+)\.es\.amazonaws\.com$/.exec(endpointHost);
-    if (!endpointMatch) {
-      throw new Error(`Unrecognized OpenSearch domain endpoint: ${props.openSearchDomainEndpoint}`);
-    }
-    const [, searchDomainName, searchDomainRegion] = endpointMatch;
-    const searchDomain = opensearch.Domain.fromDomainAttributes(this, 'SearchDomain', {
-      domainArn: `arn:${this.partition}:es:${searchDomainRegion}:${this.account}:domain/${searchDomainName}`,
-      domainEndpoint: endpointHost,
-    });
+    // --- Full-text search ------------------------------------------------
     const searchDataSource = api.addOpenSearchDataSource('OpenSearchDataSource', searchDomain);
 
     jsResolver(
@@ -236,12 +168,69 @@ export class AppSyncStack extends Stack {
       }),
     );
 
+    // --- OpenSearch streaming ----------------------------------------------
+    // Amplify's streaming function, moved to a supported runtime. It indexes
+    // each Archive/Collection change into the index named after the table.
+    const streamingFailures = new sqs.Queue(this, 'OpenSearchStreamingFailures', {
+      retentionPeriod: Duration.days(14),
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+    });
+    const streamingFn = new lambda.Function(this, 'OpenSearchStreamingFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'python_streaming_function.lambda_handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '..', 'lambda', 'opensearch-streaming'), {
+        exclude: ['tests', '__pycache__', '.pytest_cache'],
+      }),
+      timeout: Duration.seconds(30),
+      memorySize: 128,
+      environment: {
+        OPENSEARCH_ENDPOINT: `https://${searchDomain.domainEndpoint}`,
+        OPENSEARCH_REGION: this.region,
+        DEBUG: '0',
+        OPENSEARCH_USE_EXTERNAL_VERSIONING: 'false',
+      },
+    });
+    searchDomain.grantPathReadWrite('_bulk', streamingFn);
+    for (const model of SEARCHABLE_MODELS) {
+      searchDomain.grantIndexReadWrite(model.toLowerCase(), streamingFn);
+      streamingFn.addEventSource(
+        new DynamoEventSource(tables[model], {
+          startingPosition: lambda.StartingPosition.LATEST,
+          batchSize: 100,
+          maxBatchingWindow: Duration.seconds(1),
+          retryAttempts: 3,
+          bisectBatchOnError: true,
+          onFailure: new SqsDlq(streamingFailures),
+        }),
+      );
+    }
+
     // --- IAM auth for the Elastic Beanstalk app -----------------------------
-    const ebRole = iam.Role.fromRoleName(this, 'EbInstanceRole', props.ebInstanceRoleName);
+    // One instance role per environment, shared by every branch deployment
+    // of the Next.js app in that environment. Carries the same managed
+    // policies as the default aws-elasticbeanstalk-ec2-role, plus ECR read
+    // for the Docker platform.
+    const ebRoleName = `dlp-access-next-${config.name}-eb`;
+    const ebRole = new iam.Role(this, 'EbInstanceRole', {
+      roleName: ebRoleName,
+      assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+      managedPolicies: [
+        'AWSElasticBeanstalkWebTier',
+        'AWSElasticBeanstalkMulticontainerDocker',
+        'AWSElasticBeanstalkWorkerTier',
+        'AmazonEC2ContainerRegistryReadOnly',
+      ].map((name) => iam.ManagedPolicy.fromAwsManagedPolicyName(name)),
+    });
+    const ebInstanceProfile = new iam.InstanceProfile(this, 'EbInstanceProfile', {
+      instanceProfileName: ebRoleName,
+      role: ebRole,
+    });
     api.grant(ebRole, appsync.IamResource.all(), 'appsync:GraphQL');
 
     new CfnOutput(this, 'GraphQLApiId', { value: api.apiId });
     new CfnOutput(this, 'GraphQLApiUrl', { value: api.graphqlUrl });
     new CfnOutput(this, 'GraphQLApiArn', { value: api.arn });
+    new CfnOutput(this, 'EbInstanceProfileName', { value: ebInstanceProfile.instanceProfileName });
+    new CfnOutput(this, 'OpenSearchStreamingFailureQueueUrl', { value: streamingFailures.queueUrl });
   }
 }

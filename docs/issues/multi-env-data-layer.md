@@ -46,7 +46,7 @@ Amplify stays live alongside this work, and the new environments are separate da
 15. As a DLP developer, I want search indices to use dynamic mapping as vtdlpdev does today, so that the `.keyword` sort fields and the typed `visibility` and `start_date` fields behave the same as in Amplify.
 16. As a DLP developer, I want the search domain on a current OpenSearch 2.x engine, so that new domains aren't built on a legacy engine.
 17. As a DLP operator, I want encryption at rest, node-to-node encryption, enforced HTTPS and TLS 1.2 on every search domain, so that the new environments are more secure than the Amplify ones they replace.
-18. As a DLP operator, I want only the streaming Lambda and the API's search data source allowed through the search domain's resource policy, so that nothing else in the account can read or write the indices.
+18. As a DLP operator, I want search domain access granted only through IAM on the roles that need it (the streaming Lambda, the API's search data source and the index-template installer), so that no broad resource policy opens the indices to other principals.
 19. As a DLP operator, I want `dev`, feature and `pre-production` search domains to run on a single small node with no replicas, so that non-production environments are cheap and report healthy (green) status.
 20. As a DLP operator, I want `production` search to run on two nodes across two availability zones with one replica, so that production search survives the loss of a node or an AZ.
 21. As a curator adding or editing an Archive, I want the change to show up in search shortly after it is written, so that search results match the catalog.
@@ -71,7 +71,7 @@ Amplify stays live alongside this work, and the new environments are separate da
 
 ## Implementation Decisions
 
-- **Environment selection.** Pass the environment name as a CDK context value (`env`). A typed configuration map, keyed by environment name, holds each environment's account, region, search sizing (instance type, node count, AZ count, replicas, volume size and type) and data-protection settings (removal policy, deletion protection, PITR). Environment names not in the map are rejected, except that feature environments are allowed as a known class of short slug names that inherit `dev` settings. Environment names are limited to 20 characters so that the domain name fits OpenSearch's 28-character limit.
+- **Environment selection.** Pass the environment name as a CDK context value (`env`). A typed configuration map, keyed by environment name, holds each environment's account, region, search sizing (instance type, node count, AZ count, replicas, volume size and type) and data-protection settings (removal policy, deletion protection, PITR). Environment names not in the map are rejected, except that feature environments (names prefixed `f-`) are allowed and inherit `dev` settings. Environment names are limited to 20 characters so that the domain name fits OpenSearch's 28-character limit.
 - **Accounts.** `dev`, `pre-production` and feature environments deploy to the current development account, 226388486048 in us-east-1. `production` is in a separate account; its entry holds a placeholder account ID that throws at synthesis time until filled in. Production is not touched in this work.
 - **Two stacks per environment.** `DlpAccessNext-<env>-Data` owns the seven tables and the search domain. `DlpAccessNext-<env>-Api` owns the AppSync API, data sources, resolvers, the streaming Lambda with its event-source mappings and failure queue, and the Elastic Beanstalk instance role and profile. The Api stack uses resources from the Data stack.
 - **Tables.** Archive, Collection, Site, Partner, History, MetadataField and PageContent, named `<Model>-dlpnext-<env>`, which keeps the handler's rule of deriving the index from the table name's first `-` segment. Each has a string hash key `id`, streams with `NEW_AND_OLD_IMAGES` and on-demand billing, and is encrypted with the AWS-owned key. GSIs, each projecting `ALL`:
@@ -80,13 +80,14 @@ Amplify stays live alongside this work, and the new environments are separate da
   - `SiteId` (hash `siteId`) on Site
 
   These match the live vtdlpdev tables. The existing per-model tables of model names, list-query field names and GSI names stay the single source for wiring resolvers.
-- **Search domain.** Named `dlpnext-<env>`. Latest OpenSearch 2.x engine, with encryption at rest, node-to-node encryption, enforced HTTPS and TLS 1.2 minimum. It has no fine-grained access control. Its resource policy allows only the streaming Lambda role and the AppSync OpenSearch data source role. No index templates or explicit mappings are created, so indices are created on first write with dynamic mapping, as in vtdlpdev.
+- **Search domain.** Named `dlpnext-<env>`. Latest OpenSearch 2.x engine, with encryption at rest, node-to-node encryption, enforced HTTPS and TLS 1.2 minimum. It has no fine-grained access control. It has no resource policy. Access comes from IAM identity grants on the streaming Lambda, the AppSync OpenSearch data source and the index-template installer. (Changed during implementation: in the same account, an Allow-only resource policy doesn't restrict other principals, and naming Api-stack roles in the Data stack's policy creates a cross-stack cycle.) No explicit mappings are created, so indices are created on first write with dynamic mapping, as in vtdlpdev. A custom resource installs one index template for `archive` and `collection` that sets only `index.auto_expand_replicas: 0-1`: 0 replicas on one node (green) and 1 on two or more. Replica count is therefore not a per-environment setting.
 - **Sizing.** `dev`, feature and `pre-production`: 1 × `t3.small.search`, 10 GB gp3, 0 replicas. `production`: 2 × `m7g.medium.search` across 2 AZs, 1 replica, to be revisited against the real production domain before production is deployed. `t2.small` is not used because it doesn't support encryption at rest.
 - **Data protection.** `pre-production` and `production`: tables and domain use RETAIN, and tables have deletion protection and PITR on. `dev` and feature environments: DESTROY, with deletion protection and PITR off.
 - **Streaming Lambda.** Amplify's Python streaming function is copied into the repo and changed only to:
   - run on python3.12
   - drop the boto3 that was bundled into the zip, since the runtime provides it
   - stop sending the `_type` field in bulk actions, which OpenSearch 2.x rejects
+  - re-raise errors after logging them, and skip batches with nothing to send. Amplify's version swallowed every exception, so the retry, bisect and failure-queue settings would never have triggered, and an empty bulk request would now fail.
 
   Its environment variables (endpoint, region, debug flag, external-versioning flag set to false) and indexing behavior (index from the table name, compound document ID from the keys, index on INSERT and MODIFY, delete on REMOVE) are kept. The timeout is 30 s and memory stays at 128 MB.
 - **Event-source mappings.** Archive and Collection streams only, not Partner. Batch size 100, 1 s batching window, starting position `LATEST`, 3 retries, bisect-batch-on-error, and an SQS on-failure destination per environment.
@@ -107,7 +108,7 @@ Amplify stays live alongside this work, and the new environments are separate da
   - event-source mappings on the Archive and Collection streams only, with retry, bisect and on-failure settings
   - the Lambda's runtime and timeout
   - the Elastic Beanstalk role's `appsync:GraphQL` grant scoped to that environment's API
-  - the domain resource policy's allowed principals
+  - the domain having no resource policy, and the index template targeting `archive` and `collection`
   - `production` failing to synthesize with a placeholder account
   - names that are unknown or too long being rejected
 - **Seam B: the streaming handler's entry point.** pytest drives the handler with hand-built DynamoDB stream events (INSERT, MODIFY, REMOVE, for Archive and Collection table names following the new naming pattern) and replaces the outbound signed HTTP call with a stub that captures the request. Assertions cover the target index name, the document ID, the absence of `_type`, the document body, and delete actions on REMOVE.

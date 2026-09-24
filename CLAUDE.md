@@ -7,31 +7,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Two independent npm projects, each with its own `package.json` and `node_modules`:
 
 - **Root**: Next.js 16 / React 19 app (App Router, Tailwind 4). Deployed to Elastic Beanstalk (`.elasticbeanstalk/`, `.platform/`, PR-preview workflows in `.github/workflows/`).
-- **`infra/`**: CDK v2 (TypeScript) stack `DlpAccessNextAppSyncStack`. It builds an AppSync GraphQL API over the *existing* Amplify-provisioned DynamoDB tables and OpenSearch domain. It creates no tables or domains of its own.
+- **`infra/`**: CDK v2 (TypeScript). Each environment gets two stacks. `DlpAccessNext-<env>-Data` holds the DynamoDB tables and the OpenSearch domain. `DlpAccessNext-<env>-Api` holds the AppSync API, the Lambda that streams table changes to OpenSearch, and the environment's Elastic Beanstalk instance role. The Amplify apps still run separately with their own data. The spec is `docs/issues/multi-env-data-layer.md`.
 
 ## Commands
 
-Root: `npm run dev`, `npm run build`, `npm run lint`, `npx tsc --noEmit`. There is no test suite.
+Root: `npm run dev`, `npm run build`, `npm run lint`, `npx tsc --noEmit`. The root app has no test suite.
 
 CDK: run everything from `infra/`, or `--app is required` is raised.
 
 ```bash
 cd infra
-npx cdk synth   -c openSearchDomainEndpoint=<endpoint>
-npx cdk deploy  -c openSearchDomainEndpoint=<endpoint>
+npx cdk synth  --all -c env=dev
+npx cdk deploy --all -c env=dev
+npm test                 # Jest: assertions on each environment's synthesized templates
+npm run test:lambda      # pytest: streaming handler (one-time setup: python3 -m venv .venv && .venv/bin/pip install -r lambda/requirements-dev.txt)
 ```
 
-- `openSearchDomainEndpoint` is a required context value (`bin/appsync.ts` throws without it). Use the domain's endpoint host, not its name.
-- Optional context: `tableSuffix` (default `bxbkjhe235e3jcwcjcji5txvlm-vtdlpdev`, the vtdlpdev Amplify env) and `ebInstanceRoleName`.
+- `env` is required. Allowed values are `dev`, `pre-production`, `production`, or `f-<slug>` for a feature environment, which uses dev's settings. Names are lowercase and at most 20 characters, because the domain is `dlpnext-<env>` and OpenSearch allows 28. Per-environment settings (account, sizing, removal policy) live in `infra/lib/environments.ts`.
+- `production` is in a separate AWS account. Its account ID is a placeholder, so synthesizing it throws until the ID is filled in.
+- `dev` and feature environments delete their data when their stacks are destroyed. `pre-production` and `production` keep their tables and domain, and turn on table deletion protection and PITR.
 - Deploys are user-run (the auto-mode classifier blocks Claude from running them); hand the user the command to run with `!`.
 
-The Next.js server needs `APPSYNC_API_URL` set to the stack's `GraphQLApiUrl` output.
+The Next.js server needs `APPSYNC_API_URL` set to the Api stack's `GraphQLApiUrl` output. The environment's Beanstalk configuration template must use the `EbInstanceProfileName` output (`dlp-access-next-<env>-eb`) as its instance profile.
 
 ## Architecture
 
 - **Schema is the source of truth**: `infra/schema/schema.graphql`. It is read-only (Query only, no Mutation/Subscription), and Archive/Collection are searchable through `fulltextArchives`, `fulltextCollections` and `searchObjects` (returns `[CatalogItem]`).
-- **Resolvers are generated code strings**: `infra/lib/resolvers.ts` has generators (`getByIdCode`, `listScanCode`, `queryByIndexCode`, `hasOneCode`, `hasManyCode`, `openSearchQueryCode`) that emit APPSYNC_JS 1.0.0 source. `infra/lib/appsync-stack.ts` wires them to data sources per model via `MODELS`, `LIST_QUERY_FIELD` and `GLOBAL_INDEXES`. Adding a model means updating the schema plus those tables.
-- **Auth is IAM only**. The Elastic Beanstalk instance role is granted `appsync:GraphQL`. The Next.js side signs requests with SigV4 in `src/lib/appsync.ts` (`aws4fetch` plus the Node credential chain), so it must only run server-side.
+- **Resolvers are generated code strings**: `infra/lib/resolvers.ts` has generators (`getByIdCode`, `listScanCode`, `queryByIndexCode`, `hasOneCode`, `hasManyCode`, `openSearchQueryCode`) that emit APPSYNC_JS 1.0.0 source. `infra/lib/api-stack.ts` wires them to data sources. The model list, list-query names and GSIs are in `infra/lib/models.ts` (`MODELS`, `LIST_QUERY_FIELD`, `GLOBAL_INDEXES`), which the Data stack also uses to create the tables. Adding a model means updating the schema and `models.ts`.
+- **Tables and search copy the vtdlpdev Amplify resources**. Tables are named `<Model>-dlpnext-<env>`, with hash key `id`, the same GSIs and `NEW_AND_OLD_IMAGES` streams. The streaming handler (`infra/lambda/opensearch-streaming/`, Amplify's Python function) names the index after the table name's first `-` segment, lowercased, so table names must start with `<Model>-`. Only Archive and Collection are streamed. Indices use dynamic mapping; an index-template custom resource sets only `auto_expand_replicas: 0-1`.
+- **Streaming failures**: the handler re-raises errors (Amplify's version swallowed them). The event source mapping then retries 3 times, bisects the batch, and sends records that still fail to the `OpenSearchStreamingFailureQueueUrl` SQS queue. Rows written before the Api stack existed are never indexed (the stream starts at `LATEST`).
+- **Auth is IAM only**. Each environment's own Elastic Beanstalk instance role (`dlp-access-next-<env>-eb`) is granted `appsync:GraphQL`. The OpenSearch domain has no resource policy, so access comes only from the IAM grants on the roles that need it. The Next.js side signs requests with SigV4 in `src/lib/appsync.ts` (`aws4fetch` plus the Node credential chain), so it must only run server-side.
 - **Demo page**: `src/app/examples/appsync-queries/` runs every query in the schema. The `list*` results seed the arguments for the `get*`, `*ByIdentifier` and search queries. Empty tables produce "skipped" entries instead of failures.
 
 ## AppSync JS runtime gotchas
@@ -40,4 +45,3 @@ The Next.js server needs `APPSYNC_API_URL` set to the stack's `GraphQLApiUrl` ou
 - `util.transform.toElasticsearchQueryDSL` returns a JSON *string*; wrap it in `JSON.parse`.
 - Results typed as an interface (`CatalogItem`) need `__typename` set on each item. A Collection is identified by `collection_category`, otherwise it is an Archive.
 - OpenSearch paging uses `search_after` sorted on `<field>.keyword` (except `visibility` and `start_date`). Total hits cap at 10000, as in Amplify.
-- Import the OpenSearch domain with `Domain.fromDomainAttributes` and an explicit ARN. `Domain.fromDomainEndpoint` mis-derives the name (it keeps the `search-` prefix), which grants IAM on the wrong ARN and causes 403s at query time.

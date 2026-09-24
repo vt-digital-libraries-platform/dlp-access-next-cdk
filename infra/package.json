@@ -5,11 +5,16 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
-    "cdk": "cdk"
+    "cdk": "cdk",
+    "test": "jest",
+    "test:lambda": ".venv/bin/pytest lambda"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.14.0",
     "aws-cdk": "^2.1135.0",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.13",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.4"
   },
