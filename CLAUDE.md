@@ -19,9 +19,9 @@ CDK: run everything from `infra/`, or `--app is required` is raised.
 cd infra
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 npx cdk synth  --all -c env=dev -c account=$ACCOUNT
-npx cdk deploy --all -c env=dev -c account=$ACCOUNT
-npx cdk deploy --all -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current)                          # Web stack on the existing dev stacks
-npx cdk deploy --all -c env=f-search -c account=$ACCOUNT -c branch=$(git branch --show-current) -c backend=provision # also deploys f-search's Data and Api
+npm run deploy -- -c env=dev -c account=$ACCOUNT                                                                  # confirms, then cdk deploy --all
+npm run deploy -- -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current)                          # Web stack on the existing dev stacks
+npm run deploy -- -c env=f-search -c account=$ACCOUNT -c branch=$(git branch --show-current) -c backend=provision # also deploys f-search's Data and Api
 npm test                 # Jest: assertions on each environment's synthesized templates
 npm run test:lambda      # pytest: streaming handler (one-time setup: python3 -m venv .venv && .venv/bin/pip install -r lambda/requirements-dev.txt)
 ```
@@ -31,7 +31,8 @@ npm run test:lambda      # pytest: streaming handler (one-time setup: python3 -m
 - `production` is an optional boolean (`-c production=true`, default false) that picks the sizing, independently of `env`: false gives one `t3.small.search` node and a `t3.small` Beanstalk instance; true gives three `m7g.medium.search` nodes across three AZs and a `t3.medium` instance. `-c env=production` without it gets the small sizing.
 - Only feature environments (`f-<slug>`) delete their data when their stacks are destroyed. `dev`, `pre-production` and `production` keep their tables and domain, and turn on table deletion protection and PITR.
 - `-c branch` adds a Web stack. The branch name is slugified (`whunter/Multi_Env` becomes `whunter-multi-env`); the Beanstalk application and environment are named `dlpnext-<slug>`, so the slug can be at most 32 characters. With `-c backend=attach` (the default), the app contains only the Web stack, and the environment's Api stack must already be deployed; otherwise the deploy fails with "Unable to fetch parameters". With `-c backend=provision`, the app also contains the environment's Data and Api stacks, and the Web stack deploys after them. Deploying the same branch with a different `env` repoints its existing Web stack.
-- Deploys are user-run (the auto-mode classifier blocks Claude from running them); hand the user the command to run with `!`.
+- `npm run deploy` (`infra/bin/deploy.ts`) validates the options with the app's own `planApp`, prints them and the stacks (`describePlan` in `infra/lib/deploy.ts`), and runs `cdk deploy --all <same args>` only on `y`/`yes` (any case). Anything else, or closed stdin, exits 1 without deploying. The CDK app itself can't prompt, because the CLI runs it with stdin closed, and `npx cdk deploy` bypasses the confirmation.
+- Deploys are user-run (the auto-mode classifier blocks Claude from running them); hand the user the command to run with `!`. The confirmation prompt needs a terminal, so the user runs it.
 
 The Next.js server needs `APPSYNC_API_URL` set to the Api stack's `GraphQLApiUrl` output; the Web stack sets it for you. Beanstalk environments made outside CDK (the PR-preview workflow's `dev-env-sc` template, `eb deploy`) must set it themselves and use the `EbInstanceProfileName` output (`dlp-access-next-<env>-eb`) as their instance profile.
 

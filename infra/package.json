@@ -6,6 +6,7 @@
     "build": "tsc",
     "watch": "tsc -w",
     "cdk": "cdk",
+    "deploy": "ts-node --prefer-ts-exts bin/deploy.ts",
     "test": "jest",
     "test:lambda": ".venv/bin/pytest lambda"
   },

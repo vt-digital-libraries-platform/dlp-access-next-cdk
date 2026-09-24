@@ -1,8 +1,8 @@
 import { App } from 'aws-cdk-lib';
 import { ApiStack } from './api-stack';
 import { DataStack } from './data-stack';
-import { resolveEnvironment } from './environments';
-import { WebStack, branchSlug } from './web-stack';
+import { EnvironmentConfig, resolveEnvironment } from './environments';
+import { WebStack, branchSlug, webResourceName } from './web-stack';
 
 /** CDK context, as passed with `-c env=... -c account=... -c production=... -c branch=... -c backend=...`. */
 export interface AppOptions {
@@ -22,6 +22,20 @@ export interface AppOptions {
    * environment's Data and Api stacks, before the Web stack.
    */
   readonly backend?: string;
+}
+
+/** The validated options, with defaults applied, and the stacks they produce. */
+export interface AppPlan {
+  readonly config: EnvironmentConfig;
+  readonly account: string;
+  readonly production: boolean;
+  /** The branch's slug; undefined without `-c branch`. */
+  readonly branch?: string;
+  /** undefined without `-c branch`. */
+  readonly backend?: string;
+  readonly dataStackName?: string;
+  readonly apiStackName?: string;
+  readonly webStackName?: string;
 }
 
 export interface AppStacks {
@@ -47,22 +61,36 @@ export function booleanContext(name: string, value: unknown): boolean | undefine
   throw new Error(`Invalid ${name} "${value}": use true or false`);
 }
 
+/** Reads the options from CDK context, given a lookup such as `tryGetContext`. */
+export function optionsFromContext(context: (key: string) => unknown): AppOptions {
+  const str = (key: string) => {
+    const value = context(key);
+    return value === undefined ? undefined : String(value);
+  };
+  return {
+    env: str('env'),
+    account: str('account'),
+    production: booleanContext('production', context('production')),
+    branch: str('branch'),
+    backend: str('backend'),
+  };
+}
+
 /**
- * Adds stacks to the app:
+ * Validates the options and works out which stacks they produce:
  * - no branch: the environment's Data and Api stacks
  * - branch, backend=attach: the branch's Web stack only
  * - branch, backend=provision: Data, Api and Web
  */
-export function buildApp(app: App, options: AppOptions): AppStacks {
-  const config = resolveEnvironment(options.env, options.production ?? false);
+export function planApp(options: AppOptions): AppPlan {
+  const production = options.production ?? false;
+  const config = resolveEnvironment(options.env, production);
   if (options.account === undefined) {
     throw new Error('Missing CDK context: pass -c account=<AWS account ID>');
   }
   if (!ACCOUNT_PATTERN.test(options.account)) {
     throw new Error(`Invalid account "${options.account}": use a 12-digit AWS account ID`);
   }
-  const env = { account: options.account, region: config.region };
-  const prefix = `DlpAccessNext-${config.name}`;
 
   if (options.branch === undefined && options.backend !== undefined) {
     throw new Error('-c backend only applies with -c branch=<git branch>');
@@ -72,12 +100,35 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
     throw new Error(`Invalid backend "${backend}": use ${BACKENDS.join(' or ')}`);
   }
 
+  const prefix = `DlpAccessNext-${config.name}`;
   const provision = options.branch === undefined || backend === 'provision';
+  const branch = options.branch === undefined ? undefined : branchSlug(options.branch);
+  if (branch !== undefined) {
+    webResourceName(branch);
+  }
+  return {
+    config,
+    account: options.account,
+    production,
+    branch,
+    backend: branch === undefined ? undefined : backend,
+    dataStackName: provision ? `${prefix}-Data` : undefined,
+    apiStackName: provision ? `${prefix}-Api` : undefined,
+    webStackName: branch === undefined ? undefined : `DlpAccessNext-Web-${branch}`,
+  };
+}
+
+/** Adds the stacks that `planApp` works out to the app. */
+export function buildApp(app: App, options: AppOptions): AppStacks {
+  const plan = planApp(options);
+  const { config } = plan;
+  const env = { account: plan.account, region: config.region };
+
   let data: DataStack | undefined;
   let api: ApiStack | undefined;
-  if (provision) {
-    data = new DataStack(app, `${prefix}-Data`, { env, config });
-    api = new ApiStack(app, `${prefix}-Api`, {
+  if (plan.dataStackName && plan.apiStackName) {
+    data = new DataStack(app, plan.dataStackName, { env, config });
+    api = new ApiStack(app, plan.apiStackName, {
       env,
       config,
       tables: data.tables,
@@ -86,9 +137,8 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
   }
 
   let web: WebStack | undefined;
-  if (options.branch !== undefined) {
-    const branch = branchSlug(options.branch);
-    web = new WebStack(app, `DlpAccessNext-Web-${branch}`, { env, config, branch });
+  if (plan.webStackName && plan.branch) {
+    web = new WebStack(app, plan.webStackName, { env, config, branch: plan.branch });
     // The Web stack reads the API URL from the SSM parameter the Api stack
     // writes, so it must deploy after it.
     if (api) {

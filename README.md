@@ -42,14 +42,16 @@ npm install
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)   # the account you're logged in to
 
 # An environment's data and API
-npx cdk deploy --all -c env=dev -c account=$ACCOUNT
+npm run deploy -- -c env=dev -c account=$ACCOUNT
 
 # Your branch of the app, attached to an environment that is already deployed
-npx cdk deploy --all -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current)
+npm run deploy -- -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current)
 
 # Your branch of the app plus a new feature environment for it
-npx cdk deploy --all -c env=f-search -c account=$ACCOUNT -c branch=$(git branch --show-current) -c backend=provision
+npm run deploy -- -c env=f-search -c account=$ACCOUNT -c branch=$(git branch --show-current) -c backend=provision
 ```
+
+`npm run deploy` checks the options, lists them with the stacks they produce, and runs `cdk deploy --all` with the same arguments only if you answer `y` or `yes`. Any other answer deploys nothing. Other `cdk deploy` flags pass through. Running `npx cdk deploy` directly skips the confirmation.
 
 - `-c backend=attach` is the default. It deploys only the Web stack and needs the environment's Api stack to exist already; otherwise the deploy fails with "Unable to fetch parameters".
 - `-c backend=provision` also deploys the environment's Data and Api stacks, before the Web stack.
