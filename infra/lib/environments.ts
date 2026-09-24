@@ -2,7 +2,9 @@ import { RemovalPolicy } from 'aws-cdk-lib';
 
 /**
  * Per-environment settings. Everything that differs between environments
- * lives here so the differences can be reviewed in one place.
+ * lives here so the differences can be reviewed in one place. Sizing
+ * (`search`, `web`) comes from the `production` flag rather than the
+ * environment name.
  */
 export interface EnvironmentConfig {
   /** Environment name as passed with `-c env=<name>`. */
@@ -26,39 +28,43 @@ export interface EnvironmentConfig {
   readonly removalPolicy: RemovalPolicy;
 }
 
-const SMALL_SEARCH: EnvironmentConfig['search'] = {
-  instanceType: 't3.small.search',
-  dataNodes: 1,
-  availabilityZones: 1,
-  volumeSizeGiB: 10,
+type Sizing = Pick<EnvironmentConfig, 'search' | 'web'>;
+
+/** Sizing with `-c production=false` (the default): one small search node. */
+const STANDARD_SIZING: Sizing = {
+  search: {
+    instanceType: 't3.small.search',
+    dataNodes: 1,
+    availabilityZones: 1,
+    volumeSizeGiB: 10,
+  },
+  web: { instanceType: 't3.small' },
 };
 
-const SMALL_WEB: EnvironmentConfig['web'] = { instanceType: 't3.small' };
+/** Sizing with `-c production=true`: three search nodes, one per AZ. */
+const PRODUCTION_SIZING: Sizing = {
+  search: {
+    instanceType: 'm7g.medium.search',
+    dataNodes: 3,
+    availabilityZones: 3,
+    volumeSizeGiB: 10,
+  },
+  web: { instanceType: 't3.medium' },
+};
 
-type Settings = Omit<EnvironmentConfig, 'name'>;
+type Settings = Omit<EnvironmentConfig, 'name' | keyof Sizing>;
 
 const ENVIRONMENTS: Record<string, Settings> = {
   dev: {
     region: 'us-east-1',
-    search: SMALL_SEARCH,
-    web: SMALL_WEB,
     removalPolicy: RemovalPolicy.RETAIN,
   },
   'pre-production': {
     region: 'us-east-1',
-    search: SMALL_SEARCH,
-    web: SMALL_WEB,
     removalPolicy: RemovalPolicy.RETAIN,
   },
   production: {
     region: 'us-east-1',
-    search: {
-      instanceType: 'm7g.medium.search',
-      dataNodes: 2,
-      availabilityZones: 2,
-      volumeSizeGiB: 10,
-    },
-    web: SMALL_WEB,
     removalPolicy: RemovalPolicy.RETAIN,
   },
 };
@@ -77,7 +83,7 @@ const FEATURE: Settings = {
 // `dlpnext-<env>`, which leaves 20 for the environment name.
 const ENV_NAME_PATTERN = /^[a-z][a-z0-9-]{0,19}$/;
 
-export function resolveEnvironment(name: string | undefined): EnvironmentConfig {
+export function resolveEnvironment(name: string | undefined, production = false): EnvironmentConfig {
   if (!name) {
     throw new Error(
       `Missing CDK context: pass -c env=<name>, one of ${Object.keys(ENVIRONMENTS).join(', ')} or ${FEATURE_PREFIX}<slug>`,
@@ -94,7 +100,7 @@ export function resolveEnvironment(name: string | undefined): EnvironmentConfig 
       `Unknown environment "${name}": use one of ${Object.keys(ENVIRONMENTS).join(', ')} or ${FEATURE_PREFIX}<slug> for a feature environment`,
     );
   }
-  return { name, ...settings };
+  return { name, ...settings, ...(production ? PRODUCTION_SIZING : STANDARD_SIZING) };
 }
 
 // Names that stacks deployed separately use to find each other. A Web stack

@@ -4,11 +4,16 @@ import { DataStack } from './data-stack';
 import { resolveEnvironment } from './environments';
 import { WebStack, branchSlug } from './web-stack';
 
-/** CDK context, as passed with `-c env=... -c account=... -c branch=... -c backend=...`. */
+/** CDK context, as passed with `-c env=... -c account=... -c production=... -c branch=... -c backend=...`. */
 export interface AppOptions {
   readonly env?: string;
   /** AWS account ID to deploy the environment's stacks to. */
   readonly account?: string;
+  /**
+   * Production sizing: three OpenSearch nodes instead of one, and a larger
+   * Beanstalk instance. Defaults to false.
+   */
+  readonly production?: boolean;
   /** Git branch to deploy the Next.js app for. Omit to deploy only the environment. */
   readonly branch?: string;
   /**
@@ -29,13 +34,27 @@ const BACKENDS = ['attach', 'provision'];
 const ACCOUNT_PATTERN = /^\d{12}$/;
 
 /**
+ * Reads a boolean context value. `-c name=true` arrives as the string
+ * "true", while cdk.json can hold a real boolean, so both are accepted.
+ */
+export function booleanContext(name: string, value: unknown): boolean | undefined {
+  if (value === undefined || value === true || value === false) {
+    return value;
+  }
+  if (value === 'true' || value === 'false') {
+    return value === 'true';
+  }
+  throw new Error(`Invalid ${name} "${value}": use true or false`);
+}
+
+/**
  * Adds stacks to the app:
  * - no branch: the environment's Data and Api stacks
  * - branch, backend=attach: the branch's Web stack only
  * - branch, backend=provision: Data, Api and Web
  */
 export function buildApp(app: App, options: AppOptions): AppStacks {
-  const config = resolveEnvironment(options.env);
+  const config = resolveEnvironment(options.env, options.production ?? false);
   if (options.account === undefined) {
     throw new Error('Missing CDK context: pass -c account=<AWS account ID>');
   }
