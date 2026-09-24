@@ -40,7 +40,7 @@ const ENVIRONMENTS: Record<string, Settings> = {
     account: DEV_ACCOUNT,
     region: 'us-east-1',
     search: SMALL_SEARCH,
-    removalPolicy: RemovalPolicy.DESTROY,
+    removalPolicy: RemovalPolicy.RETAIN,
   },
   'pre-production': {
     account: DEV_ACCOUNT,
@@ -62,8 +62,15 @@ const ENVIRONMENTS: Record<string, Settings> = {
   },
 };
 
-/** Feature environments are short-lived, prefixed `f-`, and use dev's settings. */
+/**
+ * Feature environments are short-lived and prefixed `f-`. They are the only
+ * environments whose data is destroyed with their stacks.
+ */
 const FEATURE_PREFIX = 'f-';
+const FEATURE: Settings = {
+  ...ENVIRONMENTS.dev,
+  removalPolicy: RemovalPolicy.DESTROY,
+};
 
 // OpenSearch domain names are at most 28 characters and the domain is named
 // `dlpnext-<env>`, which leaves 20 for the environment name.
@@ -80,7 +87,7 @@ export function resolveEnvironment(name: string | undefined): EnvironmentConfig 
       `Invalid environment name "${name}": use lowercase letters, digits and hyphens, starting with a letter, at most 20 characters`,
     );
   }
-  const settings = ENVIRONMENTS[name] ?? (name.startsWith(FEATURE_PREFIX) ? ENVIRONMENTS.dev : undefined);
+  const settings = ENVIRONMENTS[name] ?? (name.startsWith(FEATURE_PREFIX) ? FEATURE : undefined);
   if (!settings) {
     throw new Error(
       `Unknown environment "${name}": use one of ${Object.keys(ENVIRONMENTS).join(', ')} or ${FEATURE_PREFIX}<slug> for a feature environment`,

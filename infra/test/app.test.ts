@@ -68,24 +68,25 @@ describe('tables', () => {
     }
   });
 
-  test('dev and feature tables are destroyed with the stack and unprotected', () => {
-    for (const { data } of [dev, feature]) {
-      const tables = Object.values(data.findResources('AWS::DynamoDB::Table'));
-      for (const table of tables) {
-        expect(table.DeletionPolicy).toBe('Delete');
-        expect(table.Properties.DeletionProtectionEnabled).toBe(false);
-        expect(table.Properties.PointInTimeRecoverySpecification.PointInTimeRecoveryEnabled).toBe(false);
-      }
+  test('feature tables are destroyed with the stack and unprotected', () => {
+    const tables = Object.values(feature.data.findResources('AWS::DynamoDB::Table'));
+    expect(tables).toHaveLength(7);
+    for (const table of tables) {
+      expect(table.DeletionPolicy).toBe('Delete');
+      expect(table.Properties.DeletionProtectionEnabled).toBe(false);
+      expect(table.Properties.PointInTimeRecoverySpecification.PointInTimeRecoveryEnabled).toBe(false);
     }
   });
 
-  test('pre-production tables are retained, deletion-protected and have PITR', () => {
-    const tables = Object.values(preProduction.data.findResources('AWS::DynamoDB::Table'));
-    expect(tables).toHaveLength(7);
-    for (const table of tables) {
-      expect(table.DeletionPolicy).toBe('Retain');
-      expect(table.Properties.DeletionProtectionEnabled).toBe(true);
-      expect(table.Properties.PointInTimeRecoverySpecification.PointInTimeRecoveryEnabled).toBe(true);
+  test('dev and pre-production tables are retained, deletion-protected and have PITR', () => {
+    for (const { data } of [dev, preProduction]) {
+      const tables = Object.values(data.findResources('AWS::DynamoDB::Table'));
+      expect(tables).toHaveLength(7);
+      for (const table of tables) {
+        expect(table.DeletionPolicy).toBe('Retain');
+        expect(table.Properties.DeletionProtectionEnabled).toBe(true);
+        expect(table.Properties.PointInTimeRecoverySpecification.PointInTimeRecoveryEnabled).toBe(true);
+      }
     }
   });
 });
@@ -118,7 +119,8 @@ describe('search domain', () => {
   test('removal policy follows the environment', () => {
     const policy = (t: Template) =>
       Object.values(t.findResources('AWS::OpenSearchService::Domain'))[0].DeletionPolicy;
-    expect(policy(dev.data)).toBe('Delete');
+    expect(policy(feature.data)).toBe('Delete');
+    expect(policy(dev.data)).toBe('Retain');
     expect(policy(preProduction.data)).toBe('Retain');
   });
 
