@@ -23,9 +23,9 @@ npm test                 # Jest: assertions on each environment's synthesized te
 npm run test:lambda      # pytest: streaming handler (one-time setup: python3 -m venv .venv && .venv/bin/pip install -r lambda/requirements-dev.txt)
 ```
 
-- `env` is required. Allowed values are `dev`, `pre-production`, `production`, or `f-<slug>` for a feature environment, which uses dev's settings. Names are lowercase and at most 20 characters, because the domain is `dlpnext-<env>` and OpenSearch allows 28. Per-environment settings (account, sizing, removal policy) live in `infra/lib/environments.ts`.
+- `env` is required. Allowed values are `dev`, `pre-production`, `production`, or `f-<slug>` for a feature environment, which uses dev's settings except for data protection. Names are lowercase and at most 20 characters, because the domain is `dlpnext-<env>` and OpenSearch allows 28. Per-environment settings (account, sizing, removal policy) live in `infra/lib/environments.ts`.
 - `production` is in a separate AWS account. Its account ID is a placeholder, so synthesizing it throws until the ID is filled in.
-- `dev` and feature environments delete their data when their stacks are destroyed. `pre-production` and `production` keep their tables and domain, and turn on table deletion protection and PITR.
+- Only feature environments (`f-<slug>`) delete their data when their stacks are destroyed. `dev`, `pre-production` and `production` keep their tables and domain, and turn on table deletion protection and PITR.
 - Deploys are user-run (the auto-mode classifier blocks Claude from running them); hand the user the command to run with `!`.
 
 The Next.js server needs `APPSYNC_API_URL` set to the Api stack's `GraphQLApiUrl` output. The environment's Beanstalk configuration template must use the `EbInstanceProfileName` output (`dlp-access-next-<env>-eb`) as its instance profile.
