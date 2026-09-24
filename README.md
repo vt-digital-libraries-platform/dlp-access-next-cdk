@@ -1,36 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# dlp-access-next
 
-## Getting Started
+The next version of the VT Digital Libraries access site: a Next.js 16 / React 19 app on Elastic Beanstalk, backed by a read-only AppSync GraphQL API over DynamoDB and OpenSearch. All of the AWS infrastructure is defined with CDK in `infra/`.
 
-First, run the development server:
+The repo holds two independent npm projects, each with its own `package.json`:
+
+| Path | What it is |
+| --- | --- |
+| `/` | The Next.js app (App Router, Tailwind 4) |
+| `infra/` | CDK v2 (TypeScript): the data layer, API and Elastic Beanstalk hosting |
+
+## Environments and stacks
+
+Each **environment** has its own data and API. Environments are `dev`, `pre-production`, `production` (in a separate AWS account, not configured yet), or a short-lived feature environment named `f-<slug>`.
+
+| Stack | Contents |
+| --- | --- |
+| `DlpAccessNext-<env>-Data` | Seven DynamoDB tables (`<Model>-dlpnext-<env>`) and an OpenSearch 2.19 domain (`dlpnext-<env>`) |
+| `DlpAccessNext-<env>-Api` | The AppSync API (IAM auth), the Lambda that streams Archive and Collection changes into OpenSearch, and the environment's Beanstalk instance role (`dlp-access-next-<env>-eb`) |
+| `DlpAccessNext-Web-<branch>` | One git branch of the Next.js app: a Beanstalk application and single-instance Node.js 24 environment (`dlpnext-<branch>`) that calls one environment's API |
+
+Many branches can share one environment. Only feature environments delete their tables and domain when their stacks are destroyed. `dev`, `pre-production` and `production` keep their data and have deletion protection and point-in-time recovery turned on.
+
+## Running locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+APPSYNC_API_URL=<GraphQLApiUrl output of an Api stack> npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app signs AppSync requests with your local AWS credentials, so you need to be logged in to the account, with permission to call the API. Open http://localhost:3000/examples/appsync-queries to run every query in the schema.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Other checks: `npm run build`, `npm run lint`, `npx tsc --noEmit`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deploying
 
-## Learn More
+Run everything from `infra/`, and log in to AWS first. `-c env` is required.
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+cd infra
+npm install
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# An environment's data and API
+npx cdk deploy --all -c env=dev
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Your branch of the app, attached to an environment that is already deployed
+npx cdk deploy --all -c env=dev -c branch=$(git branch --show-current)
 
-## Deploy on Vercel
+# Your branch of the app plus a new feature environment for it
+npx cdk deploy --all -c env=f-search -c branch=$(git branch --show-current) -c backend=provision
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `-c backend=attach` is the default. It deploys only the Web stack and needs the environment's Api stack to exist already; otherwise the deploy fails with "Unable to fetch parameters".
+- `-c backend=provision` also deploys the environment's Data and Api stacks, before the Web stack.
+- Deploying the same branch with a different `env` repoints its Web stack at that environment.
+- Branch names become slugs (`whunter/Multi_Env` becomes `whunter-multi-env`) of at most 32 characters. Environment names are lowercase and at most 20 characters.
+- The Web stack's `EndpointUrl` output and the Beanstalk console give the app's address. It serves HTTP only, with no load balancer or custom domain.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+To tear down a branch deployment:
+
+```bash
+npx cdk destroy DlpAccessNext-Web-<branch> -c env=<env> -c branch=<branch>
+```
+
+## Tests
+
+```bash
+cd infra
+npm test              # Jest: assertions on the synthesized templates
+npm run test:lambda   # pytest: the OpenSearch streaming handler
+```
+
+`test:lambda` needs a one-time setup: `python3 -m venv .venv && .venv/bin/pip install -r lambda/requirements-dev.txt`.
+
+## More
+
+- `CLAUDE.md`: architecture, naming rules and gotchas (AppSync JS runtime, OpenSearch paging, streaming failures).
+- `docs/issues/multi-env-data-layer.md`: the spec for the per-environment data layer.
+- `infra/schema/schema.graphql`: the GraphQL schema, which is the source of truth for the API.
