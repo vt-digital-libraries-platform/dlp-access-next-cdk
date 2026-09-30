@@ -43,7 +43,7 @@
       },
       "embargo_end_date": {
         "type": "date",
-        "format": "yyyy/MM/dd HH:mm:ss||yyyy/MM/dd||yyyy/MM||yyyy/M||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||yyyy-MM||yyyy-M||yyyyMM||yyyy||epoch_millis"
+        "format": "yyyy/MM/dd HH:mm:ss||yyyy/MM/dd||yyyy/MM||yyyy/M||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||yyyy-MM||yyyy-M||yyyyMM||yyyy||epoch_millis||strict_date_optional_time"
       },
       "embargo_note": {
         "type": "text",
@@ -51,7 +51,7 @@
       },
       "embargo_start_date": {
         "type": "date",
-        "format": "yyyy/MM/dd HH:mm:ss||yyyy/MM/dd||yyyy/MM||yyyy/M||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||yyyy-MM||yyyy-M||yyyyMM||yyyy||epoch_millis"
+        "format": "yyyy/MM/dd HH:mm:ss||yyyy/MM/dd||yyyy/MM||yyyy/M||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||yyyy-MM||yyyy-M||yyyyMM||yyyy||epoch_millis||strict_date_optional_time"
       },
       "end_date": {
         "type": "date",

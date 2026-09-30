@@ -23,9 +23,9 @@ interface CatalogItem {
   custom_key: String
   description: [String!]
   display_date: [String!]
-  embargo_end_date: String
+  embargo_end_date: AWSDateTime
   embargo_note: String
-  embargo_start_date: String
+  embargo_start_date: AWSDateTime
   end_date: String
   heirarchy_path: [String!]
   id: ID!
@@ -70,9 +70,9 @@ type Archive implements CatalogItem {
   description: [String!]
   display_date: [String!]
   download_link: [String!]
-  embargo_end_date: String
+  embargo_end_date: AWSDateTime
   embargo_note: String
-  embargo_start_date: String
+  embargo_start_date: AWSDateTime
   end_date: String
   explicit: Boolean
   extent: [String!]
@@ -136,9 +136,9 @@ type Collection implements CatalogItem {
   custom_key: String
   description: [String!]
   display_date: [String!]
-  embargo_end_date: String
+  embargo_end_date: AWSDateTime
   embargo_note: String
-  embargo_start_date: String
+  embargo_start_date: AWSDateTime
   end_date: String
   explicit_content: Boolean
   heirarchy_path: [String!]

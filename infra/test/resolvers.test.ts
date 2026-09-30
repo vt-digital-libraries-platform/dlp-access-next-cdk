@@ -46,7 +46,7 @@ describe('openSearchQueryCode sorting', () => {
 
 test('numeric sort fields are the date and boolean fields in the mapping files', () => {
   expect(numericSortFields(['archive'])).toEqual([
-    'archived', 'end_date', 'explicit', 'start_date', 'visibility',
+    'archived', 'embargo_end_date', 'embargo_start_date', 'end_date', 'explicit', 'start_date', 'visibility',
   ]);
   expect(numericSortFields(['collection'])).toEqual([
     'archived', 'embargo_end_date', 'embargo_start_date', 'end_date', 'explicit_content', 'start_date',
