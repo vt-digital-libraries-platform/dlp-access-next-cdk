@@ -5,9 +5,6 @@
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
       },
-      "archived": {
-        "type": "boolean"
-      },
       "bibliographic_citation": {
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
