@@ -3,6 +3,7 @@ import * as path from 'path';
 import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { booleanContext, buildApp } from '../lib/app';
+import { searchMappings } from '../lib/data-stack';
 
 const account = '123456789012';
 
@@ -171,10 +172,23 @@ describe('search domain', () => {
     expect(policy(preProduction.data)).toBe('Retain');
   });
 
-  test('index template targets the archive and collection indices', () => {
+  test.each(['archive', 'collection'])('the %s index template sets the mappings file', (index) => {
+    const file = path.join(__dirname, '..', 'schema', 'opensearch', `${index}.json`);
     dev.data.hasResourceProperties('AWS::CloudFormation::CustomResource', {
-      IndexPatterns: ['archive', 'collection'],
+      TemplateName: `dlpnext-${index}`,
+      IndexPatterns: [index],
+      Mappings: JSON.stringify(JSON.parse(fs.readFileSync(file, 'utf8')).mappings),
     });
+  });
+
+  test.each([
+    ['archive', 'Archive'],
+    ['collection', 'Collection'],
+  ])('every field in the %s mappings is a field of %s', (index, type) => {
+    const schema = fs.readFileSync(path.join(__dirname, '..', 'schema', 'schema.graphql'), 'utf8');
+    const body = schema.match(new RegExp(`^type ${type} [^{]*\\{([^}]*)\\}`, 'm'))![1];
+    const fields = [...body.matchAll(/^\s+(\w+)/gm)].map((m) => m[1]);
+    expect(Object.keys(searchMappings(index).properties).filter((f) => !fields.includes(f))).toEqual([]);
   });
 });
 
