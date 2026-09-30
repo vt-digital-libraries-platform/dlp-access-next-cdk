@@ -1,5 +1,5 @@
 import { openSearchQueryCode } from '../lib/resolvers';
-import { dateFields } from '../lib/search-mappings';
+import { numericSortFields } from '../lib/search-mappings';
 
 type Resolver = {
   request: (ctx: object) => { params: { body: Record<string, unknown> } };
@@ -7,8 +7,8 @@ type Resolver = {
 };
 
 // Runs the generated APPSYNC_JS source in Node, with a stub for `util`.
-function load(numericSortFields: string[]): Resolver {
-  const code = openSearchQueryCode({ index: 'archive', searchFields: ['title'], numericSortFields })
+function load(sortFields: string[]): Resolver {
+  const code = openSearchQueryCode({ index: 'archive', searchFields: ['title'], numericSortFields: sortFields })
     .replace(/^import .*$/m, '')
     .replace(/^export /gm, '');
   return new Function('util', `${code}\nreturn { request, response };`)({ error: () => {} });
@@ -44,12 +44,12 @@ describe('openSearchQueryCode sorting', () => {
   });
 });
 
-test('date fields come from the mapping files', () => {
-  expect(dateFields(['archive'])).toEqual(['end_date', 'start_date']);
-  expect(dateFields(['archive', 'collection'])).toEqual([
-    'embargo_end_date',
-    'embargo_start_date',
-    'end_date',
-    'start_date',
+test('numeric sort fields are the date and boolean fields in the mapping files', () => {
+  expect(numericSortFields(['archive'])).toEqual([
+    'archived', 'end_date', 'explicit', 'start_date', 'visibility',
+  ]);
+  expect(numericSortFields(['collection'])).toEqual([
+    'archived', 'embargo_end_date', 'embargo_start_date', 'end_date', 'explicit_content', 'start_date',
+    'visibility',
   ]);
 });
