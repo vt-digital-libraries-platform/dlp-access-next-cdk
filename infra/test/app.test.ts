@@ -3,7 +3,7 @@ import * as path from 'path';
 import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { booleanContext, buildApp } from '../lib/app';
-import { searchMappings } from '../lib/data-stack';
+import { searchMappings } from '../lib/search-mappings';
 
 const account = '123456789012';
 

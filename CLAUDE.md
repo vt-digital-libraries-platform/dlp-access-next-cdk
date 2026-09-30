@@ -51,4 +51,4 @@ The Next.js server needs `APPSYNC_API_URL` set to the Api stack's `GraphQLApiUrl
 - Variables cannot be reassigned (`let x = ...; x = ...` fails). Deploy validation reports only "The code contains one or more errors", so build values with a single `const` expression.
 - `util.transform.toElasticsearchQueryDSL` returns a JSON *string*; wrap it in `JSON.parse`.
 - Results typed as an interface (`CatalogItem`) need `__typename` set on each item. A Collection is identified by `collection_category`, otherwise it is an Archive.
-- OpenSearch paging uses `search_after` sorted on `<field>.keyword` (except `visibility` and `start_date`). Total hits cap at 10000, as in Amplify.
+- OpenSearch paging uses `search_after` sorted on `<field>.keyword`, except for the `date` fields in `infra/schema/opensearch/<index>.json` and `visibility`, which are sorted on the field itself with numeric page tokens (`numericSortFields` in `openSearchQueryCode`). Total hits cap at 10000, as in Amplify.
