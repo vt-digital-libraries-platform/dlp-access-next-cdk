@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { CfnOutput, CustomResource, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -8,6 +9,12 @@ import * as cr from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
 import { EnvironmentConfig } from './environments';
 import { GLOBAL_INDEXES, MODELS, ModelName, SEARCHABLE_MODELS, tableName } from './models';
+
+/** The `mappings` object of `schema/opensearch/<index>.json`. */
+export function searchMappings(index: string): { properties: Record<string, unknown> } {
+  const file = path.join(__dirname, '..', 'schema', 'opensearch', `${index}.json`);
+  return JSON.parse(fs.readFileSync(file, 'utf8')).mappings;
+}
 
 export interface DataStackProps extends StackProps {
   readonly config: EnvironmentConfig;
@@ -80,8 +87,10 @@ export class DataStack extends Stack {
     });
     this.searchDomain = domain;
 
-    // Index template so the dynamically created indices get replicas that
-    // fit the cluster (0 on one node, 1 on two or more).
+    // One index template per searchable model. Each sets the explicit field
+    // types from `schema/opensearch/<index>.json` (fields not listed there
+    // are still mapped dynamically) and replicas that fit the cluster (0 on
+    // one node, 1 on two or more).
     const indexTemplateFn = new lambda.Function(this, 'IndexTemplateFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'index.on_event',
@@ -96,12 +105,17 @@ export class DataStack extends Stack {
     const indexTemplateProvider = new cr.Provider(this, 'IndexTemplateProvider', {
       onEventHandler: indexTemplateFn,
     });
-    new CustomResource(this, 'IndexTemplate', {
-      serviceToken: indexTemplateProvider.serviceToken,
-      properties: {
-        IndexPatterns: SEARCHABLE_MODELS.map((model) => model.toLowerCase()),
-      },
-    });
+    for (const model of SEARCHABLE_MODELS) {
+      const index = model.toLowerCase();
+      new CustomResource(this, `${model}IndexTemplate`, {
+        serviceToken: indexTemplateProvider.serviceToken,
+        properties: {
+          TemplateName: `dlpnext-${index}`,
+          IndexPatterns: [index],
+          Mappings: JSON.stringify(searchMappings(index)),
+        },
+      });
+    }
 
     for (const model of MODELS) {
       new CfnOutput(this, `${model}TableName`, { value: this.tables[model].tableName });
