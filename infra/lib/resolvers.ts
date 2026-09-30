@@ -132,14 +132,23 @@ export function hasManyCode(opts: { indexName: string; foreignKeyField: string }
  * Amplify searchable VTL resolvers (structured `filter` via
  * toElasticsearchQueryDSL, optional `allFields` phrase multi_match across
  * `searchFields`, sort on the `.keyword` subfield, search_after paging).
+ *
+ * Fields in `numericSortFields` (dates and booleans, which have no
+ * `.keyword` subfield) are sorted on the field itself. OpenSearch returns
+ * their sort values as epoch millis or 0/1, so the page token is that number
+ * as a string, and it is turned back into a number for `search_after`.
+ * Documents without the field sort last, at ±MAX_SAFE_INTEGER rather than
+ * OpenSearch's default of ±2^63, which a JS number can't hold exactly.
  */
 export function openSearchQueryCode(opts: {
   index: string;
   searchFields: string[];
+  /** Fields sorted on the field itself, with numeric sort values. */
+  numericSortFields: string[];
   /** Tag each hit with __typename (Collection if it has collection_category, else Archive) for interface results. */
   resolveTypename?: boolean;
 }): string {
-  const { index, searchFields, resolveTypename = false } = opts;
+  const { index, searchFields, numericSortFields, resolveTypename = false } = opts;
   const typenameStep = resolveTypename
     ? `
     if (source.collection_category) {
@@ -154,9 +163,12 @@ export function openSearchQueryCode(opts: {
   const args = ctx.args;
   const direction = args.sort && args.sort.direction ? args.sort.direction : 'desc';
   const field = args.sort && args.sort.field ? args.sort.field : 'id';
-  const sortField = field === 'visibility' || field === 'start_date' ? field : field + '.keyword';
+  const numeric = ${JSON.stringify(numericSortFields)}.indexOf(field) >= 0;
+  const sortField = numeric ? field : field + '.keyword';
   const sortClause = {};
-  sortClause[sortField] = { order: direction };
+  sortClause[sortField] = numeric
+    ? { order: direction, missing: direction === 'asc' ? ${Number.MAX_SAFE_INTEGER} : ${-Number.MAX_SAFE_INTEGER} }
+    : { order: direction };
 
   const bool = {};
   if (args.filter) {
@@ -174,7 +186,7 @@ export function openSearchQueryCode(opts: {
 
   const body = { size: args.limit ? args.limit : 100, sort: [sortClause], query: query };
   if (args.nextToken) {
-    body.search_after = [args.nextToken];
+    body.search_after = [numeric ? Number(args.nextToken) : args.nextToken];
   }
   return { operation: 'GET', path: ${JSON.stringify(`/${index}/_search`)}, params: { body: body } };
 }
@@ -191,7 +203,9 @@ export function response(ctx) {
     items.push(source);
   }
   const last = hits.length > 0 ? hits[hits.length - 1] : null;
-  const nextToken = last && last.sort ? last.sort[0] : null;
+  const sortValue = last && last.sort ? last.sort[0] : null;
+  // nextToken is a String; numeric sort values are sent back as strings.
+  const nextToken = typeof sortValue === 'number' ? String(sortValue) : sortValue;
   return { items: items, total: total, nextToken: nextToken };
 }
 `

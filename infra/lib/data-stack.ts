@@ -1,4 +1,3 @@
-import * as fs from 'fs';
 import * as path from 'path';
 import { CfnOutput, CustomResource, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -9,12 +8,7 @@ import * as cr from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
 import { EnvironmentConfig } from './environments';
 import { GLOBAL_INDEXES, MODELS, ModelName, SEARCHABLE_MODELS, tableName } from './models';
-
-/** The `mappings` object of `schema/opensearch/<index>.json`. */
-export function searchMappings(index: string): { properties: Record<string, unknown> } {
-  const file = path.join(__dirname, '..', 'schema', 'opensearch', `${index}.json`);
-  return JSON.parse(fs.readFileSync(file, 'utf8')).mappings;
-}
+import { searchMappings } from './search-mappings';
 
 export interface DataStackProps extends StackProps {
   readonly config: EnvironmentConfig;

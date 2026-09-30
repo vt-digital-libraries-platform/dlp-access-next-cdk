@@ -19,6 +19,7 @@ import {
   hasManyCode,
   openSearchQueryCode,
 } from './resolvers';
+import { dateFields } from './search-mappings';
 
 export interface ApiStackProps extends StackProps {
   readonly config: EnvironmentConfig;
@@ -127,6 +128,9 @@ export class ApiStack extends Stack {
 
     // --- Full-text search ------------------------------------------------
     const searchDataSource = api.addOpenSearchDataSource('OpenSearchDataSource', searchDomain);
+    // Sorted without `.keyword`: the date fields in the mapping files, and
+    // `visibility`, which is left out of them and mapped dynamically as a boolean.
+    const numericSortFields = (indices: string[]) => [...dateFields(indices), 'visibility'];
 
     jsResolver(
       'Query',
@@ -134,6 +138,7 @@ export class ApiStack extends Stack {
       searchDataSource,
       openSearchQueryCode({
         index: 'archive',
+        numericSortFields: numericSortFields(['archive']),
         searchFields: [
           'title', 'description', 'creator', 'medium', 'type', 'tags', 'identifier', 'is_part_of',
           'format', 'spatial', 'source', 'subject', 'bibliographic_citation', 'rights', 'rights_holder',
@@ -146,6 +151,7 @@ export class ApiStack extends Stack {
       searchDataSource,
       openSearchQueryCode({
         index: 'collection',
+        numericSortFields: numericSortFields(['collection']),
         searchFields: [
           'title', 'description', 'creator', 'identifier', 'spatial', 'subject', 'source', 'is_part_of',
           'bibliographic_citation', 'rights', 'rights_holder',
@@ -161,6 +167,7 @@ export class ApiStack extends Stack {
       searchDataSource,
       openSearchQueryCode({
         index: 'archive,collection',
+        numericSortFields: numericSortFields(['archive', 'collection']),
         resolveTypename: true,
         searchFields: [
           'title', 'description', 'creator', 'medium', 'type', 'tags', 'identifier', 'is_part_of',
