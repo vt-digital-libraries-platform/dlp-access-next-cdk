@@ -19,7 +19,7 @@ import {
   hasManyCode,
   openSearchQueryCode,
 } from './resolvers';
-import { dateFields } from './search-mappings';
+import { numericSortFields } from './search-mappings';
 
 export interface ApiStackProps extends StackProps {
   readonly config: EnvironmentConfig;
@@ -128,9 +128,6 @@ export class ApiStack extends Stack {
 
     // --- Full-text search ------------------------------------------------
     const searchDataSource = api.addOpenSearchDataSource('OpenSearchDataSource', searchDomain);
-    // Sorted without `.keyword`: the date fields in the mapping files, and
-    // `visibility`, which is left out of them and mapped dynamically as a boolean.
-    const numericSortFields = (indices: string[]) => [...dateFields(indices), 'visibility'];
 
     jsResolver(
       'Query',

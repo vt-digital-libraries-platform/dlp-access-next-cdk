@@ -5,6 +5,9 @@
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
       },
+      "archived": {
+        "type": "boolean"
+      },
       "bibliographic_citation": {
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
@@ -17,6 +20,7 @@
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
       },
+      "collectionOptions": { "type": "object" },
       "create_date": {
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
@@ -53,6 +57,9 @@
         "type": "date",
         "format": "yyyy/MM/dd HH:mm:ss||yyyy/MM/dd||yyyy/MM||yyyy/M||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||yyyy-MM||yyyy-M||yyyyMM||yyyy||epoch_millis"
       },
+      "explicit_content": {
+        "type": "boolean"
+      },
       "heirarchy_path": {
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
@@ -81,6 +88,7 @@
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
       },
+      "ownerinfo": { "type": "object" },
       "parent_collection": {
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
@@ -136,6 +144,9 @@
       "title_template": {
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+      },
+      "visibility": {
+        "type": "boolean"
       }
     }
   }
