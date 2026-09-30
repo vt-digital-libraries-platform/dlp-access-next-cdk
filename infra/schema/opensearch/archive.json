@@ -344,7 +344,6 @@
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
       },
-      "visibility": { "type": "boolean" },
       "visual_description": {
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
