@@ -13,9 +13,6 @@
         "type": "text",
         "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
       },
-      "archived": {
-        "type": "boolean"
-      },
       "archiveOptions": {
         "properties": {
           "assets": {
@@ -162,9 +159,6 @@
       "end_date": {
         "type": "date",
         "format": "yyyy/MM/dd HH:mm:ss||yyyy/MM/dd||yyyy/MM||yyyy/M||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||yyyy-MM||yyyy-M||yyyyMM||yyyy||epoch_millis"
-      },
-      "explicit": {
-        "type": "boolean"
       },
       "extent": {
         "type": "text",
