@@ -3,7 +3,7 @@ import * as path from 'path';
 import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { booleanContext, buildApp } from '../lib/app';
-import { searchMappings } from '../lib/search-mappings';
+import { buildSearchMappings, searchMappings } from '../lib/search-mappings';
 
 const account = '123456789012';
 
@@ -172,23 +172,64 @@ describe('search domain', () => {
     expect(policy(preProduction.data)).toBe('Retain');
   });
 
-  test.each(['archive', 'collection'])('the %s index template sets the mappings file', (index) => {
-    const file = path.join(__dirname, '..', 'schema', 'opensearch', `${index}.json`);
+  test.each(['archive', 'collection'])('the %s index template sets the generated mappings', (index) => {
     dev.data.hasResourceProperties('AWS::CloudFormation::CustomResource', {
       TemplateName: `dlpnext-${index}`,
       IndexPatterns: [index],
-      Mappings: JSON.stringify(JSON.parse(fs.readFileSync(file, 'utf8')).mappings),
+      Mappings: JSON.stringify(searchMappings(index)),
     });
   });
+});
+
+describe('search mappings', () => {
+  const schema = fs.readFileSync(path.join(__dirname, '..', 'schema', 'schema.graphql'), 'utf8');
+  const stored = (type: string) => {
+    const body = schema.match(new RegExp(`^type ${type} [^{]*\\{([^}]*)\\}`, 'm'))![1];
+    return [...body.matchAll(/^\s+(\w+): /gm)].map((m) => m[1]);
+  };
+  const date = {
+    type: 'date',
+    format:
+      'yyyy/MM/dd HH:mm:ss||yyyy/MM/dd||yyyy/MM||yyyy/M||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||yyyy-MM||yyyy-M||' +
+      'yyyyMM||yyyy||epoch_millis||strict_date_optional_time',
+    ignore_malformed: true,
+  };
 
   test.each([
-    ['archive', 'Archive'],
-    ['collection', 'Collection'],
-  ])('every field in the %s mappings is a field of %s', (index, type) => {
-    const schema = fs.readFileSync(path.join(__dirname, '..', 'schema', 'schema.graphql'), 'utf8');
-    const body = schema.match(new RegExp(`^type ${type} [^{]*\\{([^}]*)\\}`, 'm'))![1];
-    const fields = [...body.matchAll(/^\s+(\w+)/gm)].map((m) => m[1]);
-    expect(Object.keys(searchMappings(index).properties).filter((f) => !fields.includes(f))).toEqual([]);
+    ['archive', 'Archive', ['collection', 'partner']],
+    ['collection', 'Collection', ['partner']],
+  ])('the %s mappings cover every stored field of %s', (index, type, relationships) => {
+    const mapping = searchMappings(index);
+    expect(mapping.dynamic).toBe(false);
+    expect(Object.keys(mapping.properties)).toEqual(stored(type).filter((f) => !relationships.includes(f)));
+  });
+
+  test('field types follow the schema types', () => {
+    const { properties } = searchMappings('archive');
+    expect(properties.title).toEqual({
+      type: 'text',
+      fields: { keyword: { type: 'keyword', ignore_above: 256 } },
+    });
+    expect(properties.display_date).toEqual(properties.title);
+    expect(properties.visibility).toEqual({ type: 'boolean' });
+    expect(properties.archiveOptions).toEqual({ type: 'object', enabled: false });
+  });
+
+  test('every date field accepts ISO 8601 and ignores malformed values', () => {
+    expect(searchMappings('archive').properties).toMatchObject({
+      date, start_date: date, end_date: date, embargo_start_date: date, embargo_end_date: date,
+    });
+    for (const index of ['archive', 'collection']) {
+      const dates = Object.values(searchMappings(index).properties).filter((m) => m.type === 'date');
+      expect(dates.length).toBeGreaterThanOrEqual(4);
+      for (const mapping of dates) expect(mapping).toEqual(date);
+    }
+  });
+
+  test('a schema type with no mapping is an error', () => {
+    expect(() => buildSearchMappings('type Archive { id: ID! size: Size }\nenum Size { S }')).toThrow(
+      'No mapping for Archive.size: Size',
+    );
   });
 });
 
