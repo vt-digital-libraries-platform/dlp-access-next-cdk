@@ -81,10 +81,10 @@ export class DataStack extends Stack {
     });
     this.searchDomain = domain;
 
-    // One index template per searchable model. Each sets the explicit field
-    // types from `schema/opensearch/<index>.json` (fields not listed there
-    // are still mapped dynamically) and replicas that fit the cluster (0 on
-    // one node, 1 on two or more).
+    // One index template per searchable model. Each sets the field types
+    // generated from the schema (`search-mappings.ts`; attributes not in the
+    // schema are not indexed) and replicas that fit the cluster (0 on one
+    // node, 1 on two or more).
     const indexTemplateFn = new lambda.Function(this, 'IndexTemplateFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'index.on_event',
