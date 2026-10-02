@@ -190,8 +190,8 @@ describe('search mappings', () => {
   const date = {
     type: 'date',
     format:
-      'yyyy/MM/dd HH:mm:ss||yyyy/MM/dd||yyyy/MM||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||yyyy-MM||yyyy||epoch_millis||' +
-      'strict_date_optional_time',
+      'yyyy/MM/dd HH:mm:ss||yyyy/MM/dd||yyyy/MM||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||yyyy-MM||yyyy||M/d/yyyy||' +
+      'epoch_millis||strict_date_optional_time',
     ignore_malformed: true,
   };
 
