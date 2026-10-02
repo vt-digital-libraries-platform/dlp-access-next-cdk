@@ -29,8 +29,8 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
 // Where `npm run dev` serves the app. Always registered on the app client,
 // so the branch can be run locally against its environment's user pool.
 const LOCAL_ORIGIN = 'http://localhost:3000';
-// The app's sign-in callback route (src/app/auth/callback).
-const CALLBACK_PATH = '/auth/callback';
+// The app's sign-in callback route (src/app/authorize).
+const CALLBACK_PATH = '/authorize';
 
 const BUNDLE_EXCLUDES = ['.git', '.github', '.claude', '.elasticbeanstalk', 'infra', 'docs', '*.md', '.env*'];
 

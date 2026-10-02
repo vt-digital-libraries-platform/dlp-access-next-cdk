@@ -41,7 +41,7 @@ That page requires signing in through a Cognito user pool's managed login, as a 
 | `COGNITO_IDENTITY_PROVIDER` | Optional. The identity provider on the user pool to sign in through, such as `VT-SSO-OIDC`; sign-in goes straight to it. Without it, managed login shows whatever the app client allows. |
 | `APP_BASE_URL` | Optional. The app's public origin, when it differs from the one the server sees (behind a proxy). Defaults to the request's origin. |
 
-A Web stack's app client already allows `http://localhost:3000`. Any other app client needs `<origin>/auth/callback` as an allowed callback URL, `<origin>/` as an allowed sign-out URL, and the `openid` and `email` scopes. Cognito only accepts `http` callback URLs for `localhost`.
+A Web stack's app client already allows `http://localhost:3000`. Any other app client needs `<origin>/authorize` as an allowed callback URL, `<origin>/` as an allowed sign-out URL, and the `openid` and `email` scopes. Cognito only accepts `http` callback URLs for `localhost`.
 
 Other checks: `npm run build`, `npm run lint`, `npx tsc --noEmit`.
 
