@@ -30,6 +30,7 @@ describe('optionsFromContext', () => {
       branch: undefined,
       backend: undefined,
       userPool: undefined,
+      identityProvider: undefined,
       appUrl: undefined,
     });
   });
@@ -45,6 +46,7 @@ describe('describePlan', () => {
     expect(text).toMatch(/Branch\s+whunter-multi-env/);
     expect(text).toMatch(/Backend\s+provision/);
     expect(text).toMatch(/User pool\s+\(new\)/);
+    expect(text).toMatch(/Identity provider\s+\(none: the pool's own users\)/);
     expect(text).toMatch(/App URL\s+\(none\)/);
     expect(text).toMatch(/Data on destroy\s+destroy/);
     expect(text).toMatch(
@@ -67,10 +69,11 @@ describe('describePlan', () => {
     const text = describePlan(planApp({ env: 'dev', account, branch: 'main' }));
     expect(text).toMatch(/Backend\s+attach/);
     expect(text).toMatch(/User pool\s+\(the environment's\)/);
+    expect(text).toMatch(/Identity provider\s+\(the environment's\)/);
     expect(text).toMatch(/Stacks\s+DlpAccessNext-Web-main$/m);
   });
 
-  test('shows an existing user pool and the app URL', () => {
+  test('shows an existing user pool, its identity provider and the app URL', () => {
     const text = describePlan(
       planApp({
         env: 'dev',
@@ -78,10 +81,12 @@ describe('describePlan', () => {
         branch: 'main',
         backend: 'provision',
         userPool: 'us-east-1_AbCd12345',
+        identityProvider: 'VT-SSO-OIDC',
         appUrl: 'https://next.example.edu/',
       }),
     );
     expect(text).toMatch(/User pool\s+us-east-1_AbCd12345/);
+    expect(text).toMatch(/Identity provider\s+VT-SSO-OIDC/);
     expect(text).toMatch(/App URL\s+https:\/\/next\.example\.edu$/m);
   });
 });
