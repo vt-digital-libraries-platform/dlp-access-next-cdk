@@ -358,6 +358,7 @@ input SearchableCollectionFilterInput {
   source: SearchableStringFilterInput
   start_date: SearchableStringFilterInput
   end_date: SearchableStringFilterInput
+  date_range: SearchableStringFilterInput
   subject: SearchableStringFilterInput
   spatial: SearchableStringFilterInput
   rights: SearchableStringFilterInput
@@ -429,6 +430,7 @@ input SearchableArchiveFilterInput {
   source: SearchableStringFilterInput
   start_date: SearchableStringFilterInput
   end_date: SearchableStringFilterInput
+  date_range: SearchableStringFilterInput
   subject: SearchableStringFilterInput
   rights: SearchableStringFilterInput
   language: SearchableStringFilterInput
@@ -552,6 +554,7 @@ input SearchableObjectFilterInput {
   source: SearchableStringFilterInput
   start_date: SearchableStringFilterInput
   end_date: SearchableStringFilterInput
+  date_range: SearchableStringFilterInput
   subject: SearchableStringFilterInput
   is_part_of: SearchableStringFilterInput
   spatial: SearchableStringFilterInput
