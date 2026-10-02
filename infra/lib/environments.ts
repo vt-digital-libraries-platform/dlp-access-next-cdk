@@ -126,6 +126,37 @@ export function identityProviderParameterName(envName: string): string {
   return `/dlp-access-next/${envName}/identity-provider`;
 }
 
+/**
+ * Settings for creating an OIDC identity provider on a newly provisioned
+ * user pool.
+ */
+export interface OidcProviderConfig {
+  readonly issuerUrl: string;
+  /** The client ID the provider issued for the user pool. */
+  readonly clientId: string;
+  /** Name or ARN of the Secrets Manager secret whose value is the client secret. */
+  readonly secretName: string;
+}
+
+/** VT SSO, the issuer used unless `-c identityProviderIssuer` says otherwise. */
+export const DEFAULT_OIDC_ISSUER = 'https://gateway.login.vt.edu';
+
+/**
+ * Host of a provisioned user pool's managed login. Domain prefixes are
+ * unique per region across all accounts, so the account ID is part of it.
+ */
+export function managedLoginDomainPrefix(envName: string, account: string): string {
+  return `dlpnext-${envName}-${account}`;
+}
+
+/**
+ * Where a provisioned user pool receives sign-in responses from a federated
+ * provider. The provider must allow it as a redirect URI.
+ */
+export function identityProviderRedirectUri(envName: string, account: string, region: string): string {
+  return `https://${managedLoginDomainPrefix(envName, account)}.auth.${region}.amazoncognito.com/oauth2/idpresponse`;
+}
+
 /** Cognito's name for a user pool's own directory of users. */
 export const COGNITO_DIRECTORY = 'COGNITO';
 

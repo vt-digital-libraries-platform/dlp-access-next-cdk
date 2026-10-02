@@ -66,6 +66,10 @@ npm run deploy -- -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-c
 # Your branch of the app plus a new feature environment for it
 npm run deploy -- -c env=f-search -c account=$ACCOUNT -c branch=$(git branch --show-current) -c backend=provision
 
+# A new Cognito user pool with VT SSO as its identity provider
+npm run deploy -- -c env=f-search -c account=$ACCOUNT -c identityProvider=VT-SSO-OIDC \
+  -c identityProviderClientId=<client ID> -c identityProviderSecret=<Secrets Manager secret name>
+
 # Production: its own account, with production sizing
 npm run deploy -- -c env=production -c account=<production account ID> -c production=true
 ```
@@ -75,7 +79,12 @@ npm run deploy -- -c env=production -c account=<production account ID> -c produc
 - `-c backend=attach` is the default. It deploys only the Web stack and needs the environment's Api and Auth stacks to exist already; otherwise the deploy fails with "Unable to fetch parameters".
 - `-c backend=provision` also deploys the environment's Data, Api and Auth stacks, before the Web stack.
 - `-c userPool=<user pool ID>` uses an existing user pool, in the environment's region, instead of provisioning one. The pool itself is left as it is, so it needs a managed login domain and an `admin` group already. Pass it on every deploy of the environment's stacks: leaving it out switches the environment to a new pool.
-- `-c identityProvider=<name>` names the federated identity provider on the user pool that users sign in through, such as `VT-SSO-OIDC`. Each branch's app client then allows only that provider and the app sends users straight to it. The provider is not created by CDK: it has to exist on the pool before a Web stack deploys, so a new pool needs it added by hand (registering the pool's managed login domain with the provider) between the environment deploy and the first branch deploy. Without the option, users are the pool's own. Like `-c userPool`, pass it on every deploy of the environment's stacks.
+- `-c identityProvider=<name>` names the federated identity provider on the user pool that users sign in through, such as `VT-SSO-OIDC`. Each branch's app client then allows only that provider and the app sends users straight to it. It has to exist on the pool before a Web stack deploys. With `-c userPool` the existing pool's provider is used as it is. Without the option, users are the pool's own. Like `-c userPool`, pass it on every deploy of the environment's stacks.
+- `-c identityProviderClientId=<client ID>` and `-c identityProviderSecret=<secret name>` (both, with `-c identityProvider` and a new pool) make the Auth stack create the provider as an OIDC provider. `-c identityProviderIssuer=<https URL>` sets the issuer, which defaults to VT SSO (`https://gateway.login.vt.edu`). Before deploying:
+  1. Have the provider allow the redirect URI that the deploy confirmation prints as `Provider redirect` (`https://dlpnext-<env>-<account>.auth.<region>.amazoncognito.com/oauth2/idpresponse`).
+  2. Store the client secret, as plain text, in Secrets Manager in the same account and region: `aws secretsmanager create-secret --name <secret name> --secret-string '<client secret>'`. Only its name is passed, so the secret stays out of the template and your shell history holds it once.
+
+  Without these two options, add the provider to the new pool by hand after the environment deploys.
 - `-c appUrl=https://<host>` (with `-c branch`) registers the app's public origin for sign-in on the branch's app client. Cognito only accepts `http` for localhost and the Beanstalk environments serve HTTP only, so until the app has HTTPS in front of it, sign-in works only when it runs on `localhost:3000`.
 - Deploying the same branch with a different `env` repoints its Web stack at that environment.
 - `-c production=true` switches to production sizing: three OpenSearch nodes across three AZs instead of one, and a `t3.medium` Beanstalk instance instead of `t3.small`. It defaults to false and is separate from the environment name, so pass it for the real `production` deploy.

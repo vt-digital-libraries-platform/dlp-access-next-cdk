@@ -452,6 +452,57 @@ describe('Auth stack', () => {
     federated.resourceCountIs('AWS::Cognito::UserPoolIdentityProvider', 0);
   });
 
+  const oidc = {
+    identityProvider: 'VT-SSO-OIDC',
+    identityProviderClientId: 'abc123',
+    identityProviderSecret: 'dlpnext/dev/vt-sso',
+  };
+
+  test('creates the OIDC provider on a new pool, with the client secret from Secrets Manager', () => {
+    const { auth } = buildApp(new App(), { env: 'dev', account, ...oidc });
+    const template = Template.fromStack(auth!);
+    template.hasResourceProperties('AWS::Cognito::UserPoolIdentityProvider', {
+      ProviderName: 'VT-SSO-OIDC',
+      ProviderType: 'OIDC',
+      UserPoolId: { Ref: Match.anyValue() },
+      AttributeMapping: { email: 'email', username: 'sub' },
+      ProviderDetails: {
+        client_id: 'abc123',
+        client_secret: '{{resolve:secretsmanager:dlpnext/dev/vt-sso:SecretString:::}}',
+        oidc_issuer: 'https://gateway.login.vt.edu',
+        authorize_scopes: 'openid email',
+        attributes_request_method: 'GET',
+      },
+    });
+    template.hasOutput('IdentityProviderRedirectUri', {
+      Value: `https://dlpnext-dev-${account}.auth.us-east-1.amazoncognito.com/oauth2/idpresponse`,
+    });
+  });
+
+  test('takes another issuer', () => {
+    const { auth } = buildApp(new App(), {
+      env: 'dev',
+      account,
+      ...oidc,
+      identityProviderIssuer: 'https://idp.example.edu',
+    });
+    Template.fromStack(auth!).hasResourceProperties('AWS::Cognito::UserPoolIdentityProvider', {
+      ProviderDetails: Match.objectLike({ oidc_issuer: 'https://idp.example.edu' }),
+    });
+  });
+
+  test.each([
+    [{ identityProviderClientId: 'abc123' }, /only applies with -c identityProvider/],
+    [{ ...oidc, userPool: 'us-east-1_AbCd12345' }, /only applies to a new user pool/],
+    [{ ...oidc, identityProviderSecret: undefined }, /pass both -c identityProviderClientId/],
+    [{ ...oidc, identityProviderClientId: undefined }, /pass both -c identityProviderClientId/],
+    [{ identityProvider: 'VT-SSO-OIDC', identityProviderIssuer: 'https://idp.example.edu' }, /pass both/],
+    [{ ...oidc, identityProviderSecret: 'not a name!' }, /Invalid identityProviderSecret/],
+    [{ ...oidc, identityProviderIssuer: 'http://idp.example.edu' }, /Invalid identityProviderIssuer/],
+  ])('rejects identity provider settings %p', (options, message) => {
+    expect(() => buildApp(new App(), { env: 'dev', account, ...options })).toThrow(message);
+  });
+
   test.each(['VT SSO', 'VT_SSO', '', 'a'.repeat(33)])('rejects identity provider %p', (identityProvider) => {
     expect(() => buildApp(new App(), { env: 'dev', account, identityProvider })).toThrow(/Invalid identityProvider/);
   });
