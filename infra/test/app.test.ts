@@ -237,7 +237,7 @@ describe('search mappings', () => {
     expect(collection.date_detection).toBe(false);
   });
 
-  test('archiveOptions maps the glTF and X3DOM keys', () => {
+  test('archiveOptions maps the keys the records use', () => {
     const text = searchMappings('archive').properties.title;
     expect(searchMappings('archive').properties.archiveOptions).toEqual({
       type: 'object',
@@ -246,6 +246,7 @@ describe('search mappings', () => {
           type: 'object',
           properties: {
             media_type: text,
+            iiif_manifest: text,
             env_config: text,
             gltf_config: text,
             thumbnail: text,
@@ -266,8 +267,26 @@ describe('search mappings', () => {
             },
           },
         },
+        derivatives: {
+          type: 'object',
+          properties: {
+            downloads: { type: 'object', properties: { lg: text, md: text, sm: text } },
+          },
+        },
+        page_count: { type: 'long' },
+        audioTranscript: text,
+        episodeNumber: text,
+        seasonNumber: text,
+        sourceLink: text,
+        sourceText: text,
       },
     });
+    // The legacy assets.scale_factor is not indexed; config._3d.scale_factor is
+    const { assets } = searchMappings('archive').properties.archiveOptions.properties as Record<
+      string,
+      { properties: Record<string, unknown> }
+    >;
+    expect(assets.properties).not.toHaveProperty('scale_factor');
   });
 
   test('every date field accepts ISO 8601 and ignores malformed values', () => {
