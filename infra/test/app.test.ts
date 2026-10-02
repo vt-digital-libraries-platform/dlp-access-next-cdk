@@ -598,7 +598,7 @@ describe('Web stack', () => {
       GenerateSecret: true,
       AllowedOAuthFlows: ['code'],
       AllowedOAuthScopes: ['openid', 'email'],
-      CallbackURLs: ['http://localhost:3000/auth/callback'],
+      CallbackURLs: ['http://localhost:3000/authorize'],
       LogoutURLs: ['http://localhost:3000/'],
       SupportedIdentityProviders: [{ Ref: Match.anyValue() }],
     });
@@ -631,7 +631,7 @@ describe('Web stack', () => {
     });
     const template = Template.fromStack(withUrl!);
     template.hasResourceProperties('AWS::Cognito::UserPoolClient', {
-      CallbackURLs: ['https://next.example.edu/auth/callback', 'http://localhost:3000/auth/callback'],
+      CallbackURLs: ['https://next.example.edu/authorize', 'http://localhost:3000/authorize'],
       LogoutURLs: ['https://next.example.edu/', 'http://localhost:3000/'],
     });
     template.hasResourceProperties('AWS::ElasticBeanstalk::Environment', {

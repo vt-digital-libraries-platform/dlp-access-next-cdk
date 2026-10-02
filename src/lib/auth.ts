@@ -8,10 +8,10 @@ import { Issuer, type Client } from "openid-client";
 // so there is no server-side session store. It must only run server-side.
 
 export const SESSION_COOKIE = "dlp_id_token";
-// Holds the state, nonce and return path between /auth/login and /auth/callback.
+// Holds the state, nonce and return path between /auth/login and /authorize.
 export const LOGIN_COOKIE = "dlp_oidc_login";
 export const ADMIN_GROUP = "admin";
-export const CALLBACK_PATH = "/auth/callback";
+export const CALLBACK_PATH = "/authorize";
 export const SCOPE = "email openid";
 
 export interface Session {

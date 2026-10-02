@@ -45,6 +45,6 @@ export async function GET(request: NextRequest) {
     path: "/",
     expires: new Date(expiresAt * 1000),
   });
-  response.cookies.set(LOGIN_COOKIE, "", { path: "/auth", maxAge: 0 });
+  response.cookies.set(LOGIN_COOKIE, "", { path: "/", maxAge: 0 });
   return response;
 }

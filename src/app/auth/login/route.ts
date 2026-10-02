@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     // Lax, so the cookie is sent on the redirect back from Cognito.
     sameSite: "lax",
     secure: baseUrl(request).startsWith("https://"),
-    path: "/auth",
+    path: "/",
     maxAge: 600,
   });
   return response;
