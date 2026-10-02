@@ -31,6 +31,9 @@ describe('optionsFromContext', () => {
       backend: undefined,
       userPool: undefined,
       identityProvider: undefined,
+      identityProviderClientId: undefined,
+      identityProviderSecret: undefined,
+      identityProviderIssuer: undefined,
       appUrl: undefined,
     });
   });
@@ -73,6 +76,24 @@ describe('describePlan', () => {
     expect(text).toMatch(/Stacks\s+DlpAccessNext-Web-main$/m);
   });
 
+  test('shows the identity provider a new pool gets, and the redirect URI to register with it', () => {
+    const text = describePlan(
+      planApp({
+        env: 'dev',
+        account,
+        identityProvider: 'VT-SSO-OIDC',
+        identityProviderClientId: 'abc123',
+        identityProviderSecret: 'dlpnext/dev/vt-sso',
+      }),
+    );
+    expect(text).toMatch(
+      /Identity provider\s+VT-SSO-OIDC \(new: issuer https:\/\/gateway\.login\.vt\.edu, client abc123, secret dlpnext\/dev\/vt-sso\)/,
+    );
+    expect(text).toMatch(
+      /Provider redirect\s+https:\/\/dlpnext-dev-123456789012\.auth\.us-east-1\.amazoncognito\.com\/oauth2\/idpresponse/,
+    );
+  });
+
   test('shows an existing user pool, its identity provider and the app URL', () => {
     const text = describePlan(
       planApp({
@@ -86,7 +107,8 @@ describe('describePlan', () => {
       }),
     );
     expect(text).toMatch(/User pool\s+us-east-1_AbCd12345/);
-    expect(text).toMatch(/Identity provider\s+VT-SSO-OIDC/);
+    expect(text).toMatch(/Identity provider\s+VT-SSO-OIDC \(must already be on the user pool/);
+    expect(text).not.toMatch(/Provider redirect/);
     expect(text).toMatch(/App URL\s+https:\/\/next\.example\.edu$/m);
   });
 });

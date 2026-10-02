@@ -1,4 +1,5 @@
 import { AppPlan } from './app';
+import { identityProviderRedirectUri } from './environments';
 
 /**
  * Collects the `-c key=value` and `--context key=value` (or
@@ -32,7 +33,16 @@ export function describePlan(plan: AppPlan): string {
   // Without an Auth stack, the Web stack uses whichever pool and provider the environment already has.
   const attached = "(the environment's)";
   const userPool = plan.authStackName ? (plan.userPool ?? '(new)') : attached;
-  const identityProvider = plan.authStackName ? (plan.identityProvider ?? "(none: the pool's own users)") : attached;
+  const { oidcProvider } = plan;
+  // A named provider that isn't created here has to be on the pool already.
+  const providerSource = oidcProvider
+    ? `(new: issuer ${oidcProvider.issuerUrl}, client ${oidcProvider.clientId}, secret ${oidcProvider.secretName})`
+    : '(must already be on the user pool before a Web stack deploys)';
+  const identityProvider = !plan.authStackName
+    ? attached
+    : plan.identityProvider
+      ? `${plan.identityProvider} ${providerSource}`
+      : "(none: the pool's own users)";
   const rows: [string, string][] = [
     ['Environment', config.name],
     ['Account', plan.account],
@@ -45,6 +55,10 @@ export function describePlan(plan: AppPlan): string {
     ['Backend', plan.backend ?? '(none)'],
     ['User pool', userPool],
     ['Identity provider', identityProvider],
+    // A new pool's address, which the provider has to allow.
+    ...(plan.authStackName && plan.identityProvider && !plan.userPool
+      ? [['Provider redirect', identityProviderRedirectUri(config.name, plan.account, config.region)] as [string, string]]
+      : []),
     ['App URL', plan.appUrl ?? '(none)'],
     ['Data on destroy', String(config.removalPolicy).toLowerCase()],
     ['Stacks', stacks.join(', ')],

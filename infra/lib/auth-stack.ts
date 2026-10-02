@@ -1,11 +1,14 @@
-import { CfnOutput, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
+import { CfnOutput, RemovalPolicy, SecretValue, Stack, StackProps } from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import {
   COGNITO_DIRECTORY,
   EnvironmentConfig,
+  OidcProviderConfig,
   identityProviderParameterName,
+  identityProviderRedirectUri,
+  managedLoginDomainPrefix,
   userPoolIdParameterName,
 } from './environments';
 
@@ -24,6 +27,12 @@ export interface AuthStackProps extends StackProps {
    * that users sign in through. Omit for the pool's own users.
    */
   readonly identityProvider?: string;
+  /**
+   * Creates `identityProvider` on the new pool as an OIDC provider. Without
+   * it the provider is only named, and must be added to the pool by hand.
+   * Not for an existing pool, whose provider already exists.
+   */
+  readonly oidcProvider?: OidcProviderConfig;
 }
 
 /**
@@ -32,9 +41,9 @@ export interface AuthStackProps extends StackProps {
  * into SSM parameters, which is where Web stacks find them, so they don't
  * need to know how the environment was set up.
  *
- * A federated provider is only named here, not created: registering the pool
- * with the provider and adding it to the pool is done outside CDK, because it
- * needs credentials issued by the provider.
+ * A federated provider on a new pool is created here when its OIDC settings
+ * are given, with the same scopes and attribute mapping as VT-SSO-OIDC on the
+ * existing VT pool. On an existing pool it is only named.
  */
 export class AuthStack extends Stack {
   /** The provisioned pool; undefined when the environment uses an existing one. */
@@ -42,7 +51,7 @@ export class AuthStack extends Stack {
 
   constructor(scope: Construct, id: string, props: AuthStackProps) {
     super(scope, id, props);
-    const { config, existingUserPoolId, identityProvider = COGNITO_DIRECTORY } = props;
+    const { config, existingUserPoolId, identityProvider = COGNITO_DIRECTORY, oidcProvider } = props;
 
     let userPoolId = existingUserPoolId;
     if (userPoolId === undefined) {
@@ -66,12 +75,32 @@ export class AuthStack extends Stack {
         description: 'May use the admin-only pages of the Next.js app',
       });
 
-      // Managed login needs a domain. Prefixes are unique per region across
-      // all accounts, so the account ID is part of it.
+      // Managed login needs a domain.
       const domain = userPool.addDomain('Domain', {
-        cognitoDomain: { domainPrefix: `dlpnext-${config.name}-${this.account}` },
+        cognitoDomain: { domainPrefix: managedLoginDomainPrefix(config.name, this.account) },
       });
       new CfnOutput(this, 'ManagedLoginUrl', { value: domain.baseUrl() });
+      new CfnOutput(this, 'IdentityProviderRedirectUri', {
+        value: identityProviderRedirectUri(config.name, this.account, this.region),
+      });
+
+      if (oidcProvider) {
+        new cognito.UserPoolIdentityProviderOidc(this, 'OidcProvider', {
+          userPool,
+          name: identityProvider,
+          issuerUrl: oidcProvider.issuerUrl,
+          clientId: oidcProvider.clientId,
+          // A dynamic reference that CloudFormation resolves at deploy time,
+          // so the secret itself is not in the template.
+          clientSecret: SecretValue.secretsManager(oidcProvider.secretName).unsafeUnwrap(),
+          scopes: ['openid', 'email'],
+          attributeRequestMethod: cognito.OidcAttributeRequestMethod.GET,
+          attributeMapping: {
+            email: cognito.ProviderAttribute.other('email'),
+            custom: { username: cognito.ProviderAttribute.other('sub') },
+          },
+        });
+      }
     }
 
     new ssm.StringParameter(this, 'UserPoolIdParameter', {
