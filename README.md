@@ -30,6 +30,17 @@ APPSYNC_API_URL=<GraphQLApiUrl output of an Api stack> npm run dev
 
 The app signs AppSync requests with your local AWS credentials, so you need to be logged in to the account, with permission to call the API. Open http://localhost:3000/examples/appsync-queries to run every query in the schema.
 
+That page requires signing in through a Cognito user pool's managed login, as a member of the pool's `admin` group. Put these in `.env.local` (git-ignored), or in the environment of a deployed app:
+
+| Variable | Value |
+| --- | --- |
+| `COGNITO_ISSUER` | `https://cognito-idp.<region>.amazonaws.com/<user pool ID>` |
+| `COGNITO_CLIENT_ID` | The app client's ID |
+| `COGNITO_CLIENT_SECRET` | The app client's secret |
+| `APP_BASE_URL` | Optional. The app's public origin, when it differs from the one the server sees (behind a proxy). Defaults to the request's origin. |
+
+The app client needs `<origin>/auth/callback` as an allowed callback URL, `<origin>/` as an allowed sign-out URL, and the `openid` and `email` scopes. Cognito only accepts `http` callback URLs for `localhost`.
+
 Other checks: `npm run build`, `npm run lint`, `npx tsc --noEmit`.
 
 ## Deploying

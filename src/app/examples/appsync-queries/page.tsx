@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { ADMIN_GROUP, getSession, isAdmin } from "@/lib/auth";
 import { runDemoQueries } from "./queries";
 import { QueryResultCard } from "./QueryResultCard";
 import { SearchPanel } from "./SearchPanel";
@@ -6,7 +8,36 @@ import { SearchPanel } from "./SearchPanel";
 // cached at build time.
 export const dynamic = "force-dynamic";
 
+const PAGE_PATH = "/examples/appsync-queries";
+
 export default async function AppSyncQueriesExamplePage() {
+  // Only signed-in members of the admin group may see this page.
+  const session = await getSession();
+  if (!session) redirect(`/auth/login?returnTo=${encodeURIComponent(PAGE_PATH)}`);
+  if (!isAdmin(session)) {
+    return (
+      <div className="min-h-screen bg-zinc-50 px-6 py-16 font-sans dark:bg-black sm:px-16">
+        <main className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+          <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">
+            Access denied
+          </h1>
+          <p className="text-zinc-600 dark:text-zinc-400">
+            You are signed in as {session.email ?? session.username}, but this
+            page is only available to members of the{" "}
+            <code className="rounded bg-zinc-200 px-1 py-0.5 text-sm dark:bg-zinc-800">
+              {ADMIN_GROUP}
+            </code>{" "}
+            group.
+          </p>
+          {/* A plain link: /auth/logout is a route handler that redirects to Cognito. */}
+          <a href="/auth/logout" className="text-sm text-zinc-600 underline dark:text-zinc-400">
+            Sign out
+          </a>
+        </main>
+      </div>
+    );
+  }
+
   const apiUrlConfigured = Boolean(process.env.APPSYNC_API_URL);
   const results = apiUrlConfigured ? await runDemoQueries() : [];
 
@@ -24,6 +55,12 @@ export default async function AppSyncQueriesExamplePage() {
             </code>{" "}
             against the AppSync API on page load and renders the result of each
             below.
+          </p>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Signed in as {session.email ?? session.username}.{" "}
+            <a href="/auth/logout" className="underline">
+              Sign out
+            </a>
           </p>
         </div>
 
