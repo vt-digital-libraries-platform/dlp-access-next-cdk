@@ -1,12 +1,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { CfnOutput, IgnoreMode, Stack, StackProps } from 'aws-cdk-lib';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as elasticbeanstalk from 'aws-cdk-lib/aws-elasticbeanstalk';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
-import { EnvironmentConfig, ebInstanceProfileName, graphqlApiUrlParameterName } from './environments';
+import {
+  EnvironmentConfig,
+  ebInstanceProfileName,
+  graphqlApiUrlParameterName,
+  userPoolIdParameterName,
+} from './environments';
 
 /**
  * The Node.js platform the app runs on, matching the hand-made
@@ -19,6 +25,12 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
 
 // Beyond .gitignore: files in the repo that the Next.js server doesn't need.
 // `.env*` is repeated here so local secrets stay out even if .gitignore changes.
+// Where `npm run dev` serves the app. Always registered on the app client,
+// so the branch can be run locally against its environment's user pool.
+const LOCAL_ORIGIN = 'http://localhost:3000';
+// The app's sign-in callback route (src/app/auth/callback).
+const CALLBACK_PATH = '/auth/callback';
+
 const BUNDLE_EXCLUDES = ['.git', '.github', '.claude', '.elasticbeanstalk', 'infra', 'docs', '*.md', '.env*'];
 
 export interface WebStackProps extends StackProps {
@@ -26,13 +38,19 @@ export interface WebStackProps extends StackProps {
   readonly config: EnvironmentConfig;
   /** Branch slug; names the Beanstalk application and environment. */
   readonly branch: string;
+  /**
+   * The app's public HTTPS origin, registered as a sign-in callback. Without
+   * it, sign-in only works for the app running on localhost.
+   */
+  readonly appUrl?: string;
 }
 
 /**
  * One branch deployment of the Next.js app on Elastic Beanstalk. It finds
- * its environment's API by fixed names (the instance profile and an SSM
- * parameter), so it deploys the same way whether the environment's stacks
- * are in this CDK app or were deployed earlier.
+ * its environment's API and user pool by fixed names (the instance profile
+ * and SSM parameters), so it deploys the same way whether the environment's
+ * stacks are in this CDK app or were deployed earlier. The Cognito app
+ * client the app signs users in with is the branch's own.
  */
 export class WebStack extends Stack {
   /** The repo source uploaded as the Beanstalk application version. */
@@ -40,7 +58,7 @@ export class WebStack extends Stack {
 
   constructor(scope: Construct, id: string, props: WebStackProps) {
     super(scope, id, props);
-    const { config, branch } = props;
+    const { config, branch, appUrl } = props;
     const name = webResourceName(branch);
 
     // The same files `eb deploy` ships from git; the platform's prebuild
@@ -79,6 +97,28 @@ export class WebStack extends Stack {
     // "Unable to fetch parameters" if the environment's Api stack is missing.
     const apiUrl = ssm.StringParameter.valueForStringParameter(this, graphqlApiUrlParameterName(config.name));
 
+    // The environment's user pool, new or existing, likewise found through
+    // SSM. The app client is a confidential one for the authorization code
+    // flow, as src/lib/auth.ts expects.
+    const userPoolId = ssm.StringParameter.valueForStringParameter(this, userPoolIdParameterName(config.name));
+    const origins = appUrl ? [appUrl, LOCAL_ORIGIN] : [LOCAL_ORIGIN];
+    const appClient = new cognito.UserPoolClient(this, 'AppClient', {
+      userPool: cognito.UserPool.fromUserPoolId(this, 'UserPool', userPoolId),
+      userPoolClientName: name,
+      generateSecret: true,
+      authFlows: {},
+      oAuth: {
+        flows: { authorizationCodeGrant: true },
+        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
+        callbackUrls: origins.map((origin) => `${origin}${CALLBACK_PATH}`),
+        logoutUrls: origins.map((origin) => `${origin}/`),
+      },
+    });
+    const cognitoIssuer = `https://cognito-idp.${this.region}.amazonaws.com/${userPoolId}`;
+    // Read from the resource attribute: the construct's own accessor makes a
+    // custom resource to fetch the same value.
+    const clientSecret = (appClient.node.defaultChild as cognito.CfnUserPoolClient).attrClientSecret;
+
     const settings: Record<string, Record<string, string>> = {
       'aws:elasticbeanstalk:environment': {
         EnvironmentType: 'SingleInstance',
@@ -94,6 +134,11 @@ export class WebStack extends Stack {
       'aws:elasticbeanstalk:application:environment': {
         APPSYNC_API_URL: apiUrl,
         AWS_REGION: this.region,
+        COGNITO_ISSUER: cognitoIssuer,
+        COGNITO_CLIENT_ID: appClient.userPoolClientId,
+        COGNITO_CLIENT_SECRET: clientSecret,
+        // The origin the browser uses; the server only sees the proxy's.
+        ...(appUrl ? { APP_BASE_URL: appUrl } : {}),
       },
       'aws:elasticbeanstalk:healthreporting:system': {
         SystemType: 'enhanced',
@@ -125,6 +170,10 @@ export class WebStack extends Stack {
 
     new CfnOutput(this, 'EnvironmentName', { value: name });
     new CfnOutput(this, 'EndpointUrl', { value: environment.attrEndpointUrl });
+    // For running the branch locally. The client secret is not an output;
+    // read it with `aws cognito-idp describe-user-pool-client`.
+    new CfnOutput(this, 'CognitoIssuer', { value: cognitoIssuer });
+    new CfnOutput(this, 'CognitoClientId', { value: appClient.userPoolClientId });
   }
 }
 

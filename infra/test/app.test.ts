@@ -21,10 +21,11 @@ const feature = synth('f-search');
 
 describe('environment selection', () => {
   test('stacks are named after the environment', () => {
-    const { data, api, web } = buildApp(new App(), { env: 'f-search', account });
+    const { data, api, auth, web } = buildApp(new App(), { env: 'f-search', account });
     expect(web).toBeUndefined();
     expect(data!.stackName).toBe('DlpAccessNext-f-search-Data');
     expect(api!.stackName).toBe('DlpAccessNext-f-search-Api');
+    expect(auth!.stackName).toBe('DlpAccessNext-f-search-Auth');
   });
 
   test.each([
@@ -400,25 +401,78 @@ describe('API and Elastic Beanstalk access', () => {
   });
 });
 
+describe('Auth stack', () => {
+  const authTemplate = (envName: string, userPool?: string) =>
+    Template.fromStack(buildApp(new App(), { env: envName, account, userPool }).auth!);
+
+  test('provisions a user pool with an admin group and a managed login domain', () => {
+    const auth = authTemplate('dev');
+    auth.hasResourceProperties('AWS::Cognito::UserPool', {
+      UserPoolName: 'dlpnext-dev',
+      UsernameAttributes: ['email'],
+      AdminCreateUserConfig: { AllowAdminCreateUserOnly: true },
+    });
+    auth.hasResourceProperties('AWS::Cognito::UserPoolGroup', {
+      GroupName: 'admin',
+      UserPoolId: { Ref: Match.anyValue() },
+    });
+    auth.hasResourceProperties('AWS::Cognito::UserPoolDomain', { Domain: `dlpnext-dev-${account}` });
+    auth.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: '/dlp-access-next/dev/user-pool-id',
+      Value: { Ref: Match.anyValue() },
+    });
+  });
+
+  test('the pool is kept and protected, except in feature environments', () => {
+    const auth = authTemplate('dev');
+    auth.hasResource('AWS::Cognito::UserPool', { DeletionPolicy: 'Retain' });
+    auth.hasResourceProperties('AWS::Cognito::UserPool', { DeletionProtection: 'ACTIVE' });
+    const featureAuth = authTemplate('f-search');
+    featureAuth.hasResource('AWS::Cognito::UserPool', { DeletionPolicy: 'Delete' });
+    featureAuth.hasResourceProperties('AWS::Cognito::UserPool', { DeletionProtection: 'INACTIVE' });
+  });
+
+  test('an existing user pool is only recorded in SSM, not changed', () => {
+    const auth = authTemplate('dev', 'us-east-1_AbCd12345');
+    auth.resourceCountIs('AWS::Cognito::UserPool', 0);
+    auth.resourceCountIs('AWS::Cognito::UserPoolGroup', 0);
+    auth.resourceCountIs('AWS::Cognito::UserPoolDomain', 0);
+    auth.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: '/dlp-access-next/dev/user-pool-id',
+      Value: 'us-east-1_AbCd12345',
+    });
+  });
+
+  test.each([
+    ['AbCd12345', /Invalid userPool "AbCd12345": use a Cognito user pool ID/],
+    ['us-west-2_AbCd12345', /the pool must be in us-east-1/],
+  ])('rejects user pool %p', (userPool, message) => {
+    expect(() => buildApp(new App(), { env: 'dev', account, userPool })).toThrow(message);
+  });
+});
+
 describe('Web stack', () => {
   test('attach deploys only the Web stack, named after the slugified branch', () => {
     const app = new App();
-    const { data, api, web } = buildApp(app, { env: 'dev', account, branch: 'whunter/Multi_Env' });
+    const { data, api, auth, web } = buildApp(app, { env: 'dev', account, branch: 'whunter/Multi_Env' });
     expect(data).toBeUndefined();
     expect(api).toBeUndefined();
+    expect(auth).toBeUndefined();
     expect(stackNames(app)).toEqual(['DlpAccessNext-Web-whunter-multi-env']);
     expect(web!.dependencies).toHaveLength(0);
   });
 
-  test('provision deploys Data and Api first', () => {
+  test('provision deploys Data, Api and Auth first', () => {
     const app = new App();
-    const { api, web } = buildApp(app, { env: 'f-search', account, branch: 'search', backend: 'provision' });
+    const { api, auth, web } = buildApp(app, { env: 'f-search', account, branch: 'search', backend: 'provision' });
     expect(stackNames(app).sort()).toEqual([
       'DlpAccessNext-Web-search',
       'DlpAccessNext-f-search-Api',
+      'DlpAccessNext-f-search-Auth',
       'DlpAccessNext-f-search-Data',
     ]);
     expect(web!.dependencies).toContain(api);
+    expect(web!.dependencies).toContain(auth);
   });
 
   test.each([
@@ -426,6 +480,11 @@ describe('Web stack', () => {
     [{ env: 'dev', branch: 'x', backend: 'create' }, /Invalid backend "create"/],
     [{ env: 'dev', branch: '///' }, /Invalid branch/],
     [{ env: 'dev', branch: 'a'.repeat(33) }, /Invalid branch/],
+    [{ env: 'dev', branch: 'x', userPool: 'us-east-1_AbCd12345' }, /-c userPool only applies/],
+    [{ env: 'dev', appUrl: 'https://next.example.edu' }, /-c appUrl only applies with -c branch/],
+    [{ env: 'dev', branch: 'x', appUrl: 'http://next.example.edu' }, /Invalid appUrl/],
+    [{ env: 'dev', branch: 'x', appUrl: 'https://next.example.edu/app' }, /Invalid appUrl/],
+    [{ env: 'dev', branch: 'x', appUrl: 'next.example.edu' }, /Invalid appUrl/],
   ])('rejects %p', (options, message) => {
     expect(() => buildApp(new App(), { account, ...options })).toThrow(message);
   });
@@ -461,6 +520,54 @@ describe('Web stack', () => {
       Default: '/dlp-access-next/pre-production/graphql-api-url',
     });
     expect(JSON.stringify(web.toJSON())).not.toMatch(/Fn::ImportValue/);
+  });
+
+  test('has its own confidential app client on the environment user pool from SSM', () => {
+    web.hasParameter('*', {
+      Type: 'AWS::SSM::Parameter::Value<String>',
+      Default: '/dlp-access-next/pre-production/user-pool-id',
+    });
+    web.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+      ClientName: 'dlpnext-feature-search',
+      UserPoolId: { Ref: Match.anyValue() },
+      GenerateSecret: true,
+      AllowedOAuthFlows: ['code'],
+      AllowedOAuthScopes: ['openid', 'email'],
+      CallbackURLs: ['http://localhost:3000/auth/callback'],
+      LogoutURLs: ['http://localhost:3000/'],
+    });
+    // No custom resource (and so no Lambda) to read the client secret.
+    web.resourceCountIs('AWS::Lambda::Function', 0);
+    const setting = (name: string, value: unknown) => option('aws:elasticbeanstalk:application:environment', name, value);
+    web.hasResourceProperties('AWS::ElasticBeanstalk::Environment', {
+      OptionSettings: Match.arrayWith([
+        setting('COGNITO_ISSUER', {
+          'Fn::Join': ['', ['https://cognito-idp.us-east-1.amazonaws.com/', { Ref: Match.anyValue() }]],
+        }),
+        setting('COGNITO_CLIENT_ID', { Ref: Match.stringLikeRegexp('^AppClient') }),
+        setting('COGNITO_CLIENT_SECRET', { 'Fn::GetAtt': [Match.stringLikeRegexp('^AppClient'), 'ClientSecret'] }),
+      ]),
+    });
+    expect(JSON.stringify(web.toJSON())).not.toMatch(/APP_BASE_URL/);
+  });
+
+  test('appUrl is registered for sign-in and passed to the app', () => {
+    const { web: withUrl } = buildApp(new App(), {
+      env: 'dev',
+      account,
+      branch: 'main',
+      appUrl: 'https://next.example.edu/',
+    });
+    const template = Template.fromStack(withUrl!);
+    template.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+      CallbackURLs: ['https://next.example.edu/auth/callback', 'http://localhost:3000/auth/callback'],
+      LogoutURLs: ['https://next.example.edu/', 'http://localhost:3000/'],
+    });
+    template.hasResourceProperties('AWS::ElasticBeanstalk::Environment', {
+      OptionSettings: Match.arrayWith([
+        option('aws:elasticbeanstalk:application:environment', 'APP_BASE_URL', 'https://next.example.edu'),
+      ]),
+    });
   });
 
   test('the production flag uses a larger instance', () => {

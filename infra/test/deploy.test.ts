@@ -29,6 +29,8 @@ describe('optionsFromContext', () => {
       production: true,
       branch: undefined,
       backend: undefined,
+      userPool: undefined,
+      appUrl: undefined,
     });
   });
 });
@@ -42,9 +44,11 @@ describe('describePlan', () => {
     expect(text).toMatch(/Production\s+false \(search: 1 x t3\.small\.search across 1 AZ; web: t3\.small\)/);
     expect(text).toMatch(/Branch\s+whunter-multi-env/);
     expect(text).toMatch(/Backend\s+provision/);
+    expect(text).toMatch(/User pool\s+\(new\)/);
+    expect(text).toMatch(/App URL\s+\(none\)/);
     expect(text).toMatch(/Data on destroy\s+destroy/);
     expect(text).toMatch(
-      /Stacks\s+DlpAccessNext-f-search-Data, DlpAccessNext-f-search-Api, DlpAccessNext-Web-whunter-multi-env/,
+      /Stacks\s+DlpAccessNext-f-search-Data, DlpAccessNext-f-search-Api, DlpAccessNext-f-search-Auth, DlpAccessNext-Web-whunter-multi-env/,
     );
   });
 
@@ -54,13 +58,31 @@ describe('describePlan', () => {
     expect(text).toMatch(/Branch\s+\(none\)/);
     expect(text).toMatch(/Backend\s+\(none\)/);
     expect(text).toMatch(/Data on destroy\s+retain/);
-    expect(text).toMatch(/Stacks\s+DlpAccessNext-production-Data, DlpAccessNext-production-Api$/m);
+    expect(text).toMatch(
+      /Stacks\s+DlpAccessNext-production-Data, DlpAccessNext-production-Api, DlpAccessNext-production-Auth$/m,
+    );
   });
 
   test('attach deploys only the Web stack', () => {
     const text = describePlan(planApp({ env: 'dev', account, branch: 'main' }));
     expect(text).toMatch(/Backend\s+attach/);
+    expect(text).toMatch(/User pool\s+\(the environment's\)/);
     expect(text).toMatch(/Stacks\s+DlpAccessNext-Web-main$/m);
+  });
+
+  test('shows an existing user pool and the app URL', () => {
+    const text = describePlan(
+      planApp({
+        env: 'dev',
+        account,
+        branch: 'main',
+        backend: 'provision',
+        userPool: 'us-east-1_AbCd12345',
+        appUrl: 'https://next.example.edu/',
+      }),
+    );
+    expect(text).toMatch(/User pool\s+us-east-1_AbCd12345/);
+    expect(text).toMatch(/App URL\s+https:\/\/next\.example\.edu$/m);
   });
 });
 
