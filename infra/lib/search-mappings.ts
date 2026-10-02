@@ -20,6 +20,7 @@ import { SEARCHABLE_MODELS } from './models';
  *   Boolean                           boolean
  *   Int / Float                       long / double
  *   AWSJSON                           object, not indexed (kept in _source)
+ *   AWSJSON in INDEXED_JSON_FIELDS    object with indexed subfields
  *   date_range (not in the schema)    date_range, see DATE_RANGE_FIELD
  * Attributes not declared in the schema are kept in _source but not indexed
  * ("dynamic": false).
@@ -53,6 +54,7 @@ const DATE_FORMATS = [
 type FieldMapping = Record<string, unknown>;
 export interface IndexMapping {
   dynamic: false;
+  date_detection: false;
   properties: Record<string, FieldMapping>;
 }
 
@@ -85,6 +87,70 @@ const SCALAR_MAPPINGS: Record<string, FieldMapping> = {
   AWSDate: DATE_FIELD,
   AWSJSON: { type: 'object', enabled: false },
 };
+
+// A number stored as a string ("3.14"). A value that isn't a number is left
+// out of the field instead of the whole document being rejected.
+const NUMBER: FieldMapping = { type: 'double', ignore_malformed: true };
+
+// An AWSJSON field whose subfields are mapped as documents arrive: strings as
+// text with a .keyword subfield, numbers as long or double. A subfield keeps
+// the type of its first value, so a later document with a different type for
+// it is rejected. Strings are never detected as dates (date_detection is off).
+const DYNAMIC_OBJECT: FieldMapping = { type: 'object', dynamic: true };
+
+// archiveOptions holds the viewer settings of a 3D record: the glTF keys or
+// the X3DOM keys of `assets`, depending on its media_type. Keys not listed
+// here are kept in _source but not indexed.
+const ARCHIVE_OPTIONS: FieldMapping = {
+  type: 'object',
+  properties: {
+    assets: {
+      type: 'object',
+      properties: {
+        media_type: TEXT_WITH_KEYWORD,
+        // glTF
+        env_config: TEXT_WITH_KEYWORD,
+        gltf_config: TEXT_WITH_KEYWORD,
+        thumbnail: TEXT_WITH_KEYWORD,
+        // X3DOM
+        morpho_thumb: TEXT_WITH_KEYWORD,
+        x3d_config: TEXT_WITH_KEYWORD,
+        x3d_src_img: TEXT_WITH_KEYWORD,
+      },
+    },
+    config: {
+      type: 'object',
+      properties: {
+        _3d: {
+          type: 'object',
+          properties: {
+            rotation: {
+              type: 'object',
+              properties: { horizontal: NUMBER, vertical: NUMBER },
+            },
+            scale_factor: NUMBER,
+          },
+        },
+      },
+    },
+  },
+};
+
+/** The AWSJSON fields that are indexed, by model. The others stay unindexed. */
+export const INDEXED_JSON_FIELDS: Record<string, Record<string, FieldMapping>> = {
+  Archive: {
+    alt_text: DYNAMIC_OBJECT,
+    archiveOptions: ARCHIVE_OPTIONS,
+    extracted_text: DYNAMIC_OBJECT,
+    manifest_file_characterization: DYNAMIC_OBJECT,
+    visual_description: DYNAMIC_OBJECT,
+  },
+  Collection: {
+    collectionOptions: DYNAMIC_OBJECT,
+    ownerinfo: DYNAMIC_OBJECT,
+  },
+};
+
 const STRING_SCALARS = new Set([
   'String',
   'ID',
@@ -113,12 +179,15 @@ export function buildSearchMappings(schema: string): Record<string, IndexMapping
     if (def.kind !== 'ObjectTypeDefinition') continue;
     if (!(SEARCHABLE_MODELS as readonly string[]).includes(def.name.value)) continue;
     const properties: Record<string, FieldMapping> = {};
+    const jsonFields = INDEXED_JSON_FIELDS[def.name.value] ?? {};
     for (const field of def.fields ?? []) {
       const name = field.name.value;
       const type = namedType(field.type);
       if (typeNames.has(type)) continue; // relationship, not a stored attribute
       if (DATE_FIELDS.includes(name) && type === 'String') {
         properties[name] = DATE_FIELD;
+      } else if (type === 'AWSJSON' && jsonFields[name]) {
+        properties[name] = jsonFields[name];
       } else if (SCALAR_MAPPINGS[type]) {
         properties[name] = SCALAR_MAPPINGS[type];
       } else if (STRING_SCALARS.has(type)) {
@@ -128,7 +197,7 @@ export function buildSearchMappings(schema: string): Record<string, IndexMapping
       }
     }
     properties[DATE_RANGE_FIELD] = DATE_RANGE;
-    mappings[def.name.value.toLowerCase()] = { dynamic: false, properties };
+    mappings[def.name.value.toLowerCase()] = { dynamic: false, date_detection: false, properties };
   }
   return mappings;
 }
