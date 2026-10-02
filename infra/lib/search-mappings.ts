@@ -46,7 +46,6 @@ const DATE_FORMATS = [
   'yyyy-MM',
   'yyyy',
   'M/d/yyyy',
-  'epoch_millis',
   'strict_date_optional_time',
 ].join('||');
 
