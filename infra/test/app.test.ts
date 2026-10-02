@@ -223,9 +223,12 @@ describe('search mappings', () => {
     const notIndexed = { type: 'object', enabled: false };
     const archive = searchMappings('archive');
     const collection = searchMappings('collection');
-    for (const field of ['alt_text', 'extracted_text', 'manifest_file_characterization', 'visual_description']) {
-      expect(archive.properties[field]).toEqual(dynamicObject);
+    // Stored as plain strings
+    for (const field of ['alt_text', 'extracted_text', 'visual_description']) {
+      expect(archive.properties[field]).toEqual(archive.properties.title);
     }
+    // Stored as maps
+    expect(archive.properties.manifest_file_characterization).toEqual(dynamicObject);
     expect(collection.properties.collectionOptions).toEqual(dynamicObject);
     expect(collection.properties.ownerinfo).toEqual(dynamicObject);
     expect(collection.properties.alt_text).toEqual(notIndexed);
@@ -236,7 +239,6 @@ describe('search mappings', () => {
 
   test('archiveOptions maps the glTF and X3DOM keys', () => {
     const text = searchMappings('archive').properties.title;
-    const number = { type: 'double', ignore_malformed: true };
     expect(searchMappings('archive').properties.archiveOptions).toEqual({
       type: 'object',
       properties: {
@@ -258,8 +260,8 @@ describe('search mappings', () => {
             _3d: {
               type: 'object',
               properties: {
-                rotation: { type: 'object', properties: { horizontal: number, vertical: number } },
-                scale_factor: number,
+                rotation: { type: 'object', properties: { horizontal: text, vertical: text } },
+                scale_factor: text,
               },
             },
           },

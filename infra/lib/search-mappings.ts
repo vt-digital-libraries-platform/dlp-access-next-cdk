@@ -20,7 +20,7 @@ import { SEARCHABLE_MODELS } from './models';
  *   Boolean                           boolean
  *   Int / Float                       long / double
  *   AWSJSON                           object, not indexed (kept in _source)
- *   AWSJSON in INDEXED_JSON_FIELDS    object with indexed subfields
+ *   AWSJSON in INDEXED_JSON_FIELDS    text, or object with indexed subfields
  *   date_range (not in the schema)    date_range, see DATE_RANGE_FIELD
  * Attributes not declared in the schema are kept in _source but not indexed
  * ("dynamic": false).
@@ -88,11 +88,7 @@ const SCALAR_MAPPINGS: Record<string, FieldMapping> = {
   AWSJSON: { type: 'object', enabled: false },
 };
 
-// A number stored as a string ("3.14"). A value that isn't a number is left
-// out of the field instead of the whole document being rejected.
-const NUMBER: FieldMapping = { type: 'double', ignore_malformed: true };
-
-// An AWSJSON field whose subfields are mapped as documents arrive: strings as
+// An AWSJSON field stored as a map, whose subfields are mapped as documents arrive: strings as
 // text with a .keyword subfield, numbers as long or double. A subfield keeps
 // the type of its first value, so a later document with a different type for
 // it is rejected. Strings are never detected as dates (date_detection is off).
@@ -100,7 +96,8 @@ const DYNAMIC_OBJECT: FieldMapping = { type: 'object', dynamic: true };
 
 // archiveOptions holds the viewer settings of a 3D record: the glTF keys or
 // the X3DOM keys of `assets`, depending on its media_type. Keys not listed
-// here are kept in _source but not indexed.
+// here are kept in _source but not indexed. The numbers are stored as strings
+// ("3.14") and are indexed as strings.
 const ARCHIVE_OPTIONS: FieldMapping = {
   type: 'object',
   properties: {
@@ -126,9 +123,9 @@ const ARCHIVE_OPTIONS: FieldMapping = {
           properties: {
             rotation: {
               type: 'object',
-              properties: { horizontal: NUMBER, vertical: NUMBER },
+              properties: { horizontal: TEXT_WITH_KEYWORD, vertical: TEXT_WITH_KEYWORD },
             },
-            scale_factor: NUMBER,
+            scale_factor: TEXT_WITH_KEYWORD,
           },
         },
       },
@@ -136,14 +133,20 @@ const ARCHIVE_OPTIONS: FieldMapping = {
   },
 };
 
-/** The AWSJSON fields that are indexed, by model. The others stay unindexed. */
+/**
+ * The AWSJSON fields that are indexed, by model. The others stay unindexed.
+ * The mapping has to match how the tables store the field: alt_text,
+ * extracted_text and visual_description hold a plain string, the others a
+ * map. A document with a string where an object is mapped, or the reverse,
+ * is rejected.
+ */
 export const INDEXED_JSON_FIELDS: Record<string, Record<string, FieldMapping>> = {
   Archive: {
-    alt_text: DYNAMIC_OBJECT,
+    alt_text: TEXT_WITH_KEYWORD,
     archiveOptions: ARCHIVE_OPTIONS,
-    extracted_text: DYNAMIC_OBJECT,
+    extracted_text: TEXT_WITH_KEYWORD,
     manifest_file_characterization: DYNAMIC_OBJECT,
-    visual_description: DYNAMIC_OBJECT,
+    visual_description: TEXT_WITH_KEYWORD,
   },
   Collection: {
     collectionOptions: DYNAMIC_OBJECT,
