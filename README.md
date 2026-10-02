@@ -31,13 +31,14 @@ APPSYNC_API_URL=<GraphQLApiUrl output of an Api stack> npm run dev
 
 The app signs AppSync requests with your local AWS credentials, so you need to be logged in to the account, with permission to call the API. Open http://localhost:3000/examples/appsync-queries to run every query in the schema.
 
-That page requires signing in through a Cognito user pool's managed login, as a member of the pool's `admin` group. A Web stack sets these on its Beanstalk environment. Locally, put them in `.env.local` (git-ignored): the issuer and client ID are the Web stack's `CognitoIssuer` and `CognitoClientId` outputs, and `aws cognito-idp describe-user-pool-client --user-pool-id <id> --client-id <id> --query UserPoolClient.ClientSecret` prints the secret.
+That page requires signing in through a Cognito user pool's managed login, as a member of the pool's `admin` group. A Web stack sets these on its Beanstalk environment. Locally, put them in `.env.local` (git-ignored): the issuer, client ID and identity provider are the Web stack's `CognitoIssuer`, `CognitoClientId` and `CognitoIdentityProvider` outputs, and `aws cognito-idp describe-user-pool-client --user-pool-id <id> --client-id <id> --query UserPoolClient.ClientSecret` prints the secret.
 
 | Variable | Value |
 | --- | --- |
 | `COGNITO_ISSUER` | `https://cognito-idp.<region>.amazonaws.com/<user pool ID>` |
 | `COGNITO_CLIENT_ID` | The app client's ID |
 | `COGNITO_CLIENT_SECRET` | The app client's secret |
+| `COGNITO_IDENTITY_PROVIDER` | Optional. The identity provider on the user pool to sign in through, such as `VT-SSO-OIDC`; sign-in goes straight to it. Without it, managed login shows whatever the app client allows. |
 | `APP_BASE_URL` | Optional. The app's public origin, when it differs from the one the server sees (behind a proxy). Defaults to the request's origin. |
 
 A Web stack's app client already allows `http://localhost:3000`. Any other app client needs `<origin>/auth/callback` as an allowed callback URL, `<origin>/` as an allowed sign-out URL, and the `openid` and `email` scopes. Cognito only accepts `http` callback URLs for `localhost`.
@@ -56,8 +57,8 @@ ACCOUNT=$(aws sts get-caller-identity --query Account --output text)   # the acc
 # An environment's data, API and a new Cognito user pool
 npm run deploy -- -c env=dev -c account=$ACCOUNT
 
-# The same, using an existing Cognito user pool instead of a new one
-npm run deploy -- -c env=dev -c account=$ACCOUNT -c userPool=<user pool ID>
+# The same, using an existing Cognito user pool and its federated identity provider
+npm run deploy -- -c env=dev -c account=$ACCOUNT -c userPool=<user pool ID> -c identityProvider=VT-SSO-OIDC
 
 # Your branch of the app, attached to an environment that is already deployed
 npm run deploy -- -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current)
@@ -74,6 +75,7 @@ npm run deploy -- -c env=production -c account=<production account ID> -c produc
 - `-c backend=attach` is the default. It deploys only the Web stack and needs the environment's Api and Auth stacks to exist already; otherwise the deploy fails with "Unable to fetch parameters".
 - `-c backend=provision` also deploys the environment's Data, Api and Auth stacks, before the Web stack.
 - `-c userPool=<user pool ID>` uses an existing user pool, in the environment's region, instead of provisioning one. The pool itself is left as it is, so it needs a managed login domain and an `admin` group already. Pass it on every deploy of the environment's stacks: leaving it out switches the environment to a new pool.
+- `-c identityProvider=<name>` names the federated identity provider on the user pool that users sign in through, such as `VT-SSO-OIDC`. Each branch's app client then allows only that provider and the app sends users straight to it. The provider is not created by CDK: it has to exist on the pool before a Web stack deploys, so a new pool needs it added by hand (registering the pool's managed login domain with the provider) between the environment deploy and the first branch deploy. Without the option, users are the pool's own. Like `-c userPool`, pass it on every deploy of the environment's stacks.
 - `-c appUrl=https://<host>` (with `-c branch`) registers the app's public origin for sign-in on the branch's app client. Cognito only accepts `http` for localhost and the Beanstalk environments serve HTTP only, so until the app has HTTPS in front of it, sign-in works only when it runs on `localhost:3000`.
 - Deploying the same branch with a different `env` repoints its Web stack at that environment.
 - `-c production=true` switches to production sizing: three OpenSearch nodes across three AZs instead of one, and a `t3.medium` Beanstalk instance instead of `t3.small`. It defaults to false and is separate from the environment name, so pass it for the real `production` deploy.

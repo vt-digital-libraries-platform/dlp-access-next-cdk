@@ -402,8 +402,8 @@ describe('API and Elastic Beanstalk access', () => {
 });
 
 describe('Auth stack', () => {
-  const authTemplate = (envName: string, userPool?: string) =>
-    Template.fromStack(buildApp(new App(), { env: envName, account, userPool }).auth!);
+  const authTemplate = (envName: string, userPool?: string, identityProvider?: string) =>
+    Template.fromStack(buildApp(new App(), { env: envName, account, userPool, identityProvider }).auth!);
 
   test('provisions a user pool with an admin group and a managed login domain', () => {
     const auth = authTemplate('dev');
@@ -441,6 +441,19 @@ describe('Auth stack', () => {
       Name: '/dlp-access-next/dev/user-pool-id',
       Value: 'us-east-1_AbCd12345',
     });
+  });
+
+  test('records the federated identity provider, defaulting to the pool\'s own users', () => {
+    const parameter = (value: string) => ({ Name: '/dlp-access-next/dev/identity-provider', Value: value });
+    authTemplate('dev').hasResourceProperties('AWS::SSM::Parameter', parameter('COGNITO'));
+    const federated = authTemplate('dev', 'us-east-1_AbCd12345', 'VT-SSO-OIDC');
+    federated.hasResourceProperties('AWS::SSM::Parameter', parameter('VT-SSO-OIDC'));
+    // The provider is only named: it is created outside CDK.
+    federated.resourceCountIs('AWS::Cognito::UserPoolIdentityProvider', 0);
+  });
+
+  test.each(['VT SSO', 'VT_SSO', '', 'a'.repeat(33)])('rejects identity provider %p', (identityProvider) => {
+    expect(() => buildApp(new App(), { env: 'dev', account, identityProvider })).toThrow(/Invalid identityProvider/);
   });
 
   test.each([
@@ -481,6 +494,7 @@ describe('Web stack', () => {
     [{ env: 'dev', branch: '///' }, /Invalid branch/],
     [{ env: 'dev', branch: 'a'.repeat(33) }, /Invalid branch/],
     [{ env: 'dev', branch: 'x', userPool: 'us-east-1_AbCd12345' }, /-c userPool only applies/],
+    [{ env: 'dev', branch: 'x', identityProvider: 'VT-SSO-OIDC' }, /-c identityProvider only applies/],
     [{ env: 'dev', appUrl: 'https://next.example.edu' }, /-c appUrl only applies with -c branch/],
     [{ env: 'dev', branch: 'x', appUrl: 'http://next.example.edu' }, /Invalid appUrl/],
     [{ env: 'dev', branch: 'x', appUrl: 'https://next.example.edu/app' }, /Invalid appUrl/],
@@ -535,6 +549,11 @@ describe('Web stack', () => {
       AllowedOAuthScopes: ['openid', 'email'],
       CallbackURLs: ['http://localhost:3000/auth/callback'],
       LogoutURLs: ['http://localhost:3000/'],
+      SupportedIdentityProviders: [{ Ref: Match.anyValue() }],
+    });
+    web.hasParameter('*', {
+      Type: 'AWS::SSM::Parameter::Value<String>',
+      Default: '/dlp-access-next/pre-production/identity-provider',
     });
     // No custom resource (and so no Lambda) to read the client secret.
     web.resourceCountIs('AWS::Lambda::Function', 0);
@@ -546,6 +565,7 @@ describe('Web stack', () => {
         }),
         setting('COGNITO_CLIENT_ID', { Ref: Match.stringLikeRegexp('^AppClient') }),
         setting('COGNITO_CLIENT_SECRET', { 'Fn::GetAtt': [Match.stringLikeRegexp('^AppClient'), 'ClientSecret'] }),
+        setting('COGNITO_IDENTITY_PROVIDER', { Ref: Match.anyValue() }),
       ]),
     });
     expect(JSON.stringify(web.toJSON())).not.toMatch(/APP_BASE_URL/);

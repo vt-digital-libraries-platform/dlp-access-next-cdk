@@ -117,6 +117,18 @@ export function userPoolIdParameterName(envName: string): string {
   return `/dlp-access-next/${envName}/user-pool-id`;
 }
 
+/**
+ * SSM parameter holding the name of the identity provider the environment's
+ * users sign in with: a federated provider on the user pool, or
+ * `COGNITO` for the pool's own users.
+ */
+export function identityProviderParameterName(envName: string): string {
+  return `/dlp-access-next/${envName}/identity-provider`;
+}
+
+/** Cognito's name for a user pool's own directory of users. */
+export const COGNITO_DIRECTORY = 'COGNITO';
+
 /** SSM parameter holding the environment's GraphQL API URL. */
 export function graphqlApiUrlParameterName(envName: string): string {
   return `/dlp-access-next/${envName}/graphql-api-url`;

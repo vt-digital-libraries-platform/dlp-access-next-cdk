@@ -7,7 +7,7 @@ import { WebStack, branchSlug, webResourceName } from './web-stack';
 
 /**
  * CDK context, as passed with `-c env=... -c account=... -c production=... -c branch=... -c backend=...
- * -c userPool=... -c appUrl=...`.
+ * -c userPool=... -c identityProvider=... -c appUrl=...`.
  */
 export interface AppOptions {
   readonly env?: string;
@@ -33,6 +33,12 @@ export interface AppOptions {
    */
   readonly userPool?: string;
   /**
+   * Name of the federated identity provider on the user pool that users sign
+   * in through, such as `VT-SSO-OIDC`. Omit for the pool's own users. Applies
+   * only when the environment's stacks are being deployed.
+   */
+  readonly identityProvider?: string;
+  /**
    * With a branch: the public HTTPS origin of the app, such as
    * `https://next.example.edu`. It is registered as a sign-in callback on
    * the branch's Cognito app client. Without it, sign-in only works for the
@@ -52,6 +58,8 @@ export interface AppPlan {
   readonly backend?: string;
   /** undefined when the Auth stack isn't deployed, or provisions its own pool. */
   readonly userPool?: string;
+  /** undefined when the Auth stack isn't deployed, or users are the pool's own. */
+  readonly identityProvider?: string;
   /** undefined without `-c appUrl`. */
   readonly appUrl?: string;
   readonly dataStackName?: string;
@@ -71,6 +79,8 @@ const BACKENDS = ['attach', 'provision'];
 const ACCOUNT_PATTERN = /^\d{12}$/;
 // <region>_<id>, e.g. us-east-1_AbCd12345
 const USER_POOL_ID_PATTERN = /^([a-z0-9-]+)_[0-9a-zA-Z]+$/;
+// Cognito provider names are at most 32 characters, without spaces or underscores.
+const IDENTITY_PROVIDER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9.-]{0,31}$/;
 
 /**
  * Reads a boolean context value. `-c name=true` arrives as the string
@@ -99,6 +109,7 @@ export function optionsFromContext(context: (key: string) => unknown): AppOption
     branch: str('branch'),
     backend: str('backend'),
     userPool: str('userPool'),
+    identityProvider: str('identityProvider'),
     appUrl: str('appUrl'),
   };
 }
@@ -134,12 +145,19 @@ export function planApp(options: AppOptions): AppPlan {
     webResourceName(branch);
   }
 
-  if (options.userPool !== undefined) {
-    if (!provision) {
+  for (const option of ['userPool', 'identityProvider'] as const) {
+    if (options[option] !== undefined && !provision) {
       throw new Error(
-        '-c userPool only applies when the environment\'s stacks are deployed: drop -c branch, or add -c backend=provision',
+        `-c ${option} only applies when the environment's stacks are deployed: drop -c branch, or add -c backend=provision`,
       );
     }
+  }
+  if (options.identityProvider !== undefined && !IDENTITY_PROVIDER_PATTERN.test(options.identityProvider)) {
+    throw new Error(
+      `Invalid identityProvider "${options.identityProvider}": use the name of an identity provider on the user pool, such as VT-SSO-OIDC`,
+    );
+  }
+  if (options.userPool !== undefined) {
     const region = USER_POOL_ID_PATTERN.exec(options.userPool)?.[1];
     if (region === undefined) {
       throw new Error(`Invalid userPool "${options.userPool}": use a Cognito user pool ID, such as us-east-1_AbCd12345`);
@@ -159,6 +177,7 @@ export function planApp(options: AppOptions): AppPlan {
     branch,
     backend: branch === undefined ? undefined : backend,
     userPool: options.userPool,
+    identityProvider: options.identityProvider,
     appUrl,
     dataStackName: provision ? `${prefix}-Data` : undefined,
     apiStackName: provision ? `${prefix}-Api` : undefined,
@@ -201,13 +220,18 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
 
   let auth: AuthStack | undefined;
   if (plan.authStackName) {
-    auth = new AuthStack(app, plan.authStackName, { env, config, existingUserPoolId: plan.userPool });
+    auth = new AuthStack(app, plan.authStackName, {
+      env,
+      config,
+      existingUserPoolId: plan.userPool,
+      identityProvider: plan.identityProvider,
+    });
   }
 
   let web: WebStack | undefined;
   if (plan.webStackName && plan.branch) {
     web = new WebStack(app, plan.webStackName, { env, config, branch: plan.branch, appUrl: plan.appUrl });
-    // The Web stack reads the API URL and the user pool ID from the SSM
+    // The Web stack reads the API URL and the sign-in settings from the SSM
     // parameters the Api and Auth stacks write, so it must deploy after them.
     for (const stack of [api, auth]) {
       if (stack) {

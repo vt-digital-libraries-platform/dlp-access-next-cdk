@@ -29,8 +29,10 @@ export function describePlan(plan: AppPlan): string {
   const { config } = plan;
   const search = config.search;
   const stacks = [plan.dataStackName, plan.apiStackName, plan.authStackName, plan.webStackName].filter(Boolean);
-  // Without an Auth stack, the Web stack uses whichever pool the environment already has.
-  const userPool = plan.authStackName ? (plan.userPool ?? '(new)') : "(the environment's)";
+  // Without an Auth stack, the Web stack uses whichever pool and provider the environment already has.
+  const attached = "(the environment's)";
+  const userPool = plan.authStackName ? (plan.userPool ?? '(new)') : attached;
+  const identityProvider = plan.authStackName ? (plan.identityProvider ?? "(none: the pool's own users)") : attached;
   const rows: [string, string][] = [
     ['Environment', config.name],
     ['Account', plan.account],
@@ -42,6 +44,7 @@ export function describePlan(plan: AppPlan): string {
     ['Branch', plan.branch ?? '(none)'],
     ['Backend', plan.backend ?? '(none)'],
     ['User pool', userPool],
+    ['Identity provider', identityProvider],
     ['App URL', plan.appUrl ?? '(none)'],
     ['Data on destroy', String(config.removalPolicy).toLowerCase()],
     ['Stacks', stacks.join(', ')],

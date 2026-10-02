@@ -11,6 +11,7 @@ import {
   EnvironmentConfig,
   ebInstanceProfileName,
   graphqlApiUrlParameterName,
+  identityProviderParameterName,
   userPoolIdParameterName,
 } from './environments';
 
@@ -101,12 +102,20 @@ export class WebStack extends Stack {
     // SSM. The app client is a confidential one for the authorization code
     // flow, as src/lib/auth.ts expects.
     const userPoolId = ssm.StringParameter.valueForStringParameter(this, userPoolIdParameterName(config.name));
+    // The one provider users sign in through: a federated provider on the
+    // pool, or COGNITO for the pool's own users. The app sends users straight
+    // to it, so the client allows no other.
+    const identityProvider = ssm.StringParameter.valueForStringParameter(
+      this,
+      identityProviderParameterName(config.name),
+    );
     const origins = appUrl ? [appUrl, LOCAL_ORIGIN] : [LOCAL_ORIGIN];
     const appClient = new cognito.UserPoolClient(this, 'AppClient', {
       userPool: cognito.UserPool.fromUserPoolId(this, 'UserPool', userPoolId),
       userPoolClientName: name,
       generateSecret: true,
       authFlows: {},
+      supportedIdentityProviders: [cognito.UserPoolClientIdentityProvider.custom(identityProvider)],
       oAuth: {
         flows: { authorizationCodeGrant: true },
         scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
@@ -137,6 +146,7 @@ export class WebStack extends Stack {
         COGNITO_ISSUER: cognitoIssuer,
         COGNITO_CLIENT_ID: appClient.userPoolClientId,
         COGNITO_CLIENT_SECRET: clientSecret,
+        COGNITO_IDENTITY_PROVIDER: identityProvider,
         // The origin the browser uses; the server only sees the proxy's.
         ...(appUrl ? { APP_BASE_URL: appUrl } : {}),
       },
@@ -174,6 +184,7 @@ export class WebStack extends Stack {
     // read it with `aws cognito-idp describe-user-pool-client`.
     new CfnOutput(this, 'CognitoIssuer', { value: cognitoIssuer });
     new CfnOutput(this, 'CognitoClientId', { value: appClient.userPoolClientId });
+    new CfnOutput(this, 'CognitoIdentityProvider', { value: identityProvider });
   }
 }
 

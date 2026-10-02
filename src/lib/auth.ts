@@ -26,6 +26,13 @@ function requireEnv(name: string): string {
   return value;
 }
 
+// The provider users sign in through: the name of a federated identity
+// provider on the user pool, or COGNITO for the pool's own users. When set,
+// sign-in goes straight to it instead of showing managed login's chooser.
+export function identityProvider(): string | undefined {
+  return process.env.COGNITO_IDENTITY_PROVIDER || undefined;
+}
+
 export function authConfig() {
   return {
     // https://cognito-idp.<region>.amazonaws.com/<user pool id>
