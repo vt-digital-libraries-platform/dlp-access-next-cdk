@@ -17,7 +17,8 @@ Each **environment** has its own data and API. Environments are `dev`, `pre-prod
 | --- | --- |
 | `DlpAccessNext-<env>-Data` | Seven DynamoDB tables (`<Model>-dlpnext-<env>`) and an OpenSearch 2.19 domain (`dlpnext-<env>`) |
 | `DlpAccessNext-<env>-Api` | The AppSync API (IAM auth), the Lambda that streams Archive and Collection changes into OpenSearch, and the environment's Beanstalk instance role (`dlp-access-next-<env>-eb`) |
-| `DlpAccessNext-Web-<branch>` | One git branch of the Next.js app: a Beanstalk application and single-instance Node.js 24 environment (`dlpnext-<branch>`) that calls one environment's API |
+| `DlpAccessNext-<env>-Auth` | The environment's Cognito user pool (`dlpnext-<env>`, with an `admin` group and a managed login domain), or a pointer to an existing pool |
+| `DlpAccessNext-Web-<branch>` | One git branch of the Next.js app: a Beanstalk application and single-instance Node.js 24 environment (`dlpnext-<branch>`) that calls one environment's API, and the branch's Cognito app client on the environment's user pool |
 
 Many branches can share one environment. Only feature environments delete their tables and domain when their stacks are destroyed. `dev`, `pre-production` and `production` keep their data and have deletion protection and point-in-time recovery turned on.
 
@@ -30,7 +31,7 @@ APPSYNC_API_URL=<GraphQLApiUrl output of an Api stack> npm run dev
 
 The app signs AppSync requests with your local AWS credentials, so you need to be logged in to the account, with permission to call the API. Open http://localhost:3000/examples/appsync-queries to run every query in the schema.
 
-That page requires signing in through a Cognito user pool's managed login, as a member of the pool's `admin` group. Put these in `.env.local` (git-ignored), or in the environment of a deployed app:
+That page requires signing in through a Cognito user pool's managed login, as a member of the pool's `admin` group. A Web stack sets these on its Beanstalk environment. Locally, put them in `.env.local` (git-ignored): the issuer and client ID are the Web stack's `CognitoIssuer` and `CognitoClientId` outputs, and `aws cognito-idp describe-user-pool-client --user-pool-id <id> --client-id <id> --query UserPoolClient.ClientSecret` prints the secret.
 
 | Variable | Value |
 | --- | --- |
@@ -39,7 +40,7 @@ That page requires signing in through a Cognito user pool's managed login, as a 
 | `COGNITO_CLIENT_SECRET` | The app client's secret |
 | `APP_BASE_URL` | Optional. The app's public origin, when it differs from the one the server sees (behind a proxy). Defaults to the request's origin. |
 
-The app client needs `<origin>/auth/callback` as an allowed callback URL, `<origin>/` as an allowed sign-out URL, and the `openid` and `email` scopes. Cognito only accepts `http` callback URLs for `localhost`.
+A Web stack's app client already allows `http://localhost:3000`. Any other app client needs `<origin>/auth/callback` as an allowed callback URL, `<origin>/` as an allowed sign-out URL, and the `openid` and `email` scopes. Cognito only accepts `http` callback URLs for `localhost`.
 
 Other checks: `npm run build`, `npm run lint`, `npx tsc --noEmit`.
 
@@ -52,8 +53,11 @@ cd infra
 npm install
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)   # the account you're logged in to
 
-# An environment's data and API
+# An environment's data, API and a new Cognito user pool
 npm run deploy -- -c env=dev -c account=$ACCOUNT
+
+# The same, using an existing Cognito user pool instead of a new one
+npm run deploy -- -c env=dev -c account=$ACCOUNT -c userPool=<user pool ID>
 
 # Your branch of the app, attached to an environment that is already deployed
 npm run deploy -- -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current)
@@ -67,8 +71,10 @@ npm run deploy -- -c env=production -c account=<production account ID> -c produc
 
 `npm run deploy` checks the options, lists them with the stacks they produce, and runs `cdk deploy --all` with the same arguments only if you answer `y` or `yes`. Any other answer deploys nothing. With `-c env=production` a red warning banner comes first, and it also points out when `-c production=true` is missing. Other `cdk deploy` flags pass through. Running `npx cdk deploy` directly skips the confirmation.
 
-- `-c backend=attach` is the default. It deploys only the Web stack and needs the environment's Api stack to exist already; otherwise the deploy fails with "Unable to fetch parameters".
-- `-c backend=provision` also deploys the environment's Data and Api stacks, before the Web stack.
+- `-c backend=attach` is the default. It deploys only the Web stack and needs the environment's Api and Auth stacks to exist already; otherwise the deploy fails with "Unable to fetch parameters".
+- `-c backend=provision` also deploys the environment's Data, Api and Auth stacks, before the Web stack.
+- `-c userPool=<user pool ID>` uses an existing user pool, in the environment's region, instead of provisioning one. The pool itself is left as it is, so it needs a managed login domain and an `admin` group already. Pass it on every deploy of the environment's stacks: leaving it out switches the environment to a new pool.
+- `-c appUrl=https://<host>` (with `-c branch`) registers the app's public origin for sign-in on the branch's app client. Cognito only accepts `http` for localhost and the Beanstalk environments serve HTTP only, so until the app has HTTPS in front of it, sign-in works only when it runs on `localhost:3000`.
 - Deploying the same branch with a different `env` repoints its Web stack at that environment.
 - `-c production=true` switches to production sizing: three OpenSearch nodes across three AZs instead of one, and a `t3.medium` Beanstalk instance instead of `t3.small`. It defaults to false and is separate from the environment name, so pass it for the real `production` deploy.
 - No account IDs are stored in the repo, and nothing ties an environment to an account: `-c account` alone decides where the stacks go, so double-check it, especially for `production`.

@@ -112,6 +112,11 @@ export function ebInstanceProfileName(envName: string): string {
   return `dlp-access-next-${envName}-eb`;
 }
 
+/** SSM parameter holding the ID of the environment's Cognito user pool. */
+export function userPoolIdParameterName(envName: string): string {
+  return `/dlp-access-next/${envName}/user-pool-id`;
+}
+
 /** SSM parameter holding the environment's GraphQL API URL. */
 export function graphqlApiUrlParameterName(envName: string): string {
   return `/dlp-access-next/${envName}/graphql-api-url`;
