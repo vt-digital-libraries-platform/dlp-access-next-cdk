@@ -218,6 +218,17 @@ describe('search mappings', () => {
     expect(properties.subject).toEqual(properties.title);
   });
 
+  test.each([
+    ['archive', ['archived', 'explicit', 'visibility']],
+    ['collection', ['archived', 'explicit_content', 'visibility']],
+  ])('the Boolean fields of %s are booleans', (index, fields) => {
+    const booleans = Object.entries(searchMappings(index).properties)
+      .filter(([, mapping]) => mapping.type === 'boolean')
+      .map(([field]) => field);
+    expect(booleans).toEqual(fields);
+    for (const field of fields) expect(searchMappings(index).properties[field]).toEqual({ type: 'boolean' });
+  });
+
   test('AWSJSON fields are objects with dynamically mapped subfields', () => {
     const dynamicObject = { type: 'object', dynamic: true };
     const archive = searchMappings('archive');
