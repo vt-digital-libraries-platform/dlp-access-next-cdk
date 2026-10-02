@@ -191,7 +191,7 @@ describe('search mappings', () => {
     type: 'date',
     format:
       'yyyy/MM/dd HH:mm:ss||yyyy/MM/dd||yyyy/MM||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||yyyy-MM||yyyy||M/d/yyyy||' +
-      'epoch_millis||strict_date_optional_time',
+      'strict_date_optional_time',
     ignore_malformed: true,
   };
 
