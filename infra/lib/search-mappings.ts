@@ -19,8 +19,8 @@ import { SEARCHABLE_MODELS } from './models';
  *   AWSDateTime / AWSDate             date in DATE_FORMATS, ignore_malformed
  *   Boolean                           boolean
  *   Int / Float                       long / double
- *   AWSJSON                           object, not indexed (kept in _source)
- *   AWSJSON in INDEXED_JSON_FIELDS    text, or object with indexed subfields
+ *   AWSJSON                           object, subfields mapped dynamically
+ *   archiveOptions                    object, see ARCHIVE_OPTIONS
  *   date_range (not in the schema)    date_range, see DATE_RANGE_FIELD
  * Attributes not declared in the schema are kept in _source but not indexed
  * ("dynamic": false).
@@ -85,13 +85,13 @@ const SCALAR_MAPPINGS: Record<string, FieldMapping> = {
   Float: { type: 'double' },
   AWSDateTime: DATE_FIELD,
   AWSDate: DATE_FIELD,
-  AWSJSON: { type: 'object', enabled: false },
 };
 
-// An AWSJSON field stored as a map, whose subfields are mapped as documents arrive: strings as
+// An AWSJSON field. Its subfields are mapped as documents arrive: strings as
 // text with a .keyword subfield, numbers as long or double. A subfield keeps
 // the type of its first value, so a later document with a different type for
-// it is rejected. Strings are never detected as dates (date_detection is off).
+// it is rejected, and so is a document whose value for the field itself is not
+// an object. Strings are never detected as dates (date_detection is off).
 const DYNAMIC_OBJECT: FieldMapping = { type: 'object', dynamic: true };
 
 // archiveOptions holds per-format settings: the viewer settings of a 3D
@@ -151,26 +151,8 @@ const ARCHIVE_OPTIONS: FieldMapping = {
   },
 };
 
-/**
- * The AWSJSON fields that are indexed, by model. The others stay unindexed.
- * The mapping has to match how the tables store the field: alt_text,
- * extracted_text and visual_description hold a plain string, the others a
- * map. A document with a string where an object is mapped, or the reverse,
- * is rejected.
- */
-export const INDEXED_JSON_FIELDS: Record<string, Record<string, FieldMapping>> = {
-  Archive: {
-    alt_text: TEXT_WITH_KEYWORD,
-    archiveOptions: ARCHIVE_OPTIONS,
-    extracted_text: TEXT_WITH_KEYWORD,
-    manifest_file_characterization: DYNAMIC_OBJECT,
-    visual_description: TEXT_WITH_KEYWORD,
-  },
-  Collection: {
-    collectionOptions: DYNAMIC_OBJECT,
-    ownerinfo: DYNAMIC_OBJECT,
-  },
-};
+// The AWSJSON fields with explicit subfield mappings, in any model
+const JSON_FIELD_MAPPINGS: Record<string, FieldMapping> = { archiveOptions: ARCHIVE_OPTIONS };
 
 const STRING_SCALARS = new Set([
   'String',
@@ -200,15 +182,14 @@ export function buildSearchMappings(schema: string): Record<string, IndexMapping
     if (def.kind !== 'ObjectTypeDefinition') continue;
     if (!(SEARCHABLE_MODELS as readonly string[]).includes(def.name.value)) continue;
     const properties: Record<string, FieldMapping> = {};
-    const jsonFields = INDEXED_JSON_FIELDS[def.name.value] ?? {};
     for (const field of def.fields ?? []) {
       const name = field.name.value;
       const type = namedType(field.type);
       if (typeNames.has(type)) continue; // relationship, not a stored attribute
       if (DATE_FIELDS.includes(name) && type === 'String') {
         properties[name] = DATE_FIELD;
-      } else if (type === 'AWSJSON' && jsonFields[name]) {
-        properties[name] = jsonFields[name];
+      } else if (type === 'AWSJSON') {
+        properties[name] = JSON_FIELD_MAPPINGS[name] ?? DYNAMIC_OBJECT;
       } else if (SCALAR_MAPPINGS[type]) {
         properties[name] = SCALAR_MAPPINGS[type];
       } else if (STRING_SCALARS.has(type)) {

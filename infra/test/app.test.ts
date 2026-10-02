@@ -218,20 +218,16 @@ describe('search mappings', () => {
     expect(properties.subject).toEqual(properties.title);
   });
 
-  test('only the listed AWSJSON fields are indexed', () => {
+  test('AWSJSON fields are objects with dynamically mapped subfields', () => {
     const dynamicObject = { type: 'object', dynamic: true };
-    const notIndexed = { type: 'object', enabled: false };
     const archive = searchMappings('archive');
     const collection = searchMappings('collection');
-    // Stored as plain strings
-    for (const field of ['alt_text', 'extracted_text', 'visual_description']) {
-      expect(archive.properties[field]).toEqual(archive.properties.title);
+    for (const field of ['alt_text', 'extracted_text', 'manifest_file_characterization', 'visual_description']) {
+      expect(archive.properties[field]).toEqual(dynamicObject);
     }
-    // Stored as maps
-    expect(archive.properties.manifest_file_characterization).toEqual(dynamicObject);
-    expect(collection.properties.collectionOptions).toEqual(dynamicObject);
-    expect(collection.properties.ownerinfo).toEqual(dynamicObject);
-    expect(collection.properties.alt_text).toEqual(notIndexed);
+    for (const field of ['alt_text', 'collectionOptions', 'ownerinfo']) {
+      expect(collection.properties[field]).toEqual(dynamicObject);
+    }
     // Dynamic subfields must not be guessed to be dates
     expect(archive.date_detection).toBe(false);
     expect(collection.date_detection).toBe(false);
