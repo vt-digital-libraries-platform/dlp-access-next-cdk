@@ -94,10 +94,11 @@ const SCALAR_MAPPINGS: Record<string, FieldMapping> = {
 // it is rejected. Strings are never detected as dates (date_detection is off).
 const DYNAMIC_OBJECT: FieldMapping = { type: 'object', dynamic: true };
 
-// archiveOptions holds the viewer settings of a 3D record: the glTF keys or
-// the X3DOM keys of `assets`, depending on its media_type. Keys not listed
-// here are kept in _source but not indexed. The numbers are stored as strings
-// ("3.14") and are indexed as strings.
+// archiveOptions holds per-format settings: the viewer settings of a 3D
+// record (the glTF keys or the X3DOM keys of `assets`, depending on its
+// media_type), a podcast episode's details, a document's page count. Keys not
+// listed here are kept in _source but not indexed. Apart from page_count, the
+// numbers are stored as strings ("3.14") and are indexed as strings.
 const ARCHIVE_OPTIONS: FieldMapping = {
   type: 'object',
   properties: {
@@ -105,6 +106,7 @@ const ARCHIVE_OPTIONS: FieldMapping = {
       type: 'object',
       properties: {
         media_type: TEXT_WITH_KEYWORD,
+        iiif_manifest: TEXT_WITH_KEYWORD,
         // glTF
         env_config: TEXT_WITH_KEYWORD,
         gltf_config: TEXT_WITH_KEYWORD,
@@ -130,6 +132,22 @@ const ARCHIVE_OPTIONS: FieldMapping = {
         },
       },
     },
+    derivatives: {
+      type: 'object',
+      properties: {
+        downloads: {
+          type: 'object',
+          properties: { lg: TEXT_WITH_KEYWORD, md: TEXT_WITH_KEYWORD, sm: TEXT_WITH_KEYWORD },
+        },
+      },
+    },
+    page_count: { type: 'long' },
+    // Podcast episodes
+    audioTranscript: TEXT_WITH_KEYWORD,
+    episodeNumber: TEXT_WITH_KEYWORD,
+    seasonNumber: TEXT_WITH_KEYWORD,
+    sourceLink: TEXT_WITH_KEYWORD,
+    sourceText: TEXT_WITH_KEYWORD,
   },
 };
 
