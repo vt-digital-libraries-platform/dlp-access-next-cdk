@@ -215,7 +215,57 @@ describe('search mappings', () => {
     });
     expect(properties.display_date).toEqual(properties.title);
     expect(properties.visibility).toEqual({ type: 'boolean' });
-    expect(properties.archiveOptions).toEqual({ type: 'object', enabled: false });
+    expect(properties.subject).toEqual(properties.title);
+  });
+
+  test('only the listed AWSJSON fields are indexed', () => {
+    const dynamicObject = { type: 'object', dynamic: true };
+    const notIndexed = { type: 'object', enabled: false };
+    const archive = searchMappings('archive');
+    const collection = searchMappings('collection');
+    for (const field of ['alt_text', 'extracted_text', 'manifest_file_characterization', 'visual_description']) {
+      expect(archive.properties[field]).toEqual(dynamicObject);
+    }
+    expect(collection.properties.collectionOptions).toEqual(dynamicObject);
+    expect(collection.properties.ownerinfo).toEqual(dynamicObject);
+    expect(collection.properties.alt_text).toEqual(notIndexed);
+    // Dynamic subfields must not be guessed to be dates
+    expect(archive.date_detection).toBe(false);
+    expect(collection.date_detection).toBe(false);
+  });
+
+  test('archiveOptions maps the glTF and X3DOM keys', () => {
+    const text = searchMappings('archive').properties.title;
+    const number = { type: 'double', ignore_malformed: true };
+    expect(searchMappings('archive').properties.archiveOptions).toEqual({
+      type: 'object',
+      properties: {
+        assets: {
+          type: 'object',
+          properties: {
+            media_type: text,
+            env_config: text,
+            gltf_config: text,
+            thumbnail: text,
+            morpho_thumb: text,
+            x3d_config: text,
+            x3d_src_img: text,
+          },
+        },
+        config: {
+          type: 'object',
+          properties: {
+            _3d: {
+              type: 'object',
+              properties: {
+                rotation: { type: 'object', properties: { horizontal: number, vertical: number } },
+                scale_factor: number,
+              },
+            },
+          },
+        },
+      },
+    });
   });
 
   test('every date field accepts ISO 8601 and ignores malformed values', () => {
