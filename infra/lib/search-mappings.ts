@@ -20,6 +20,7 @@ import { SEARCHABLE_MODELS } from './models';
  *   Boolean                           boolean
  *   Int / Float                       long / double
  *   AWSJSON                           object, not indexed (kept in _source)
+ *   date_range (not in the schema)    date_range, see DATE_RANGE_FIELD
  * Attributes not declared in the schema are kept in _source but not indexed
  * ("dynamic": false).
  */
@@ -64,6 +65,18 @@ const DATE_FIELD: FieldMapping = {
   format: DATE_FORMATS,
   ignore_malformed: true,
 };
+
+/**
+ * A derived field, not in the schema: the interval a document's dates cover.
+ * The streaming handler computes it (`lambda/opensearch-streaming/date_range.py`)
+ * from start_date and end_date, or from date when neither is set, so "1963"
+ * covers the whole year and "194X" the decade. A range filter on it matches
+ * documents whose interval overlaps the filter's. Range fields can't be
+ * sorted on; sort on start_date.
+ */
+export const DATE_RANGE_FIELD = 'date_range';
+const DATE_RANGE: FieldMapping = { type: 'date_range', format: 'strict_date_optional_time' };
+
 const SCALAR_MAPPINGS: Record<string, FieldMapping> = {
   Boolean: { type: 'boolean' },
   Int: { type: 'long' },
@@ -114,6 +127,7 @@ export function buildSearchMappings(schema: string): Record<string, IndexMapping
         throw new Error(`No mapping for ${def.name.value}.${name}: ${type}`);
       }
     }
+    properties[DATE_RANGE_FIELD] = DATE_RANGE;
     mappings[def.name.value.toLowerCase()] = { dynamic: false, properties };
   }
   return mappings;

@@ -3,7 +3,7 @@ import * as path from 'path';
 import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { booleanContext, buildApp } from '../lib/app';
-import { buildSearchMappings, searchMappings } from '../lib/search-mappings';
+import { buildSearchMappings, numericSortFields, searchMappings } from '../lib/search-mappings';
 
 const account = '123456789012';
 
@@ -201,7 +201,10 @@ describe('search mappings', () => {
   ])('the %s mappings cover every stored field of %s', (index, type, relationships) => {
     const mapping = searchMappings(index);
     expect(mapping.dynamic).toBe(false);
-    expect(Object.keys(mapping.properties)).toEqual(stored(type).filter((f) => !relationships.includes(f)));
+    expect(Object.keys(mapping.properties)).toEqual([
+      ...stored(type).filter((f) => !relationships.includes(f)),
+      'date_range',
+    ]);
   });
 
   test('field types follow the schema types', () => {
@@ -223,6 +226,16 @@ describe('search mappings', () => {
       const dates = Object.values(searchMappings(index).properties).filter((m) => m.type === 'date');
       expect(dates.length).toBeGreaterThanOrEqual(4);
       for (const mapping of dates) expect(mapping).toEqual(date);
+    }
+  });
+
+  test('each index has the derived date_range field, which is not a sort field', () => {
+    for (const index of ['archive', 'collection']) {
+      expect(searchMappings(index).properties.date_range).toEqual({
+        type: 'date_range',
+        format: 'strict_date_optional_time',
+      });
+      expect(numericSortFields([index])).not.toContain('date_range');
     }
   });
 

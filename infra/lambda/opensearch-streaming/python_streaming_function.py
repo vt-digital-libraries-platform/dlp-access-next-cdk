@@ -13,6 +13,8 @@ from botocore.httpsession import URLLib3Session
 from botocore.session import Session
 from boto3.dynamodb.types import TypeDeserializer
 
+from date_range import set_date_range
+
 
 # The following parameters are required to configure the OpenSearch cluster
 OPENSEARCH_ENDPOINT = os.environ['OPENSEARCH_ENDPOINT']
@@ -223,6 +225,8 @@ def _lambda_handler(event, context):
                 ])
                 doc_fields.pop('_ttl', None)
                 doc_fields.pop('_version', None)
+            # Add the date_range search field derived from the document's dates
+            set_date_range(doc_fields)
             # Append OpenSearch Action line with 'index' directive
             opensearch_actions.append(json.dumps(action))
             # Append JSON payload

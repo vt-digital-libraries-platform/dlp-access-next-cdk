@@ -54,6 +54,16 @@ def test_insert_indexes_document_into_index_named_after_table(posted):
     assert doc == item
 
 
+def test_indexed_document_gets_a_date_range_from_its_dates(posted):
+    item = {'id': 'a1', 'start_date': '1940/06/03', 'end_date': '1949/06/03'}
+    handler.lambda_handler({'Records': [record('INSERT', 'Archive-dlpnext-dev', item)]}, None)
+
+    assert posted[0]['lines'][1] == {
+        **item,
+        'date_range': [{'gte': '1940-06-03T00:00:00.000Z', 'lte': '1949-06-03T23:59:59.999Z'}],
+    }
+
+
 def test_collection_table_goes_to_collection_index(posted):
     handler.lambda_handler(
         {'Records': [record('INSERT', 'Collection-dlpnext-f-search', {'id': 'c1', 'title': 'Letters'})]}, None)
