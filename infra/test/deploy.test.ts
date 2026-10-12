@@ -2,6 +2,7 @@ import { optionsFromContext, planApp } from '../lib/app';
 import { contextFromArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
 
 const account = '123456789012';
+const userPool = 'us-east-1_AbCd12345';
 
 describe('contextFromArgs', () => {
   test('reads -c, --context and --context= forms and ignores other flags', () => {
@@ -31,9 +32,6 @@ describe('optionsFromContext', () => {
       backend: undefined,
       userPool: undefined,
       identityProvider: undefined,
-      identityProviderClientId: undefined,
-      identityProviderSecret: undefined,
-      identityProviderIssuer: undefined,
       appUrl: undefined,
     });
   });
@@ -41,14 +39,16 @@ describe('optionsFromContext', () => {
 
 describe('describePlan', () => {
   test('lists every option, with defaults applied, and the stacks', () => {
-    const text = describePlan(planApp({ env: 'f-search', account, branch: 'whunter/Multi_Env', backend: 'provision' }));
+    const text = describePlan(
+      planApp({ env: 'f-search', account, userPool, branch: 'whunter/Multi_Env', backend: 'provision' }),
+    );
     expect(text).toMatch(/Environment\s+f-search/);
     expect(text).toMatch(/Account\s+123456789012/);
     expect(text).toMatch(/Region\s+us-east-1/);
     expect(text).toMatch(/Production\s+false \(search: 1 x t3\.small\.search across 1 AZ; web: t3\.small\)/);
     expect(text).toMatch(/Branch\s+whunter-multi-env/);
     expect(text).toMatch(/Backend\s+provision/);
-    expect(text).toMatch(/User pool\s+\(new\)/);
+    expect(text).toMatch(/User pool\s+us-east-1_AbCd12345/);
     expect(text).toMatch(/Identity provider\s+\(none: the pool's own users\)/);
     expect(text).toMatch(/App URL\s+\(none\)/);
     expect(text).toMatch(/Data on destroy\s+destroy/);
@@ -58,7 +58,7 @@ describe('describePlan', () => {
   });
 
   test('shows production sizing, and no branch or backend for an environment deploy', () => {
-    const text = describePlan(planApp({ env: 'production', account, production: true }));
+    const text = describePlan(planApp({ env: 'production', account, userPool, production: true }));
     expect(text).toMatch(/Production\s+true \(search: 3 x m7g\.medium\.search across 3 AZ; web: t3\.medium\)/);
     expect(text).toMatch(/Branch\s+\(none\)/);
     expect(text).toMatch(/Backend\s+\(none\)/);
@@ -76,57 +76,38 @@ describe('describePlan', () => {
     expect(text).toMatch(/Stacks\s+DlpAccessNext-Web-main$/m);
   });
 
-  test('shows the identity provider a new pool gets, and the redirect URI to register with it', () => {
-    const text = describePlan(
-      planApp({
-        env: 'dev',
-        account,
-        identityProvider: 'VT-SSO-OIDC',
-        identityProviderClientId: 'abc123',
-        identityProviderSecret: 'dlpnext/dev/vt-sso',
-      }),
-    );
-    expect(text).toMatch(
-      /Identity provider\s+VT-SSO-OIDC \(new: issuer https:\/\/gateway\.login\.vt\.edu, client abc123, secret dlpnext\/dev\/vt-sso\)/,
-    );
-    expect(text).toMatch(
-      /Provider redirect\s+https:\/\/dlpnext-dev-123456789012\.auth\.us-east-1\.amazoncognito\.com\/oauth2\/idpresponse/,
-    );
-  });
-
-  test('shows an existing user pool, its identity provider and the app URL', () => {
+  test('shows the user pool, its identity provider and the app URL', () => {
     const text = describePlan(
       planApp({
         env: 'dev',
         account,
         branch: 'main',
         backend: 'provision',
-        userPool: 'us-east-1_AbCd12345',
+        userPool,
         identityProvider: 'VT-SSO-OIDC',
         appUrl: 'https://next.example.edu/',
       }),
     );
     expect(text).toMatch(/User pool\s+us-east-1_AbCd12345/);
     expect(text).toMatch(/Identity provider\s+VT-SSO-OIDC \(must already be on the user pool/);
-    expect(text).not.toMatch(/Provider redirect/);
     expect(text).toMatch(/App URL\s+https:\/\/next\.example\.edu$/m);
   });
 });
 
 describe('productionWarning', () => {
   test('warns for the production environment, naming the account', () => {
-    const warning = productionWarning(planApp({ env: 'production', account, production: true }));
+    const warning = productionWarning(planApp({ env: 'production', account, userPool, production: true }));
     expect(warning).toMatch(/WARNING: THIS DEPLOYS TO THE PRODUCTION ENVIRONMENT/);
     expect(warning).toMatch(/Account 123456789012/);
     expect(warning).not.toMatch(/production=true is not set/);
   });
 
   test('also warns when production sizing is off', () => {
-    expect(productionWarning(planApp({ env: 'production', account }))).toMatch(/production=true is not set/);
+    expect(productionWarning(planApp({ env: 'production', account, userPool }))).toMatch(/production=true is not set/);
   });
 
   test.each(['dev', 'pre-production', 'f-production'])('says nothing for %p', (env) => {
-    expect(productionWarning(planApp({ env, account, production: true }))).toBeUndefined();
+    expect(productionWarning(planApp({ env, account, userPool, production: true }))).toBeUndefined();
   });
 });
 

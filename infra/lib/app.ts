@@ -2,13 +2,12 @@ import { App } from 'aws-cdk-lib';
 import { ApiStack } from './api-stack';
 import { AuthStack } from './auth-stack';
 import { DataStack } from './data-stack';
-import { DEFAULT_OIDC_ISSUER, EnvironmentConfig, OidcProviderConfig, resolveEnvironment } from './environments';
+import { EnvironmentConfig, resolveEnvironment } from './environments';
 import { WebStack, branchSlug, webResourceName } from './web-stack';
 
 /**
  * CDK context, as passed with `-c env=... -c account=... -c production=... -c branch=... -c backend=...
- * -c userPool=... -c identityProvider=... -c identityProviderClientId=... -c identityProviderSecret=...
- * -c identityProviderIssuer=... -c appUrl=...`.
+ * -c userPool=... -c identityProvider=... -c appUrl=...`.
  */
 export interface AppOptions {
   readonly env?: string;
@@ -28,9 +27,9 @@ export interface AppOptions {
    */
   readonly backend?: string;
   /**
-   * ID of an existing Cognito user pool for the environment to use. Omit to
-   * provision a new pool. Applies only when the environment's stacks are
-   * being deployed.
+   * ID of the existing Cognito user pool for the environment to use.
+   * Required when the environment's stacks are being deployed, and only
+   * applies then.
    */
   readonly userPool?: string;
   /**
@@ -39,17 +38,6 @@ export interface AppOptions {
    * only when the environment's stacks are being deployed.
    */
   readonly identityProvider?: string;
-  /**
-   * With `identityProvider` and a new pool: the client ID the provider
-   * issued. Together with `identityProviderSecret` it makes the Auth stack
-   * create the provider on the pool. Without the two, the provider must be
-   * added to the pool by hand.
-   */
-  readonly identityProviderClientId?: string;
-  /** Name or ARN of the Secrets Manager secret whose value is the provider's client secret. */
-  readonly identityProviderSecret?: string;
-  /** The provider's OIDC issuer URL. Defaults to VT SSO. */
-  readonly identityProviderIssuer?: string;
   /**
    * With a branch: the public HTTPS origin of the app, such as
    * `https://next.example.edu`. It is registered as a sign-in callback on
@@ -68,12 +56,10 @@ export interface AppPlan {
   readonly branch?: string;
   /** undefined without `-c branch`. */
   readonly backend?: string;
-  /** undefined when the Auth stack isn't deployed, or provisions its own pool. */
+  /** undefined when the Auth stack isn't deployed. */
   readonly userPool?: string;
   /** undefined when the Auth stack isn't deployed, or users are the pool's own. */
   readonly identityProvider?: string;
-  /** Set when the Auth stack creates the identity provider on its new pool. */
-  readonly oidcProvider?: OidcProviderConfig;
   /** undefined without `-c appUrl`. */
   readonly appUrl?: string;
   readonly dataStackName?: string;
@@ -124,9 +110,6 @@ export function optionsFromContext(context: (key: string) => unknown): AppOption
     backend: str('backend'),
     userPool: str('userPool'),
     identityProvider: str('identityProvider'),
-    identityProviderClientId: str('identityProviderClientId'),
-    identityProviderSecret: str('identityProviderSecret'),
-    identityProviderIssuer: str('identityProviderIssuer'),
     appUrl: str('appUrl'),
   };
 }
@@ -174,6 +157,11 @@ export function planApp(options: AppOptions): AppPlan {
       `Invalid identityProvider "${options.identityProvider}": use the name of an identity provider on the user pool, such as VT-SSO-OIDC`,
     );
   }
+  if (provision && options.userPool === undefined) {
+    throw new Error(
+      "Missing CDK context: pass -c userPool=<user pool ID>, the existing Cognito user pool for the environment's users",
+    );
+  }
   if (options.userPool !== undefined) {
     const region = USER_POOL_ID_PATTERN.exec(options.userPool)?.[1];
     if (region === undefined) {
@@ -183,7 +171,6 @@ export function planApp(options: AppOptions): AppPlan {
       throw new Error(`Invalid userPool "${options.userPool}": the pool must be in ${config.region}, the environment's region`);
     }
   }
-  const oidcProvider = planOidcProvider(options);
   if (options.appUrl !== undefined && branch === undefined) {
     throw new Error('-c appUrl only applies with -c branch=<git branch>');
   }
@@ -196,56 +183,12 @@ export function planApp(options: AppOptions): AppPlan {
     backend: branch === undefined ? undefined : backend,
     userPool: options.userPool,
     identityProvider: options.identityProvider,
-    oidcProvider,
     appUrl,
     dataStackName: provision ? `${prefix}-Data` : undefined,
     apiStackName: provision ? `${prefix}-Api` : undefined,
     authStackName: provision ? `${prefix}-Auth` : undefined,
     webStackName: branch === undefined ? undefined : `DlpAccessNext-Web-${branch}`,
   };
-}
-
-// Secrets Manager names, or ARNs.
-const SECRET_NAME_PATTERN = /^[A-Za-z0-9/_+=.@:-]+$/;
-
-/**
- * Checks the options for creating the identity provider. They need a named
- * provider and a new pool: an existing pool's provider already exists.
- */
-function planOidcProvider(options: AppOptions): OidcProviderConfig | undefined {
-  const { identityProviderClientId: clientId, identityProviderSecret: secretName } = options;
-  const given = (['identityProviderClientId', 'identityProviderSecret', 'identityProviderIssuer'] as const).filter(
-    (option) => options[option] !== undefined,
-  );
-  if (given.length === 0) {
-    return undefined;
-  }
-  if (options.identityProvider === undefined) {
-    throw new Error(`-c ${given[0]} only applies with -c identityProvider=<name>`);
-  }
-  if (options.userPool !== undefined) {
-    throw new Error(
-      `-c ${given[0]} only applies to a new user pool: the provider on the existing pool ${options.userPool} is used as it is`,
-    );
-  }
-  if (clientId === undefined || secretName === undefined) {
-    throw new Error(
-      'To create the identity provider, pass both -c identityProviderClientId=<client ID> and -c identityProviderSecret=<Secrets Manager secret name>',
-    );
-  }
-  if (!/^\S+$/.test(clientId)) {
-    throw new Error(`Invalid identityProviderClientId "${clientId}": use the client ID the provider issued`);
-  }
-  if (!SECRET_NAME_PATTERN.test(secretName)) {
-    throw new Error(
-      `Invalid identityProviderSecret "${secretName}": use the name or ARN of the Secrets Manager secret holding the client secret, not the secret itself`,
-    );
-  }
-  const issuerUrl = options.identityProviderIssuer ?? DEFAULT_OIDC_ISSUER;
-  if (!/^https:\/\/\S+$/.test(issuerUrl)) {
-    throw new Error(`Invalid identityProviderIssuer "${issuerUrl}": use the provider's HTTPS issuer URL`);
-  }
-  return { issuerUrl, clientId, secretName };
 }
 
 /** Checks `-c appUrl` and returns its origin. Cognito only accepts HTTPS callbacks, except for localhost. */
@@ -281,13 +224,12 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
   }
 
   let auth: AuthStack | undefined;
-  if (plan.authStackName) {
+  if (plan.authStackName && plan.userPool) {
     auth = new AuthStack(app, plan.authStackName, {
       env,
       config,
-      existingUserPoolId: plan.userPool,
+      userPoolId: plan.userPool,
       identityProvider: plan.identityProvider,
-      oidcProvider: plan.oidcProvider,
     });
   }
 
