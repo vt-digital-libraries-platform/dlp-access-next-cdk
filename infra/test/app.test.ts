@@ -6,9 +6,10 @@ import { booleanContext, buildApp } from '../lib/app';
 import { buildSearchMappings, numericSortFields, searchMappings } from '../lib/search-mappings';
 
 const account = '123456789012';
+const userPool = 'us-east-1_AbCd12345';
 
 function synth(envName: string) {
-  const { data, api } = buildApp(new App(), { env: envName, account });
+  const { data, api } = buildApp(new App(), { env: envName, account, userPool });
   return { data: Template.fromStack(data!), api: Template.fromStack(api!) };
 }
 
@@ -21,7 +22,7 @@ const feature = synth('f-search');
 
 describe('environment selection', () => {
   test('stacks are named after the environment', () => {
-    const { data, api, auth, web } = buildApp(new App(), { env: 'f-search', account });
+    const { data, api, auth, web } = buildApp(new App(), { env: 'f-search', account, userPool });
     expect(web).toBeUndefined();
     expect(data!.stackName).toBe('DlpAccessNext-f-search-Data');
     expect(api!.stackName).toBe('DlpAccessNext-f-search-Api');
@@ -52,7 +53,7 @@ describe('environment selection', () => {
   });
 
   test('production uses the account passed in', () => {
-    const { data } = buildApp(new App(), { env: 'production', account });
+    const { data } = buildApp(new App(), { env: 'production', account, userPool });
     expect(data!.account).toBe(account);
   });
 
@@ -154,7 +155,7 @@ describe('search domain', () => {
   });
 
   test('the production flag makes the domain three nodes across three AZs', () => {
-    const { data } = buildApp(new App(), { env: 'production', account, production: true });
+    const { data } = buildApp(new App(), { env: 'production', account, userPool, production: true });
     Template.fromStack(data!).hasResourceProperties('AWS::OpenSearchService::Domain', {
       ClusterConfig: Match.objectLike({
         InstanceType: 'm7g.medium.search',
@@ -402,116 +403,44 @@ describe('API and Elastic Beanstalk access', () => {
 });
 
 describe('Auth stack', () => {
-  const authTemplate = (envName: string, userPool?: string, identityProvider?: string) =>
-    Template.fromStack(buildApp(new App(), { env: envName, account, userPool, identityProvider }).auth!);
+  const authTemplate = (identityProvider?: string) =>
+    Template.fromStack(buildApp(new App(), { env: 'dev', account, userPool, identityProvider }).auth!);
 
-  test('provisions a user pool with an admin group and a managed login domain', () => {
-    const auth = authTemplate('dev');
-    auth.hasResourceProperties('AWS::Cognito::UserPool', {
-      UserPoolName: 'dlpnext-dev',
-      UsernameAttributes: ['email'],
-      AdminCreateUserConfig: { AllowAdminCreateUserOnly: true },
-    });
-    auth.hasResourceProperties('AWS::Cognito::UserPoolGroup', {
-      GroupName: 'admin',
-      UserPoolId: { Ref: Match.anyValue() },
-    });
-    auth.hasResourceProperties('AWS::Cognito::UserPoolDomain', { Domain: `dlpnext-dev-${account}` });
-    auth.hasResourceProperties('AWS::SSM::Parameter', {
-      Name: '/dlp-access-next/dev/user-pool-id',
-      Value: { Ref: Match.anyValue() },
-    });
-  });
-
-  test('the pool is kept and protected, except in feature environments', () => {
-    const auth = authTemplate('dev');
-    auth.hasResource('AWS::Cognito::UserPool', { DeletionPolicy: 'Retain' });
-    auth.hasResourceProperties('AWS::Cognito::UserPool', { DeletionProtection: 'ACTIVE' });
-    const featureAuth = authTemplate('f-search');
-    featureAuth.hasResource('AWS::Cognito::UserPool', { DeletionPolicy: 'Delete' });
-    featureAuth.hasResourceProperties('AWS::Cognito::UserPool', { DeletionProtection: 'INACTIVE' });
-  });
-
-  test('an existing user pool is only recorded in SSM, not changed', () => {
-    const auth = authTemplate('dev', 'us-east-1_AbCd12345');
+  test('the user pool is only recorded in SSM, not created or changed', () => {
+    const auth = authTemplate();
     auth.resourceCountIs('AWS::Cognito::UserPool', 0);
     auth.resourceCountIs('AWS::Cognito::UserPoolGroup', 0);
     auth.resourceCountIs('AWS::Cognito::UserPoolDomain', 0);
     auth.hasResourceProperties('AWS::SSM::Parameter', {
       Name: '/dlp-access-next/dev/user-pool-id',
-      Value: 'us-east-1_AbCd12345',
+      Value: userPool,
     });
   });
 
   test('records the federated identity provider, defaulting to the pool\'s own users', () => {
     const parameter = (value: string) => ({ Name: '/dlp-access-next/dev/identity-provider', Value: value });
-    authTemplate('dev').hasResourceProperties('AWS::SSM::Parameter', parameter('COGNITO'));
-    const federated = authTemplate('dev', 'us-east-1_AbCd12345', 'VT-SSO-OIDC');
+    authTemplate().hasResourceProperties('AWS::SSM::Parameter', parameter('COGNITO'));
+    const federated = authTemplate('VT-SSO-OIDC');
     federated.hasResourceProperties('AWS::SSM::Parameter', parameter('VT-SSO-OIDC'));
     // The provider is only named: it is created outside CDK.
     federated.resourceCountIs('AWS::Cognito::UserPoolIdentityProvider', 0);
   });
 
-  const oidc = {
-    identityProvider: 'VT-SSO-OIDC',
-    identityProviderClientId: 'abc123',
-    identityProviderSecret: 'dlpnext/dev/vt-sso',
-  };
-
-  test('creates the OIDC provider on a new pool, with the client secret from Secrets Manager', () => {
-    const { auth } = buildApp(new App(), { env: 'dev', account, ...oidc });
-    const template = Template.fromStack(auth!);
-    template.hasResourceProperties('AWS::Cognito::UserPoolIdentityProvider', {
-      ProviderName: 'VT-SSO-OIDC',
-      ProviderType: 'OIDC',
-      UserPoolId: { Ref: Match.anyValue() },
-      AttributeMapping: { email: 'email', username: 'sub' },
-      ProviderDetails: {
-        client_id: 'abc123',
-        client_secret: '{{resolve:secretsmanager:dlpnext/dev/vt-sso:SecretString:::}}',
-        oidc_issuer: 'https://gateway.login.vt.edu',
-        authorize_scopes: 'openid email',
-        attributes_request_method: 'GET',
-      },
-    });
-    template.hasOutput('IdentityProviderRedirectUri', {
-      Value: `https://dlpnext-dev-${account}.auth.us-east-1.amazoncognito.com/oauth2/idpresponse`,
-    });
-  });
-
-  test('takes another issuer', () => {
-    const { auth } = buildApp(new App(), {
-      env: 'dev',
-      account,
-      ...oidc,
-      identityProviderIssuer: 'https://idp.example.edu',
-    });
-    Template.fromStack(auth!).hasResourceProperties('AWS::Cognito::UserPoolIdentityProvider', {
-      ProviderDetails: Match.objectLike({ oidc_issuer: 'https://idp.example.edu' }),
-    });
-  });
-
-  test.each([
-    [{ identityProviderClientId: 'abc123' }, /only applies with -c identityProvider/],
-    [{ ...oidc, userPool: 'us-east-1_AbCd12345' }, /only applies to a new user pool/],
-    [{ ...oidc, identityProviderSecret: undefined }, /pass both -c identityProviderClientId/],
-    [{ ...oidc, identityProviderClientId: undefined }, /pass both -c identityProviderClientId/],
-    [{ identityProvider: 'VT-SSO-OIDC', identityProviderIssuer: 'https://idp.example.edu' }, /pass both/],
-    [{ ...oidc, identityProviderSecret: 'not a name!' }, /Invalid identityProviderSecret/],
-    [{ ...oidc, identityProviderIssuer: 'http://idp.example.edu' }, /Invalid identityProviderIssuer/],
-  ])('rejects identity provider settings %p', (options, message) => {
-    expect(() => buildApp(new App(), { env: 'dev', account, ...options })).toThrow(message);
-  });
-
   test.each(['VT SSO', 'VT_SSO', '', 'a'.repeat(33)])('rejects identity provider %p', (identityProvider) => {
-    expect(() => buildApp(new App(), { env: 'dev', account, identityProvider })).toThrow(/Invalid identityProvider/);
+    expect(() => buildApp(new App(), { env: 'dev', account, userPool, identityProvider })).toThrow(
+      /Invalid identityProvider/,
+    );
   });
 
   test.each([
     ['AbCd12345', /Invalid userPool "AbCd12345": use a Cognito user pool ID/],
     ['us-west-2_AbCd12345', /the pool must be in us-east-1/],
-  ])('rejects user pool %p', (userPool, message) => {
-    expect(() => buildApp(new App(), { env: 'dev', account, userPool })).toThrow(message);
+  ])('rejects user pool %p', (badUserPool, message) => {
+    expect(() => buildApp(new App(), { env: 'dev', account, userPool: badUserPool })).toThrow(message);
+  });
+
+  test.each([{}, { branch: 'x', backend: 'provision' }])('requires a user pool with %p', (options) => {
+    expect(() => buildApp(new App(), { env: 'dev', account, ...options })).toThrow(/pass -c userPool=<user pool ID>/);
   });
 });
 
@@ -528,7 +457,13 @@ describe('Web stack', () => {
 
   test('provision deploys Data, Api and Auth first', () => {
     const app = new App();
-    const { api, auth, web } = buildApp(app, { env: 'f-search', account, branch: 'search', backend: 'provision' });
+    const { api, auth, web } = buildApp(app, {
+      env: 'f-search',
+      account,
+      userPool,
+      branch: 'search',
+      backend: 'provision',
+    });
     expect(stackNames(app).sort()).toEqual([
       'DlpAccessNext-Web-search',
       'DlpAccessNext-f-search-Api',
@@ -544,9 +479,9 @@ describe('Web stack', () => {
     [{ env: 'dev', branch: 'x', backend: 'create' }, /Invalid backend "create"/],
     [{ env: 'dev', branch: '///' }, /Invalid branch/],
     [{ env: 'dev', branch: 'a'.repeat(33) }, /Invalid branch/],
-    [{ env: 'dev', branch: 'x', userPool: 'us-east-1_AbCd12345' }, /-c userPool only applies/],
+    [{ env: 'dev', branch: 'x', userPool }, /-c userPool only applies/],
     [{ env: 'dev', branch: 'x', identityProvider: 'VT-SSO-OIDC' }, /-c identityProvider only applies/],
-    [{ env: 'dev', appUrl: 'https://next.example.edu' }, /-c appUrl only applies with -c branch/],
+    [{ env: 'dev', userPool, appUrl: 'https://next.example.edu' }, /-c appUrl only applies with -c branch/],
     [{ env: 'dev', branch: 'x', appUrl: 'http://next.example.edu' }, /Invalid appUrl/],
     [{ env: 'dev', branch: 'x', appUrl: 'https://next.example.edu/app' }, /Invalid appUrl/],
     [{ env: 'dev', branch: 'x', appUrl: 'next.example.edu' }, /Invalid appUrl/],
