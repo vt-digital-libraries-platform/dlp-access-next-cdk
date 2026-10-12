@@ -98,7 +98,7 @@ export class WebStack extends Stack {
     // "Unable to fetch parameters" if the environment's Api stack is missing.
     const apiUrl = ssm.StringParameter.valueForStringParameter(this, graphqlApiUrlParameterName(config.name));
 
-    // The environment's user pool, new or existing, likewise found through
+    // The environment's user pool, likewise found through
     // SSM. The app client is a confidential one for the authorization code
     // flow, as src/lib/auth.ts expects.
     const userPoolId = ssm.StringParameter.valueForStringParameter(this, userPoolIdParameterName(config.name));
