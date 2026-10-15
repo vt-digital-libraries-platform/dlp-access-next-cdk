@@ -178,15 +178,6 @@ def test_delete_of_a_missing_document_succeeds(monkeypatch):
     handler.lambda_handler({'Records': [record('MODIFY', 'Archive-dlpnext-dev', {'id': 'a1'})]}, None)
 
 
-def test_delete_not_found_reported_as_an_error_still_succeeds(monkeypatch):
-    respond_with(monkeypatch, bulk_response(
-        {'delete': {'_index': 'archive', '_id': 'a1', 'status': 404, 'result': 'not_found',
-                    'error': {'type': 'document_missing_exception', 'reason': 'not found'}}},
-    ))
-
-    handler.lambda_handler({'Records': [record('REMOVE', 'Archive-dlpnext-dev', {'id': 'a1'})]}, None)
-
-
 def test_server_error_is_retried(monkeypatch):
     monkeypatch.setattr(handler.time, 'sleep', lambda seconds: None)
     respond_with(monkeypatch,

@@ -64,15 +64,12 @@ class Searchable_Exception(Exception):
 class Bulk_Exception(Exception):
     '''Raised when OpenSearch rejects actions in a bulk request'''
 
-    def __init__(self, failed_items):
-        self.failed_items = failed_items
-        failures = []
-        for item in failed_items:
-            for action, result in item.items():
-                error = result.get('error')
-                reason = error.get('reason') if isinstance(error, dict) else error
-                failures.append('{} {}/{}: {}'.format(
-                    action, result.get('_index'), result.get('_id'), reason))
+    def __init__(self, failed_actions):
+        self.failed_actions = failed_actions
+        failures = ['{} {}/{}: {}'.format(
+            action, result.get('_index'), result.get('_id'),
+            result['error'].get('reason') if isinstance(result['error'], dict) else result['error'])
+            for action, result in failed_actions]
         Exception.__init__(
             self, 'Bulk_Exception: {} failed: {}'.format(len(failures), '; '.join(failures)))
 
@@ -126,7 +123,7 @@ def post_to_opensearch(payload):
                     continue
             raise  # Not retryable, or out of retries
 
-        opensearch_errors = failed_bulk_items(opensearch_ret)
+        opensearch_errors = failed_bulk_actions(opensearch_ret)
         if opensearch_errors:
             logger.error(
                 'OpenSearch post unsuccessful, errors present, took=%sms', opensearch_ret['took'])
@@ -137,17 +134,12 @@ def post_to_opensearch(payload):
         return
 
 
-# The bulk response items whose action failed. Deleting a document that is
-# already gone (such as the legacy "id=..." document after a MODIFY) succeeds.
-def failed_bulk_items(opensearch_ret):
-    failed = []
-    for item in opensearch_ret['items']:
-        for action, result in item.items():
-            if action == 'delete' and result.get('result') == 'not_found':
-                continue
-            if result.get('error'):
-                failed.append(item)
-    return failed
+# The (action, result) pairs of a bulk response whose action failed. Deleting a
+# document that is already gone (such as the legacy "id=..." document after a
+# MODIFY) returns result "not_found" with no error, so it succeeds.
+def failed_bulk_actions(opensearch_ret):
+    return [(action, result) for item in opensearch_ret['items']
+            for action, result in item.items() if result.get('error')]
 
 
 # Extracts the DynamoDB table from an ARN
