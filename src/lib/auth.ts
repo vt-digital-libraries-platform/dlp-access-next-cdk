@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, errors, jwtVerify } from "jose";
 import { Issuer, type Client } from "openid-client";
 
 // Cognito sign-in through the user pool's managed login (OIDC authorization
@@ -80,6 +80,22 @@ export function getClient(): Promise<Client> {
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | undefined;
 
+// jose's codes for a token that is malformed, expired, issued for another
+// client or pool, or signed with a key the pool doesn't have. Any other
+// failure, such as not reaching the pool's signing keys, is an error rather
+// than a signed-out user, or every request would send the user to sign in.
+const INVALID_TOKEN_CODES = new Set([
+  errors.JWSInvalid.code,
+  errors.JWTInvalid.code,
+  errors.JWTExpired.code,
+  errors.JWTClaimValidationFailed.code,
+  errors.JWSSignatureVerificationFailed.code,
+  errors.JWKSNoMatchingKey.code,
+  errors.JWKSMultipleMatchingKeys.code,
+  errors.JOSEAlgNotAllowed.code,
+  errors.JOSENotSupported.code,
+]);
+
 async function verifyIdToken(token: string): Promise<Session | null> {
   const { issuer, clientId } = authConfig();
   jwks ??= createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
@@ -92,9 +108,10 @@ async function verifyIdToken(token: string): Promise<Session | null> {
       email: typeof payload.email === "string" ? payload.email : null,
       groups: Array.isArray(groups) ? groups.map(String) : [],
     };
-  } catch {
-    // Expired, tampered with, or issued for another client.
-    return null;
+  } catch (err) {
+    if (err instanceof errors.JOSEError && INVALID_TOKEN_CODES.has(err.code)) return null;
+    console.error("ID token verification error:", err);
+    throw new Error("Couldn't verify the sign-in session.", { cause: err });
   }
 }
 
