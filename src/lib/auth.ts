@@ -11,6 +11,8 @@ export const SESSION_COOKIE = "dlp_id_token";
 // Holds the state, nonce and return path between /auth/login and /authorize.
 export const LOGIN_COOKIE = "dlp_oidc_login";
 export const ADMIN_GROUP = "admin";
+// The Web stack registers this on the Cognito app client
+// (infra/lib/web-stack.ts); a test there checks that they match.
 export const CALLBACK_PATH = "/authorize";
 export const SCOPE = "email openid";
 

@@ -4,6 +4,7 @@ import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { booleanContext, buildApp } from '../lib/app';
 import { buildSearchMappings, numericSortFields, searchMappings } from '../lib/search-mappings';
+import { CALLBACK_PATH } from '../lib/web-stack';
 
 const account = '123456789012';
 const userPool = 'us-east-1_AbCd12345';
@@ -445,6 +446,14 @@ describe('Auth stack', () => {
 });
 
 describe('Web stack', () => {
+  // The root app is a separate npm project, so its auth module is read as text.
+  test("registers the app's sign-in callback route", () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const auth = fs.readFileSync(path.join(repoRoot, 'src', 'lib', 'auth.ts'), 'utf8');
+    expect(auth.match(/export const CALLBACK_PATH = ["'](.*?)["']/)?.[1]).toBe(CALLBACK_PATH);
+    expect(fs.existsSync(path.join(repoRoot, 'src', 'app', ...CALLBACK_PATH.split('/'), 'route.ts'))).toBe(true);
+  });
+
   test('attach deploys only the Web stack, named after the slugified branch', () => {
     const app = new App();
     const { data, api, auth, web } = buildApp(app, { env: 'dev', account, branch: 'whunter/Multi_Env' });
