@@ -1,10 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { CfnOutput, IgnoreMode, Stack, StackProps } from 'aws-cdk-lib';
+import { CfnOutput, IgnoreMode, RemovalPolicy, SecretValue, Stack, StackProps } from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as elasticbeanstalk from 'aws-cdk-lib/aws-elasticbeanstalk';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import {
@@ -124,9 +125,24 @@ export class WebStack extends Stack {
       },
     });
     const cognitoIssuer = `https://cognito-idp.${this.region}.amazonaws.com/${userPoolId}`;
-    // Read from the resource attribute: the construct's own accessor makes a
-    // custom resource to fetch the same value.
-    const clientSecret = (appClient.node.defaultChild as cognito.CfnUserPoolClient).attrClientSecret;
+    // Kept out of the plain-text environment properties. Beanstalk reads it
+    // with the instance role and hands it to the app as an environment
+    // variable. The name is generated: a deleted secret keeps its name during
+    // its recovery window, so a fixed one would collide on redeploy.
+    const clientSecret = new secretsmanager.Secret(this, 'ClientSecret', {
+      description: `Cognito app client secret for ${name}`,
+      // Read from the resource attribute: the construct's own accessor makes
+      // a custom resource to fetch the same value.
+      secretStringValue: SecretValue.resourceAttribute(
+        (appClient.node.defaultChild as cognito.CfnUserPoolClient).attrClientSecret,
+      ),
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    // The environment's instance role is shared by its branches and owned by
+    // its Api stack; this grant is the branch's own and is in place before
+    // the environment's first instance starts.
+    const instanceRole = iam.Role.fromRoleName(this, 'InstanceRole', ebInstanceProfileName(config.name));
+    const secretRead = clientSecret.grantRead(instanceRole);
 
     const settings: Record<string, Record<string, string>> = {
       'aws:elasticbeanstalk:environment': {
@@ -145,10 +161,12 @@ export class WebStack extends Stack {
         AWS_REGION: this.region,
         COGNITO_ISSUER: cognitoIssuer,
         COGNITO_CLIENT_ID: appClient.userPoolClientId,
-        COGNITO_CLIENT_SECRET: clientSecret,
         COGNITO_IDENTITY_PROVIDER: identityProvider,
         // The origin the browser uses; the server only sees the proxy's.
         ...(appUrl ? { APP_BASE_URL: appUrl } : {}),
+      },
+      'aws:elasticbeanstalk:application:environmentsecrets': {
+        COGNITO_CLIENT_SECRET: clientSecret.secretArn,
       },
       'aws:elasticbeanstalk:healthreporting:system': {
         SystemType: 'enhanced',
@@ -177,14 +195,16 @@ export class WebStack extends Stack {
       ),
     });
     environment.addResourceDependency(application);
+    secretRead.applyBefore(environment);
 
     new CfnOutput(this, 'EnvironmentName', { value: name });
     new CfnOutput(this, 'EndpointUrl', { value: environment.attrEndpointUrl });
-    // For running the branch locally. The client secret is not an output;
-    // read it with `aws cognito-idp describe-user-pool-client`.
+    // For running the branch locally. The client secret itself is not an
+    // output; read it with `aws secretsmanager get-secret-value`.
     new CfnOutput(this, 'CognitoIssuer', { value: cognitoIssuer });
     new CfnOutput(this, 'CognitoClientId', { value: appClient.userPoolClientId });
     new CfnOutput(this, 'CognitoIdentityProvider', { value: identityProvider });
+    new CfnOutput(this, 'CognitoClientSecretArn', { value: clientSecret.secretArn });
   }
 }
 

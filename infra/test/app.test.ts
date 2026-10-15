@@ -550,11 +550,50 @@ describe('Web stack', () => {
           'Fn::Join': ['', ['https://cognito-idp.us-east-1.amazonaws.com/', { Ref: Match.anyValue() }]],
         }),
         setting('COGNITO_CLIENT_ID', { Ref: Match.stringLikeRegexp('^AppClient') }),
-        setting('COGNITO_CLIENT_SECRET', { 'Fn::GetAtt': [Match.stringLikeRegexp('^AppClient'), 'ClientSecret'] }),
         setting('COGNITO_IDENTITY_PROVIDER', { Ref: Match.anyValue() }),
       ]),
     });
     expect(JSON.stringify(web.toJSON())).not.toMatch(/APP_BASE_URL/);
+  });
+
+  const secretId = Object.keys(web.findResources('AWS::SecretsManager::Secret'))[0];
+  const environment = Object.values(web.findResources('AWS::ElasticBeanstalk::Environment'))[0];
+
+  test('keeps the client secret in Secrets Manager, not in plain-text environment properties', () => {
+    web.hasResourceProperties('AWS::SecretsManager::Secret', {
+      SecretString: { 'Fn::GetAtt': [Match.stringLikeRegexp('^AppClient'), 'ClientSecret'] },
+    });
+    web.hasResource('AWS::SecretsManager::Secret', { DeletionPolicy: 'Delete' });
+    web.hasResourceProperties('AWS::ElasticBeanstalk::Environment', {
+      OptionSettings: Match.arrayWith([
+        option('aws:elasticbeanstalk:application:environmentsecrets', 'COGNITO_CLIENT_SECRET', { Ref: secretId }),
+      ]),
+    });
+    const settings: { Namespace: string; OptionName: string }[] = environment.Properties.OptionSettings;
+    expect(settings).not.toContainEqual(
+      expect.objectContaining({ Namespace: 'aws:elasticbeanstalk:application:environment', OptionName: 'COGNITO_CLIENT_SECRET' }),
+    );
+    // The secret value only reaches the template as the secret's own property.
+    const secretValueRefs = JSON.stringify(web.toJSON()).match(/"Fn::GetAtt":\["AppClient[^"]*","ClientSecret"\]/g) ?? [];
+    expect(secretValueRefs).toHaveLength(1);
+    web.hasOutput('CognitoClientSecretArn', { Value: { Ref: secretId } });
+  });
+
+  test('only the environment instance role can read the client secret, before the environment starts', () => {
+    const readers = Object.entries(web.findResources('AWS::IAM::Policy')).filter(([, p]) =>
+      JSON.stringify(p.Properties.PolicyDocument).includes(secretId),
+    );
+    expect(readers).toHaveLength(1);
+    const [[policyId, policy]] = readers;
+    expect(policy.Properties.Roles).toEqual(['dlp-access-next-pre-production-eb']);
+    expect(policy.Properties.PolicyDocument.Statement).toEqual([
+      expect.objectContaining({
+        Effect: 'Allow',
+        Action: expect.arrayContaining(['secretsmanager:GetSecretValue']),
+        Resource: { Ref: secretId },
+      }),
+    ]);
+    expect(environment.DependsOn).toContain(policyId);
   });
 
   test('appUrl is registered for sign-in and passed to the app', () => {
