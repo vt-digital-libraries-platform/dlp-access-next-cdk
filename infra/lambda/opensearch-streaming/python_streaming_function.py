@@ -61,6 +61,22 @@ class Searchable_Exception(Exception):
             self, 'Searchable_Exception: status_code={}, payload={}'.format(status_code, payload))
 
 
+class Bulk_Exception(Exception):
+    '''Raised when OpenSearch rejects actions in a bulk request'''
+
+    def __init__(self, failed_items):
+        self.failed_items = failed_items
+        failures = []
+        for item in failed_items:
+            for action, result in item.items():
+                error = result.get('error')
+                reason = error.get('reason') if isinstance(error, dict) else error
+                failures.append('{} {}/{}: {}'.format(
+                    action, result.get('_index'), result.get('_id'), reason))
+        Exception.__init__(
+            self, 'Bulk_Exception: {} failed: {}'.format(len(failures), '; '.join(failures)))
+
+
 # Low-level POST data to Amazon OpenSearch Service generating a Sigv4 signed request
 def post_data_to_opensearch(payload, region, creds, host, path, method='POST', proto='https://'):
     '''Post data to OpenSearch endpoint with SigV4 signed http headers'''
@@ -92,7 +108,7 @@ def post_to_opensearch(payload):
 
     # Post data with exponential backoff
     retries = 0
-    while retries < OPENSEARCH_MAX_RETRIES:
+    while True:
         if retries > 0:
             seconds = (2 ** retries) * .1
             logger.debug('Waiting for %.1f seconds', seconds)
@@ -103,23 +119,35 @@ def post_to_opensearch(payload):
                 payload, opensearch_region, creds, opensearch_endpoint, '/_bulk')
             logger.debug('Return from OpenSearch: %s', opensearch_ret_str)
             opensearch_ret = json.loads(opensearch_ret_str)
-
-            if opensearch_ret['errors']:
-                logger.error(
-                    'OpenSearch post unsuccessful, errors present, took=%sms', opensearch_ret['took'])
-                # Filter errors
-                opensearch_errors = [item for item in opensearch_ret['items']
-                            if item.get('index', {}).get('error')]
-                logger.error('List of items with errors: %s',
-                            json.dumps(opensearch_errors))
-            else:
-                logger.info('OpenSearch post successful, took=%sms', opensearch_ret['took'])
-            break  # Sending to OpenSearch was ok, break retry loop
         except Searchable_Exception as e:
             if (e.status_code >= 500) and (e.status_code <= 599):
                 retries += 1  # Candidate for retry
-            else:
-                raise  # Stop retrying, re-raise exception
+                if retries < OPENSEARCH_MAX_RETRIES:
+                    continue
+            raise  # Not retryable, or out of retries
+
+        opensearch_errors = failed_bulk_items(opensearch_ret)
+        if opensearch_errors:
+            logger.error(
+                'OpenSearch post unsuccessful, errors present, took=%sms', opensearch_ret['took'])
+            logger.error('List of items with errors: %s',
+                        json.dumps(opensearch_errors))
+            raise Bulk_Exception(opensearch_errors)
+        logger.info('OpenSearch post successful, took=%sms', opensearch_ret['took'])
+        return
+
+
+# The bulk response items whose action failed. Deleting a document that is
+# already gone (such as the legacy "id=..." document after a MODIFY) succeeds.
+def failed_bulk_items(opensearch_ret):
+    failed = []
+    for item in opensearch_ret['items']:
+        for action, result in item.items():
+            if action == 'delete' and result.get('result') == 'not_found':
+                continue
+            if result.get('error'):
+                failed.append(item)
+    return failed
 
 
 # Extracts the DynamoDB table from an ARN

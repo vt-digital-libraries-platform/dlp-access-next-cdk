@@ -114,3 +114,93 @@ def test_failed_request_is_raised_so_the_stream_retries(monkeypatch):
 
     with pytest.raises(handler.Searchable_Exception):
         handler.lambda_handler({'Records': [record('INSERT', 'Archive-dlpnext-dev', {'id': 'a1'})]}, None)
+
+
+def bulk_response(*items):
+    """A bulk response body whose errors flag is set as OpenSearch sets it."""
+    return json.dumps({
+        'took': 1,
+        'errors': any('error' in result for item in items for result in item.values()),
+        'items': list(items),
+    }).encode()
+
+
+def respond_with(monkeypatch, *bodies):
+    """Answers successive bulk requests with the given bodies or exceptions."""
+    responses = iter(bodies)
+
+    def fake_post(*args, **kwargs):
+        response = next(responses)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(handler, 'post_data_to_opensearch', fake_post)
+
+
+def test_rejected_index_item_is_raised_with_its_id_and_reason(monkeypatch):
+    respond_with(monkeypatch, bulk_response(
+        {'index': {'_index': 'archive', '_id': 'a1', 'status': 201, 'result': 'created'}},
+        {'index': {'_index': 'archive', '_id': 'a2', 'status': 400, 'error': {
+            'type': 'mapper_parsing_exception', 'reason': 'failed to parse field [start_date]'}}},
+    ))
+    records = [record('INSERT', 'Archive-dlpnext-dev', {'id': 'a1'}),
+               record('INSERT', 'Archive-dlpnext-dev', {'id': 'a2'})]
+
+    with pytest.raises(handler.Bulk_Exception) as raised:
+        handler.lambda_handler({'Records': records}, None)
+
+    message = str(raised.value)
+    assert 'a2' in message
+    assert 'failed to parse field [start_date]' in message
+    assert 'a1' not in message
+
+
+def test_rejected_delete_item_is_logged_and_raised(monkeypatch, caplog):
+    respond_with(monkeypatch, bulk_response(
+        {'delete': {'_index': 'archive', '_id': 'a1', 'status': 429, 'error': {
+            'type': 'es_rejected_execution_exception', 'reason': 'rejected execution'}}},
+    ))
+
+    with pytest.raises(handler.Bulk_Exception) as raised:
+        handler.lambda_handler({'Records': [record('REMOVE', 'Archive-dlpnext-dev', {'id': 'a1'})]}, None)
+
+    assert 'a1' in str(raised.value)
+    assert 'rejected execution' in caplog.text
+
+
+def test_delete_of_a_missing_document_succeeds(monkeypatch):
+    respond_with(monkeypatch, bulk_response(
+        {'index': {'_index': 'archive', '_id': 'a1', 'status': 200, 'result': 'updated'}},
+        {'delete': {'_index': 'archive', '_id': 'id=a1', 'status': 404, 'result': 'not_found'}},
+    ))
+
+    handler.lambda_handler({'Records': [record('MODIFY', 'Archive-dlpnext-dev', {'id': 'a1'})]}, None)
+
+
+def test_delete_not_found_reported_as_an_error_still_succeeds(monkeypatch):
+    respond_with(monkeypatch, bulk_response(
+        {'delete': {'_index': 'archive', '_id': 'a1', 'status': 404, 'result': 'not_found',
+                    'error': {'type': 'document_missing_exception', 'reason': 'not found'}}},
+    ))
+
+    handler.lambda_handler({'Records': [record('REMOVE', 'Archive-dlpnext-dev', {'id': 'a1'})]}, None)
+
+
+def test_server_error_is_retried(monkeypatch):
+    monkeypatch.setattr(handler.time, 'sleep', lambda seconds: None)
+    respond_with(monkeypatch,
+                 handler.Searchable_Exception(503, b'unavailable'),
+                 bulk_response({'index': {'_index': 'archive', '_id': 'a1', 'status': 201, 'result': 'created'}}))
+
+    handler.lambda_handler({'Records': [record('INSERT', 'Archive-dlpnext-dev', {'id': 'a1'})]}, None)
+
+
+def test_running_out_of_server_error_retries_is_raised(monkeypatch):
+    monkeypatch.setattr(handler.time, 'sleep', lambda seconds: None)
+    respond_with(monkeypatch, *[handler.Searchable_Exception(503, b'unavailable')] * handler.OPENSEARCH_MAX_RETRIES)
+
+    with pytest.raises(handler.Searchable_Exception) as raised:
+        handler.lambda_handler({'Records': [record('INSERT', 'Archive-dlpnext-dev', {'id': 'a1'})]}, None)
+
+    assert raised.value.status_code == 503
