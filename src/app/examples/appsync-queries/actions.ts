@@ -1,7 +1,7 @@
 "use server";
 
 import { graphqlRequest } from "@/lib/appsync";
-import { getSession, isAdmin } from "@/lib/auth";
+import { getSession, isAdmin, type Session } from "@/lib/auth";
 
 export type SearchScope = "archives" | "collections" | "both";
 
@@ -49,8 +49,13 @@ interface RawItem {
 
 export async function searchCatalog(term: string, scope: SearchScope): Promise<SearchResponse> {
   // Server actions are callable directly, so the page's check is repeated here.
-  const session = await getSession().catch(() => undefined);
-  if (session === undefined) return { items: [], total: 0, error: "Couldn't verify your sign-in. Try again shortly." };
+  let session: Session | null;
+  try {
+    session = await getSession();
+  } catch {
+    // Already logged by getSession.
+    return { items: [], total: 0, error: "Couldn't verify your sign-in." };
+  }
   if (!isAdmin(session)) return { items: [], total: 0, error: "Not authorized. Sign in as an admin." };
 
   const allFields = term.trim();

@@ -115,6 +115,8 @@ async function verifyIdToken(token: string): Promise<Session | null> {
   }
 }
 
+// null when signed out. Throws when the session can't be verified, such as
+// when the user pool's signing keys can't be fetched.
 export async function getSession(): Promise<Session | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   return token ? verifyIdToken(token) : null;
