@@ -134,11 +134,15 @@ export function hasManyCode(opts: { indexName: string; foreignKeyField: string }
  * `searchFields`, sort on the `.keyword` subfield, search_after paging).
  *
  * Fields in `numericSortFields` (dates and booleans, which have no
- * `.keyword` subfield) are sorted on the field itself. OpenSearch returns
- * their sort values as epoch millis or 0/1, so the page token is that number
- * as a string, and it is turned back into a number for `search_after`.
- * Documents without the field sort last, at ±MAX_SAFE_INTEGER rather than
- * OpenSearch's default of ±2^63, which a JS number can't hold exactly.
+ * `.keyword` subfield) are sorted on the field itself, and OpenSearch returns
+ * their sort values as epoch millis or 0/1. Documents without the field sort
+ * last, at ±MAX_SAFE_INTEGER rather than OpenSearch's default of ±2^63, which
+ * a JS number can't hold exactly.
+ *
+ * Every sort ends with `id.keyword`, so documents that tie on the requested
+ * field still have a unique position and none are skipped at a page
+ * boundary. The page token is the last hit's sort values as a JSON array,
+ * passed back as `search_after`.
  */
 export function openSearchQueryCode(opts: {
   index: string;
@@ -169,6 +173,8 @@ export function openSearchQueryCode(opts: {
   sortClause[sortField] = numeric
     ? { order: direction, missing: direction === 'asc' ? ${Number.MAX_SAFE_INTEGER} : ${-Number.MAX_SAFE_INTEGER} }
     : { order: direction };
+  // id is unique, so it breaks ties on the requested field.
+  const sort = field === 'id' ? [sortClause] : [sortClause, { 'id.keyword': { order: direction } }];
 
   const bool = {};
   if (args.filter) {
@@ -184,9 +190,12 @@ export function openSearchQueryCode(opts: {
   // AppSync JS forbids reassigning variables, so choose the query in one expression.
   const query = args.filter || args.allFields ? { bool: bool } : { match_all: {} };
 
-  const body = { size: args.limit ? args.limit : 100, sort: [sortClause], query: query };
+  const body = { size: args.limit ? args.limit : 100, sort: sort, query: query };
   if (args.nextToken) {
-    body.search_after = [numeric ? Number(args.nextToken) : args.nextToken];
+    if (args.nextToken.charAt(0) !== '[') {
+      util.error('Invalid nextToken', 'BadRequest');
+    }
+    body.search_after = JSON.parse(args.nextToken);
   }
   return { operation: 'GET', path: ${JSON.stringify(`/${index}/_search`)}, params: { body: body } };
 }
@@ -203,9 +212,8 @@ export function response(ctx) {
     items.push(source);
   }
   const last = hits.length > 0 ? hits[hits.length - 1] : null;
-  const sortValue = last && last.sort ? last.sort[0] : null;
-  // nextToken is a String; numeric sort values are sent back as strings.
-  const nextToken = typeof sortValue === 'number' ? String(sortValue) : sortValue;
+  // nextToken is a String, so the sort values travel as JSON, keeping numbers as numbers.
+  const nextToken = last && last.sort ? JSON.stringify(last.sort) : null;
   return { items: items, total: total, nextToken: nextToken };
 }
 `
