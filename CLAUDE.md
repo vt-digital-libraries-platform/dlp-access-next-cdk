@@ -56,3 +56,17 @@ The Next.js server needs `APPSYNC_API_URL` set to the Api stack's `GraphQLApiUrl
 - `util.transform.toElasticsearchQueryDSL` returns a JSON *string*; wrap it in `JSON.parse`.
 - Results typed as an interface (`CatalogItem`) need `__typename` set on each item. A Collection is identified by `collection_category`, otherwise it is an Archive.
 - OpenSearch paging uses `search_after` sorted on `<field>.keyword`, except for the fields the generated mappings type as `date` or `boolean`, which are sorted on the field itself with numeric page tokens (`numericSortFields` in `openSearchQueryCode`). Total hits cap at 10000, as in Amplify.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are local markdown files under `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), recorded as a `Status:` line in each issue file. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
