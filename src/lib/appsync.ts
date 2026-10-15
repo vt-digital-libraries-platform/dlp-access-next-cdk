@@ -49,7 +49,7 @@ export async function graphqlRequest<T>(query: string, variables?: Record<string
 
   if (!response.ok) {
     throw new Error(
-      `AppSync request failed: HTTP ${response.status} ${response.statusText}: ${snippet(body) || "(empty body)"}`,
+      `AppSync request failed: HTTP ${[response.status, response.statusText].filter(Boolean).join(" ")}: ${snippet(body)}`,
     );
   }
 
@@ -71,5 +71,6 @@ const SNIPPET_LENGTH = 200;
 
 function snippet(body: string): string {
   const text = body.replace(/\s+/g, " ").trim();
+  if (!text) return "(empty body)";
   return text.length > SNIPPET_LENGTH ? `${text.slice(0, SNIPPET_LENGTH)}…` : text;
 }
