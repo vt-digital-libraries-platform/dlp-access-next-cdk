@@ -31,7 +31,7 @@ APPSYNC_API_URL=<GraphQLApiUrl output of an Api stack> npm run dev
 
 The app signs AppSync requests with your local AWS credentials, so you need to be logged in to the account, with permission to call the API. Open http://localhost:3000/examples/appsync-queries to run every query in the schema.
 
-That page requires signing in through a Cognito user pool's managed login, as a member of the pool's `admin` group. A Web stack sets these on its Beanstalk environment. Locally, put them in `.env.local` (git-ignored): the issuer, client ID and identity provider are the Web stack's `CognitoIssuer`, `CognitoClientId` and `CognitoIdentityProvider` outputs, and `aws cognito-idp describe-user-pool-client --user-pool-id <id> --client-id <id> --query UserPoolClient.ClientSecret` prints the secret.
+That page requires signing in through a Cognito user pool's managed login, as a member of the pool's `admin` group. A Web stack sets these on its Beanstalk environment. Locally, put them in `.env.local` (git-ignored): the issuer, client ID and identity provider are the Web stack's `CognitoIssuer`, `CognitoClientId` and `CognitoIdentityProvider` outputs, and `aws secretsmanager get-secret-value --secret-id <CognitoClientSecretArn output> --query SecretString --output text` prints the secret. On Beanstalk the secret is not a plain-text environment property; the environment reads it from Secrets Manager.
 
 | Variable | Value |
 | --- | --- |
