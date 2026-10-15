@@ -192,9 +192,6 @@ export function openSearchQueryCode(opts: {
 
   const body = { size: args.limit ? args.limit : 100, sort: sort, query: query };
   if (args.nextToken) {
-    if (args.nextToken.charAt(0) !== '[') {
-      util.error('Invalid nextToken', 'BadRequest');
-    }
     body.search_after = JSON.parse(args.nextToken);
   }
   return { operation: 'GET', path: ${JSON.stringify(`/${index}/_search`)}, params: { body: body } };

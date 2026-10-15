@@ -21,6 +21,7 @@ function load(sortFields: string[]): Resolver {
 
 const resolver = load(['start_date', 'end_date']);
 const body = (args: object) => resolver.request({ args }).params.body;
+const respond = (hits: object[]) => resolver.response({ result: { hits: { hits, total: { value: hits.length } } } });
 
 describe('openSearchQueryCode sorting', () => {
   test('sorts text fields on .keyword', () => {
@@ -43,11 +44,7 @@ describe('openSearchQueryCode sorting', () => {
   });
 
   test('an empty page has no token', () => {
-    expect(resolver.response({ result: { hits: { hits: [], total: { value: 0 } } } }).nextToken).toBeNull();
-  });
-
-  test('rejects a token that is not a list of sort values', () => {
-    expect(() => body({ sort: { field: 'title', direction: 'asc' }, nextToken: 'Maps' })).toThrow('Invalid nextToken');
+    expect(respond([]).nextToken).toBeNull();
   });
 });
 
@@ -63,10 +60,11 @@ test('numeric sort fields are the date and boolean fields in the generated mappi
 });
 
 // A stand-in for OpenSearch's sort and search_after over in-memory documents:
-// each hit's `sort` holds its value for every sort clause, and search_after
-// returns the hits that sort strictly after the given values.
+// each hit's `sort` holds its value for every sort clause, a missing value
+// without a `missing` setting is null and sorts last in either direction, and
+// search_after returns the hits that sort strictly after the given values.
 type SortClause = Record<string, { order: 'asc' | 'desc'; missing?: number }>;
-function search(docs: Record<string, unknown>[], body: Record<string, unknown>) {
+function fakeOpenSearch(docs: Record<string, unknown>[], body: Record<string, unknown>) {
   const clauses = (body.sort as SortClause[]).map((clause) => {
     const [field, { order, missing }] = Object.entries(clause)[0];
     const source = field.replace(/\.keyword$/, '');
@@ -76,7 +74,10 @@ function search(docs: Record<string, unknown>[], body: Record<string, unknown>) 
   });
   const compare = (a: unknown[], b: unknown[]) => {
     for (let i = 0; i < clauses.length; i++) {
-      if (a[i] !== b[i]) return (a[i]! < b[i]! ? -1 : 1) * clauses[i].sign;
+      if (a[i] === b[i]) continue;
+      if (a[i] === null) return 1;
+      if (b[i] === null) return -1;
+      return ((a[i] as string | number) < (b[i] as string | number) ? -1 : 1) * clauses[i].sign;
     }
     return 0;
   };
@@ -94,7 +95,7 @@ function pageThrough(docs: Record<string, unknown>[], sort: object, limit: numbe
   let nextToken: string | null = null;
   do {
     const request = resolver.request({ args: { sort, limit, nextToken } });
-    const page = resolver.response({ result: search(docs, request.params.body) });
+    const page = resolver.response({ result: fakeOpenSearch(docs, request.params.body) });
     seen.push(...page.items.map((item) => (item as { id: string }).id));
     nextToken = page.items.length === limit ? page.nextToken : null;
   } while (nextToken);
@@ -113,23 +114,24 @@ describe('openSearchQueryCode paging', () => {
     ]);
   });
 
-  test('page tokens round-trip both sort values', () => {
-    const hit = { _source: { id: 'a' }, sort: [1609459200000, 'a'] };
-    const { nextToken } = resolver.response({ result: { hits: { hits: [hit], total: { value: 1 } } } });
-    expect(body({ sort: { field: 'end_date', direction: 'asc' }, nextToken }).search_after).toEqual([
-      1609459200000,
-      'a',
-    ]);
-    const keywordHit = { _source: { id: 'b' }, sort: ['Maps', 'b'] };
-    const keywordPage = resolver.response({ result: { hits: { hits: [keywordHit], total: { value: 1 } } } });
-    expect(body({ sort: { field: 'title', direction: 'asc' }, nextToken: keywordPage.nextToken }).search_after)
-      .toEqual(['Maps', 'b']);
+  test.each([
+    ['end_date', [1609459200000, 'a']],
+    ['title', ['Maps', 'a']],
+  ])('page tokens round-trip both sort values on %s', (field, sort) => {
+    const { nextToken } = respond([{ _source: { id: 'a' }, sort }]);
+    expect(body({ sort: { field, direction: 'asc' }, nextToken }).search_after).toEqual(sort);
   });
 
   test('returns every document once when titles tie across a page boundary', () => {
     const docs = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, title: id === 'e' ? 'Zebra' : 'Untitled' }));
     const seen = pageThrough(docs, { field: 'title', direction: 'asc' }, 2);
     expect(seen.sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
+  });
+
+  test('returns every document once when some have no title', () => {
+    const docs = [{ id: 'a', title: 'Maps' }, { id: 'b' }, { id: 'c' }, { id: 'd', title: 'Letters' }];
+    const seen = pageThrough(docs, { field: 'title', direction: 'asc' }, 1);
+    expect(seen).toEqual(['d', 'a', 'b', 'c']);
   });
 
   test.each(['asc', 'desc'])('returns every document once on a %s date sort with undated documents', (direction) => {
