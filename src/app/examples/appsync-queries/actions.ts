@@ -49,7 +49,9 @@ interface RawItem {
 
 export async function searchCatalog(term: string, scope: SearchScope): Promise<SearchResponse> {
   // Server actions are callable directly, so the page's check is repeated here.
-  if (!isAdmin(await getSession())) return { items: [], total: 0, error: "Not authorized. Sign in as an admin." };
+  const session = await getSession().catch(() => undefined);
+  if (session === undefined) return { items: [], total: 0, error: "Couldn't verify your sign-in. Try again shortly." };
+  if (!isAdmin(session)) return { items: [], total: 0, error: "Not authorized. Sign in as an admin." };
 
   const allFields = term.trim();
   if (!allFields) return { items: [], total: 0, error: "Enter a search term." };
