@@ -4,8 +4,12 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The callback path is defined once, or a test fails when the two copies differ
-- [ ] The `BUNDLE_EXCLUDES` comment sits directly above `BUNDLE_EXCLUDES`
-- [ ] `npm test` (in `infra/`) and `npx tsc --noEmit` pass
+- [x] The callback path is defined once, or a test fails when the two copies differ
+- [x] The `BUNDLE_EXCLUDES` comment sits directly above `BUNDLE_EXCLUDES`
+- [x] `npm test` (in `infra/`) and `npx tsc --noEmit` pass
+
+## Comments
+
+Kept two copies, because the root app and `infra/` are separate npm projects. `infra/lib/web-stack.ts` now exports `CALLBACK_PATH`. A Web stack test in `infra/test/app.test.ts` reads `src/lib/auth.ts` as text and fails when its `CALLBACK_PATH` differs. The same test also fails when `src/app/<path>/route.ts` doesn't exist, so it catches a renamed route folder too. Both constants have a comment that points at the test.

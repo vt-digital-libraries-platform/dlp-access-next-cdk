@@ -25,14 +25,15 @@ export const SOLUTION_STACK = '64bit Amazon Linux 2023 v6.11.8 running Node.js 2
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
-// Beyond .gitignore: files in the repo that the Next.js server doesn't need.
-// `.env*` is repeated here so local secrets stay out even if .gitignore changes.
 // Where `npm run dev` serves the app. Always registered on the app client,
 // so the branch can be run locally against its environment's user pool.
 const LOCAL_ORIGIN = 'http://localhost:3000';
-// The app's sign-in callback route (src/app/authorize).
-const CALLBACK_PATH = '/authorize';
+// The app's sign-in callback route (src/app/authorize). It must match
+// CALLBACK_PATH in src/lib/auth.ts, which a test checks.
+export const CALLBACK_PATH = '/authorize';
 
+// Beyond .gitignore: files in the repo that the Next.js server doesn't need.
+// `.env*` is repeated here so local secrets stay out even if .gitignore changes.
 const BUNDLE_EXCLUDES = ['.git', '.github', '.claude', '.elasticbeanstalk', 'infra', 'docs', '*.md', '.env*'];
 
 export interface WebStackProps extends StackProps {
