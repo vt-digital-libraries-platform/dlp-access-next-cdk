@@ -43,12 +43,33 @@ export async function graphqlRequest<T>(query: string, variables?: Record<string
     body: JSON.stringify({ query, variables }),
   });
 
-  const result = (await response.json()) as GraphQLResponse<T>;
+  // Read the body as text before parsing: a wrong URL, an IAM denial or a
+  // proxy can answer with HTML or nothing, and the status is what matters.
+  const body = await response.text();
 
-  if (!response.ok || result.errors?.length) {
-    const message = result.errors?.map((e) => e.message).join("; ") ?? response.statusText;
-    throw new Error(`AppSync request failed: ${message}`);
+  if (!response.ok) {
+    throw new Error(
+      `AppSync request failed: HTTP ${response.status} ${response.statusText}: ${snippet(body) || "(empty body)"}`,
+    );
+  }
+
+  let result: GraphQLResponse<T>;
+  try {
+    result = JSON.parse(body) as GraphQLResponse<T>;
+  } catch {
+    throw new Error(`AppSync request failed: HTTP ${response.status} response is not JSON: ${snippet(body)}`);
+  }
+
+  if (result.errors?.length) {
+    throw new Error(`AppSync request failed: ${result.errors.map((e) => e.message).join("; ")}`);
   }
 
   return result.data as T;
+}
+
+const SNIPPET_LENGTH = 200;
+
+function snippet(body: string): string {
+  const text = body.replace(/\s+/g, " ").trim();
+  return text.length > SNIPPET_LENGTH ? `${text.slice(0, SNIPPET_LENGTH)}…` : text;
 }
