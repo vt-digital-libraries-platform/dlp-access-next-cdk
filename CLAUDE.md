@@ -55,7 +55,7 @@ The Next.js server needs `APPSYNC_API_URL` set to the Api stack's `GraphQLApiUrl
 - Variables cannot be reassigned (`let x = ...; x = ...` fails). Deploy validation reports only "The code contains one or more errors", so build values with a single `const` expression.
 - `util.transform.toElasticsearchQueryDSL` returns a JSON *string*; wrap it in `JSON.parse`.
 - Results typed as an interface (`CatalogItem`) need `__typename` set on each item. A Collection is identified by `collection_category`, otherwise it is an Archive.
-- OpenSearch paging uses `search_after` sorted on `<field>.keyword`, except for the fields the generated mappings type as `date` or `boolean`, which are sorted on the field itself with numeric page tokens (`numericSortFields` in `openSearchQueryCode`). Total hits cap at 10000, as in Amplify.
+- OpenSearch paging uses `search_after` sorted on `<field>.keyword`, except for the fields the generated mappings type as `date` or `boolean`, which are sorted on the field itself and have numeric sort values (`numericSortFields` in `openSearchQueryCode`). Every sort then breaks ties on `id.keyword`, so documents that share a value (or all lack a date) aren't skipped at a page boundary. The page token is the last hit's sort values as a JSON array (`["Maps","<id>"]`, `[1609459200000,"<id>"]`); any other token is rejected with `Invalid nextToken`. Total hits cap at 10000, as in Amplify.
 
 ## Agent skills
 
