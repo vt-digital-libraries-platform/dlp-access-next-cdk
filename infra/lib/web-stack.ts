@@ -1,6 +1,8 @@
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
-import { CfnOutput, IgnoreMode, RemovalPolicy, SecretValue, Stack, StackProps } from 'aws-cdk-lib';
+import { CfnOutput, RemovalPolicy, SecretValue, Stack, StackProps } from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as elasticbeanstalk from 'aws-cdk-lib/aws-elasticbeanstalk';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -44,9 +46,24 @@ export const CERTIFICATE_ID = '3163b25c-b6f5-4b23-8569-514064db7767';
 export const HOSTED_ZONE = 'dlp.cloud.lib.vt.edu';
 const TLS_POLICY = 'ELBSecurityPolicy-TLS13-1-2-2021-06';
 
-// Beyond .gitignore: files in the repo that the Next.js server doesn't need.
-// `.env*` is repeated here so local secrets stay out even if .gitignore changes.
-const BUNDLE_EXCLUDES = ['.git', '.github', '.claude', '.elasticbeanstalk', 'infra', 'docs', '*.md', '.env*'];
+// Committed files that the Next.js server doesn't need, as git pathspecs
+// (`*` also matches `/`, so `*.md` is every Markdown file). `.env*` stays
+// out even if one is committed.
+const BUNDLE_EXCLUDES = ['.github', '.claude', '.scratch', '.elasticbeanstalk', 'infra', 'docs', '*.md', '.env*'];
+
+/** The commit a Web stack deploys: HEAD of the repo. */
+export function sourceCommit(): string {
+  return git('rev-parse', '--verify', 'HEAD').trim();
+}
+
+/** `git status --porcelain` lines for the changes a deploy leaves out. */
+export function uncommittedChanges(): string[] {
+  return git('status', '--porcelain').split('\n').filter(Boolean);
+}
+
+function git(...args: string[]): string {
+  return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' });
+}
 
 export interface WebStackProps extends StackProps {
   /** The environment whose API the app calls. */
@@ -76,14 +93,26 @@ export class WebStack extends Stack {
     const domainName = webDomainName(branch);
     const appUrl = `https://${domainName}`;
 
-    // The same files `eb deploy` ships from git; the platform's prebuild
-    // hook (.platform/hooks) installs dependencies and runs `next build`.
-    const gitignore = fs.readFileSync(path.join(REPO_ROOT, '.gitignore'), 'utf8').split('\n');
-    this.sourceBundle = new s3assets.Asset(this, 'SourceBundle', {
-      path: REPO_ROOT,
-      ignoreMode: IgnoreMode.GIT,
-      exclude: [...gitignore, ...BUNDLE_EXCLUDES],
-    });
+    // The files of the commit at HEAD, as `eb deploy` ships them, so
+    // uncommitted changes are never deployed. The platform's prebuild hook
+    // (.platform/hooks) installs dependencies and runs `next build`.
+    const commit = sourceCommit();
+    const source = fs.mkdtempSync(path.join(os.tmpdir(), 'dlpnext-source-'));
+    try {
+      const archive = path.join(source, '..', `${path.basename(source)}.tar`);
+      const pathspecs = ['.', ...BUNDLE_EXCLUDES.map((exclude) => `:(exclude)${exclude}`)];
+      git('archive', '--format=tar', `--output=${archive}`, commit, '--', ...pathspecs);
+      try {
+        execFileSync('tar', ['-xf', archive, '-C', source]);
+      } finally {
+        fs.rmSync(archive, { force: true });
+      }
+      // Staging copies the directory into the cloud assembly here, so the
+      // temporary copy can go once the asset exists.
+      this.sourceBundle = new s3assets.Asset(this, 'SourceBundle', { path: source });
+    } finally {
+      fs.rmSync(source, { recursive: true, force: true });
+    }
 
     const application = new elasticbeanstalk.CfnApplication(this, 'Application', {
       applicationName: name,
@@ -91,6 +120,7 @@ export class WebStack extends Stack {
     });
     const version = new elasticbeanstalk.CfnApplicationVersion(this, 'Version', {
       applicationName: name,
+      description: `commit ${commit}`,
       sourceBundle: {
         s3Bucket: this.sourceBundle.s3BucketName,
         s3Key: this.sourceBundle.s3ObjectKey,

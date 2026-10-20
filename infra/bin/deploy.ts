@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as readline from 'readline';
 import { optionsFromContext, planApp } from '../lib/app';
 import { contextFromArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
+import { sourceCommit, uncommittedChanges } from '../lib/web-stack';
 
 const INFRA_DIR = path.join(__dirname, '..');
 
@@ -37,6 +38,14 @@ async function main(): Promise<number> {
     console.log(`${alert(warning)}\n`);
   }
   console.log(`About to deploy to AWS:\n\n${describePlan(plan)}\n`);
+  if (plan.webStackName) {
+    // The Web stack deploys HEAD, so local edits are left out.
+    console.log(`App source: commit ${sourceCommit()}\n`);
+    const changes = uncommittedChanges();
+    if (changes.length > 0) {
+      console.log(`${alert('Uncommitted changes are not deployed:')}\n${changes.map((line) => `  ${line}`).join('\n')}\n`);
+    }
+  }
 
   const question = warning
     ? alert('Deploy to PRODUCTION? Type "yes" or "y" to continue: ')
