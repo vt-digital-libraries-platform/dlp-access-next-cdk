@@ -29,6 +29,14 @@ Placeholders used below:
 Notes that apply to every command:
 
 - **Deploy with `npm run deploy`, not `npx cdk deploy`.** The script checks the options, prints the stacks it will deploy, and runs `cdk deploy --all` only if you type `y` or `yes`. It needs a terminal: without one, and without `--yes`, it exits 1 without deploying. `npx cdk deploy` works but skips the confirmation.
+- **Read the stack check before confirming.** Creating and redeploying use the same command: a stack that exists is updated, with no error. So before the prompt, the script looks up what is deployed (with the `aws` CLI and your credentials) and lists each stack as `create`, `update` or `busy`. It then warns in red about anything you may not have meant:
+  - the environment's user pool is repointed, or sign-in changes identity provider (often a forgotten `-c identityProvider`)
+  - the search domain is resized (often a forgotten `-c production=true`)
+  - a frontend moves to another environment, or the branch's slug belongs to a frontend deployed from a different branch name
+  - tables or a search domain left over from a destroyed backend will make creating its Data stack fail
+  - a stack is mid-operation, or the credentials are for a different account
+
+  With warnings, the prompt asks "Deploy anyway?". The check never blocks a deploy: a lookup that fails, for example for lack of permissions, is listed as a warning and the deploy can go ahead. `--no-check` skips the check.
 - **In CI, add `--yes`** to deploy without the prompt. See [Running in CI](#running-in-ci).
 - **CDK never creates, changes or deletes a user pool.** The pool needs its own managed login domain and an `admin` group, set up outside CDK. `-c userPool` only records which pool to use.
 - **Pass `-c identityProvider=VT-SSO-OIDC` on every backend deploy** if users sign in through VT SSO. If you leave it out, the environment falls back to the pool's own accounts (`COGNITO`).
@@ -225,6 +233,7 @@ npx cdk destroy --all --force -c env=<env> -c account=$ACCOUNT …
 
 - **It skips the script's confirmation.** The plan, the production warning, the deployed commit and any uncommitted changes are still printed to the job log, followed by `Confirmed by --yes (CI).`
 - **It also answers CDK's approval prompt.** It adds `--require-approval never`, so CDK doesn't stop to approve IAM policy or security group changes. If you pass your own `--require-approval`, that one is used instead.
+- **The stack check still runs.** Its stack list and warnings go to the job log, but they don't stop the deploy. Add `--no-check` to skip the lookups, for example when the job's role can't describe the stacks, tables, search domain and Beanstalk applications.
 - **It's for the script only.** `-y` means the same thing. The script removes the flag before calling `cdk deploy`.
 - **It only works in CI.** The `CI` environment variable must be `true` or `1`; GitHub Actions sets it. Otherwise the script stops with `--yes only applies in CI (CI=true); run without it to confirm the deploy`. On your own machine, answer the prompt.
 - **Production isn't treated differently.** `--yes` skips the production prompt too. The approval for production belongs to the pipeline, such as required reviewers on a GitHub Environment named `production`.

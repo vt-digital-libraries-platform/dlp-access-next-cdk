@@ -54,6 +54,8 @@ export interface AppPlan {
   readonly production: boolean;
   /** The branch's slug; undefined without `-c branch`. */
   readonly branch?: string;
+  /** The branch name as given with `-c branch`. */
+  readonly branchName?: string;
   /** undefined without `-c branch`. */
   readonly backend?: string;
   /** undefined when the Auth stack isn't deployed. */
@@ -193,6 +195,7 @@ export function planApp(options: AppOptions): AppPlan {
     account: options.account,
     production,
     branch,
+    branchName: options.branch,
     backend: branch === undefined ? undefined : backend,
     userPool: options.userPool,
     identityProvider: options.identityProvider,
@@ -237,8 +240,14 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
   }
 
   let web: WebStack | undefined;
-  if (plan.webStackName && plan.branch && plan.certificate) {
-    web = new WebStack(app, plan.webStackName, { env, config, branch: plan.branch, certificateArn: plan.certificate });
+  if (plan.webStackName && plan.branch && plan.branchName && plan.certificate) {
+    web = new WebStack(app, plan.webStackName, {
+      env,
+      config,
+      branch: plan.branch,
+      branchName: plan.branchName,
+      certificateArn: plan.certificate,
+    });
     // The Web stack reads the API URL and the sign-in settings from the SSM
     // parameters the Api and Auth stacks write, so it must deploy after them.
     for (const stack of [api, auth]) {

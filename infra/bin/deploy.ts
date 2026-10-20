@@ -2,13 +2,17 @@
 // Deploys with `cdk deploy --all`, after showing the parsed options and
 // asking for confirmation. Takes the same arguments as `cdk deploy`:
 //   npm run deploy -- -c env=dev -c account=$ACCOUNT [-c branch=...] [other cdk flags]
-// In CI (CI=true), --yes skips the confirmation; see deployArgs.
+// In CI (CI=true), --yes skips the confirmation; see deployArgs. Before
+// confirming, it shows which stacks are created or updated and warns about
+// changes such as a repointed user pool (checkDeploy); --no-check skips that.
+// The check never blocks a deploy.
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { optionsFromContext, planApp } from '../lib/app';
 import { contextFromArgs, deployArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
+import { AwsError, checkDeploy, lookupDeployedState } from '../lib/deploy-check';
 import { sourceCommit, uncommittedChanges } from '../lib/web-stack';
 
 const INFRA_DIR = path.join(__dirname, '..');
@@ -26,7 +30,7 @@ function ask(question: string): Promise<string> {
 }
 
 async function main(): Promise<number> {
-  const { yes, cdkArgs: args } = deployArgs(process.argv.slice(2), process.env.CI);
+  const { yes, check, cdkArgs: args } = deployArgs(process.argv.slice(2), process.env.CI);
   // The app also sees cdk.json's context, with -c values taking precedence.
   const cdkJson = JSON.parse(fs.readFileSync(path.join(INFRA_DIR, 'cdk.json'), 'utf8'));
   const context: Record<string, unknown> = { ...cdkJson.context, ...contextFromArgs(args) };
@@ -48,12 +52,37 @@ async function main(): Promise<number> {
     }
   }
 
+  let warned = false;
+  if (check) {
+    const region = plan.config.region;
+    const aws = (awsArgs: string[]) => {
+      const result = spawnSync('aws', [...awsArgs, '--region', region, '--output', 'json'], { encoding: 'utf8' });
+      if (result.error) {
+        throw result.error;
+      }
+      if (result.status !== 0) {
+        throw new AwsError(result.stderr || `aws exited with ${result.status}`);
+      }
+      return JSON.parse(result.stdout);
+    };
+    const { stacks, warnings } = checkDeploy(plan, lookupDeployedState(plan, aws));
+    if (stacks.length > 0) {
+      console.log(`Stacks:\n${stacks.map((line) => `  ${line}`).join('\n')}\n`);
+    }
+    if (warnings.length > 0) {
+      warned = true;
+      console.log(`${alert('Check before deploying:')}\n${warnings.map((line) => `  - ${line}`).join('\n')}\n`);
+    }
+  }
+
   if (yes) {
     console.log('Confirmed by --yes (CI).');
   } else {
     const question = warning
       ? alert('Deploy to PRODUCTION? Type "yes" or "y" to continue: ')
-      : 'Deploy? Type "yes" or "y" to continue: ';
+      : warned
+        ? alert('Deploy anyway? Type "yes" or "y" to continue: ')
+        : 'Deploy? Type "yes" or "y" to continue: ';
     if (!isConfirmed(await ask(question))) {
       console.log('Not deployed.');
       return 1;

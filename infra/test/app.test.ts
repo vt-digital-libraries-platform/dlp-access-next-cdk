@@ -640,6 +640,7 @@ describe('Web stack', () => {
       ResourceRecords: [{ 'Fn::GetAtt': [environmentId, 'EndpointURL'] }],
     });
     web.hasOutput('AppUrl', { Value: 'https://feature-search.dlp-access-dev.dlp.cloud.lib.vt.edu' });
+    web.hasOutput('Branch', { Value: 'feature/search' });
   });
 
   test('nginx redirects HTTP to HTTPS behind the load balancer', () => {

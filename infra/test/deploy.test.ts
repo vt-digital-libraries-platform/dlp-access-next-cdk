@@ -28,6 +28,7 @@ describe('deployArgs', () => {
   test('without --yes, passes every argument through', () => {
     expect(deployArgs([...context, '--require-approval', 'broadening'], undefined)).toEqual({
       yes: false,
+      check: true,
       cdkArgs: [...context, '--require-approval', 'broadening'],
     });
   });
@@ -35,6 +36,7 @@ describe('deployArgs', () => {
   test.each(['--yes', '-y'])('%s in CI is removed and answers CDK approval too', (flag) => {
     expect(deployArgs([flag, ...context], 'true')).toEqual({
       yes: true,
+      check: true,
       cdkArgs: [...context, '--require-approval', 'never'],
     });
   });
@@ -45,6 +47,10 @@ describe('deployArgs', () => {
       expect(deployArgs([...context, ...approval, '--yes'], '1').cdkArgs).toEqual([...context, ...approval]);
     },
   );
+
+  test('--no-check is removed and turns off the check, in or out of CI', () => {
+    expect(deployArgs(['--no-check', ...context], undefined)).toEqual({ yes: false, check: false, cdkArgs: context });
+  });
 
   test.each([undefined, '', 'false', '0'])('rejects --yes when CI is %p', (ci) => {
     expect(() => deployArgs(['--yes', ...context], ci)).toThrow(/--yes only applies in CI/);
