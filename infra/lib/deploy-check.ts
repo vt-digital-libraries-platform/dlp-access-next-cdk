@@ -73,9 +73,9 @@ export function lookupDeployedState(plan: AppPlan, aws: AwsCli): DeployedState {
   let search: DeployedState['search'];
   if (plan.dataStackName) {
     if (willCreate(stacks[plan.dataStackName])) {
-      existingTables = MODELS.map((model) => tableName(model, env)).filter((table) =>
-        find(`table ${table}`, () => aws(['dynamodb', 'describe-table', '--table-name', table])),
-      );
+      // One call for every table: each aws command takes about a second to start.
+      const tables = new Set<string>(find('tables', () => aws(['dynamodb', 'list-tables']).TableNames) ?? []);
+      existingTables = MODELS.map((model) => tableName(model, env)).filter((table) => tables.has(table));
     }
     search = find(`search domain dlpnext-${env}`, () => {
       const cluster = aws(['opensearch', 'describe-domain', '--domain-name', `dlpnext-${env}`]).DomainStatus.ClusterConfig;

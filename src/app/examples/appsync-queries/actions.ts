@@ -2,6 +2,7 @@
 
 import { graphqlRequest } from "@/lib/appsync";
 import { getSession, isAdmin, type Session } from "@/lib/auth";
+import { SEARCH_ARCHIVE_FIELDS, SEARCH_COLLECTION_FIELDS, SEARCH_OBJECT_FIELDS } from "./queries";
 
 export type SearchScope = "archives" | "collections" | "both";
 
@@ -20,21 +21,19 @@ export interface SearchResponse {
 }
 
 const LIMIT = 25;
-const ARCHIVE_FIELDS = `id identifier title item_category`;
-const COLLECTION_FIELDS = `id identifier title collection_category`;
 
 const QUERIES: Record<SearchScope, { field: string; query: string }> = {
   archives: {
     field: "fulltextArchives",
-    query: `query($allFields: String, $limit: Int) { fulltextArchives(allFields: $allFields, limit: $limit) { items { ${ARCHIVE_FIELDS} } total } }`,
+    query: `query($allFields: String, $limit: Int) { fulltextArchives(allFields: $allFields, limit: $limit) { items { ${SEARCH_ARCHIVE_FIELDS} } total } }`,
   },
   collections: {
     field: "fulltextCollections",
-    query: `query($allFields: String, $limit: Int) { fulltextCollections(allFields: $allFields, limit: $limit) { items { ${COLLECTION_FIELDS} } total } }`,
+    query: `query($allFields: String, $limit: Int) { fulltextCollections(allFields: $allFields, limit: $limit) { items { ${SEARCH_COLLECTION_FIELDS} } total } }`,
   },
   both: {
     field: "searchObjects",
-    query: `query($allFields: String, $limit: Int) { searchObjects(allFields: $allFields, limit: $limit) { items { __typename ... on Archive { ${ARCHIVE_FIELDS} } ... on Collection { ${COLLECTION_FIELDS} } } total } }`,
+    query: `query($allFields: String, $limit: Int) { searchObjects(allFields: $allFields, limit: $limit) { items { ${SEARCH_OBJECT_FIELDS} } total } }`,
   },
 };
 

@@ -95,12 +95,14 @@ const GET_ARCHIVE_WITH_PARTNER = `query GetArchiveWithPartner($id: ID!) { getArc
 const PAGE_CONTENT_WITH_SITE_FIELDS = `id page_content_category pageContentSiteId { ${SITE_FIELDS} }`;
 const GET_PAGE_CONTENT_WITH_SITE = `query GetPageContentWithSite($id: ID!) { getPageContent(id: $id) { ${PAGE_CONTENT_WITH_SITE_FIELDS} } }`;
 
-const SEARCH_ARCHIVE_FIELDS = `id identifier title item_category`;
-const SEARCH_COLLECTION_FIELDS = `id identifier title collection_category`;
+// Also used by the search panel's action.
+export const SEARCH_ARCHIVE_FIELDS = `id identifier title item_category`;
+export const SEARCH_COLLECTION_FIELDS = `id identifier title collection_category`;
+export const SEARCH_OBJECT_FIELDS = `__typename ... on Archive { ${SEARCH_ARCHIVE_FIELDS} } ... on Collection { ${SEARCH_COLLECTION_FIELDS} }`;
 
 const FULLTEXT_ARCHIVES = `query FulltextArchives($allFields: String) { fulltextArchives(allFields: $allFields, limit: 5) { items { ${SEARCH_ARCHIVE_FIELDS} } nextToken total } }`;
 const FULLTEXT_COLLECTIONS = `query FulltextCollections($allFields: String) { fulltextCollections(allFields: $allFields, limit: 5) { items { ${SEARCH_COLLECTION_FIELDS} } nextToken total } }`;
-const SEARCH_OBJECTS = `query SearchObjects($allFields: String) { searchObjects(allFields: $allFields, limit: 5) { items { __typename ... on Archive { ${SEARCH_ARCHIVE_FIELDS} } ... on Collection { ${SEARCH_COLLECTION_FIELDS} } } nextToken total } }`;
+const SEARCH_OBJECTS = `query SearchObjects($allFields: String) { searchObjects(allFields: $allFields, limit: 5) { items { ${SEARCH_OBJECT_FIELDS} } nextToken total } }`;
 const SEARCH_ARCHIVES_FILTERED = `query FulltextArchivesFiltered($identifier: String) { fulltextArchives(filter: { identifier: { eq: $identifier } }, limit: 5) { items { ${SEARCH_ARCHIVE_FIELDS} } total } }`;
 
 // First word of at least 4 letters, used as a search term seeded from real data.

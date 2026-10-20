@@ -21,6 +21,16 @@ import {
 } from './resolvers';
 import { numericSortFields } from './search-mappings';
 
+/** The fields an `allFields` search matches, per index; searchObjects uses both. */
+const ARCHIVE_SEARCH_FIELDS = [
+  'title', 'description', 'creator', 'medium', 'type', 'tags', 'identifier', 'is_part_of',
+  'format', 'spatial', 'source', 'subject', 'bibliographic_citation', 'rights', 'rights_holder',
+];
+const COLLECTION_SEARCH_FIELDS = [
+  'title', 'description', 'creator', 'identifier', 'spatial', 'subject', 'source', 'is_part_of',
+  'bibliographic_citation', 'rights', 'rights_holder',
+];
+
 export interface ApiStackProps extends StackProps {
   readonly config: EnvironmentConfig;
   /** The environment's tables, from its Data stack. */
@@ -136,10 +146,7 @@ export class ApiStack extends Stack {
       openSearchQueryCode({
         index: 'archive',
         numericSortFields: numericSortFields(['archive']),
-        searchFields: [
-          'title', 'description', 'creator', 'medium', 'type', 'tags', 'identifier', 'is_part_of',
-          'format', 'spatial', 'source', 'subject', 'bibliographic_citation', 'rights', 'rights_holder',
-        ],
+        searchFields: ARCHIVE_SEARCH_FIELDS,
       }),
     );
     jsResolver(
@@ -149,10 +156,7 @@ export class ApiStack extends Stack {
       openSearchQueryCode({
         index: 'collection',
         numericSortFields: numericSortFields(['collection']),
-        searchFields: [
-          'title', 'description', 'creator', 'identifier', 'spatial', 'subject', 'source', 'is_part_of',
-          'bibliographic_citation', 'rights', 'rights_holder',
-        ],
+        searchFields: COLLECTION_SEARCH_FIELDS,
       }),
     );
 
@@ -166,10 +170,7 @@ export class ApiStack extends Stack {
         index: 'archive,collection',
         numericSortFields: numericSortFields(['archive', 'collection']),
         resolveTypename: true,
-        searchFields: [
-          'title', 'description', 'creator', 'medium', 'type', 'tags', 'identifier', 'is_part_of',
-          'format', 'spatial', 'subject', 'source', 'bibliographic_citation', 'rights', 'rights_holder',
-        ],
+        searchFields: [...new Set([...ARCHIVE_SEARCH_FIELDS, ...COLLECTION_SEARCH_FIELDS])],
       }),
     );
 
