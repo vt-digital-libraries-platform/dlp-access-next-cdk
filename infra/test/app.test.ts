@@ -2,9 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
-import { booleanContext, buildApp } from '../lib/app';
+import { booleanContext, buildApp, planApp } from '../lib/app';
 import { buildSearchMappings, numericSortFields, searchMappings } from '../lib/search-mappings';
-import { CALLBACK_PATH } from '../lib/web-stack';
+import { CALLBACK_PATH, CERTIFICATE_ID } from '../lib/web-stack';
 
 const account = '123456789012';
 const userPool = 'us-east-1_AbCd12345';
@@ -493,12 +493,19 @@ describe('Web stack', () => {
     [{ env: 'dev', branch: 'x', userPool }, /-c userPool only applies/],
     [{ env: 'dev', branch: 'x', identityProvider: 'VT-SSO-OIDC' }, /-c identityProvider only applies/],
     [{ env: 'dev', userPool, certificate }, /-c certificate only applies with -c branch/],
-    [{ env: 'dev', branch: 'x', certificate: undefined }, /pass -c certificate=<ACM certificate ARN>, the certificate covering x\.dlp-access-dev\.dlp\.cloud\.lib\.vt\.edu/],
     [{ env: 'dev', branch: 'x', certificate: 'not-an-arn' }, /Invalid certificate/],
     [{ env: 'dev', branch: 'x', certificate: certificate.replace('us-east-1', 'us-west-2') }, /must be in account .* and us-east-1/],
     [{ env: 'dev', branch: 'x', certificate: certificate.replace(account, '210987654321') }, /must be in account 123456789012/],
   ])('rejects %p', (options, message) => {
     expect(() => buildApp(new App(), { account, certificate, ...options })).toThrow(message);
+  });
+
+  test('defaults the certificate to CERTIFICATE_ID in the deploy account and environment region', () => {
+    expect(planApp({ env: 'dev', account, branch: 'x' }).certificate).toBe(
+      `arn:aws:acm:us-east-1:${account}:certificate/${CERTIFICATE_ID}`,
+    );
+    expect(planApp({ env: 'dev', account, branch: 'x', certificate }).certificate).toBe(certificate);
+    expect(planApp({ env: 'dev', account, userPool }).certificate).toBeUndefined();
   });
 
   const attached = buildApp(new App(), { env: 'pre-production', account, branch: 'feature/search', certificate }).web!;

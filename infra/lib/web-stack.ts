@@ -37,6 +37,10 @@ export const CALLBACK_PATH = '/authorize';
 // zone HOSTED_ZONE, over HTTPS with an existing certificate covering
 // *.<APP_DOMAIN>.
 export const APP_DOMAIN = 'dlp-access-dev.dlp.cloud.lib.vt.edu';
+// The ACM certificate covering *.<APP_DOMAIN>, by ID only: the ARN is built
+// from the deploy's account and the environment's region, so no account ID
+// is stored here. `-c certificate=<ARN>` overrides it.
+export const CERTIFICATE_ID = '3163b25c-b6f5-4b23-8569-514064db7767';
 export const HOSTED_ZONE = 'dlp.cloud.lib.vt.edu';
 const TLS_POLICY = 'ELBSecurityPolicy-TLS13-1-2-2021-06';
 
