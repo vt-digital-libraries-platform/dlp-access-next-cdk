@@ -1,5 +1,5 @@
 import { optionsFromContext, planApp } from '../lib/app';
-import { contextFromArgs, deployArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
+import { contextFromArgs, deployArgs, describePlan, isConfirmed, productionWarning, profileFromArgs } from '../lib/deploy';
 
 const account = '123456789012';
 const userPool = 'us-east-1_AbCd12345';
@@ -19,6 +19,20 @@ describe('contextFromArgs', () => {
 
   test.each([[['-c']], [['-c', 'env']], [['-c', '=dev']]])('rejects %p', (args) => {
     expect(() => contextFromArgs(args)).toThrow(/Invalid context argument/);
+  });
+});
+
+describe('profileFromArgs', () => {
+  test.each([
+    [['-c', 'env=dev'], undefined],
+    [['--profile', 'prod', '-c', 'env=production'], 'prod'],
+    [['--profile=prod'], 'prod'],
+  ])('reads %p', (args, profile) => {
+    expect(profileFromArgs(args)).toBe(profile);
+  });
+
+  test('rejects --profile without a name', () => {
+    expect(() => profileFromArgs(['--profile'])).toThrow(/profile name/);
   });
 });
 

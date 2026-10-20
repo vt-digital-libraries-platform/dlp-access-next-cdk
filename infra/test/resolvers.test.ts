@@ -2,7 +2,7 @@ import { openSearchQueryCode } from '../lib/resolvers';
 import { numericSortFields } from '../lib/search-mappings';
 
 type Resolver = {
-  request: (ctx: object) => { params: { body: Record<string, unknown> } };
+  request: (ctx: object) => { params: { query: Record<string, string>; body: Record<string, unknown> } };
   response: (ctx: object) => { items: object[]; nextToken: string | null };
 };
 
@@ -24,9 +24,12 @@ const body = (args: object) => resolver.request({ args }).params.body;
 const respond = (hits: object[]) => resolver.response({ result: { hits: { hits, total: { value: hits.length } } } });
 
 describe('openSearchQueryCode sorting', () => {
-  test('sorts text fields on .keyword', () => {
-    expect(body({ sort: { field: 'title', direction: 'asc' } }).sort).toContainEqual({
-      'title.keyword': { order: 'asc' },
+  test.each([
+    ['asc', '\u{10FFFF}'],
+    ['desc', ''],
+  ])('sorts text fields on .keyword, %s, with missing values last', (direction, missing) => {
+    expect(body({ sort: { field: 'title', direction } }).sort).toContainEqual({
+      'title.keyword': { order: direction, missing },
     });
   });
 
@@ -40,11 +43,30 @@ describe('openSearchQueryCode sorting', () => {
   });
 
   test('sorting on id needs no tiebreaker', () => {
-    expect(body({ sort: { field: 'id', direction: 'asc' } }).sort).toEqual([{ 'id.keyword': { order: 'asc' } }]);
+    expect(body({ sort: { field: 'id', direction: 'asc' } }).sort).toEqual([
+      { 'id.keyword': { order: 'asc', missing: '\u{10FFFF}' } },
+    ]);
   });
 
   test('an empty page has no token', () => {
     expect(respond([]).nextToken).toBeNull();
+  });
+});
+
+describe('openSearchQueryCode request', () => {
+  test('ignores indices that do not exist yet', () => {
+    expect(resolver.request({ args: {} }).params.query).toEqual({ ignore_unavailable: 'true' });
+  });
+
+  test.each([
+    [undefined, 100],
+    [null, 100],
+    [0, 0],
+    [25, 25],
+    [20000, 10000],
+    [-5, 0],
+  ])('limit %p gives size %p', (limit, size) => {
+    expect(body({ limit }).size).toBe(size);
   });
 });
 
@@ -63,7 +85,7 @@ test('numeric sort fields are the date and boolean fields in the generated mappi
 // each hit's `sort` holds its value for every sort clause, a missing value
 // without a `missing` setting is null and sorts last in either direction, and
 // search_after returns the hits that sort strictly after the given values.
-type SortClause = Record<string, { order: 'asc' | 'desc'; missing?: number }>;
+type SortClause = Record<string, { order: 'asc' | 'desc'; missing?: number | string }>;
 function fakeOpenSearch(docs: Record<string, unknown>[], body: Record<string, unknown>) {
   const clauses = (body.sort as SortClause[]).map((clause) => {
     const [field, { order, missing }] = Object.entries(clause)[0];
@@ -105,7 +127,7 @@ function pageThrough(docs: Record<string, unknown>[], sort: object, limit: numbe
 describe('openSearchQueryCode paging', () => {
   test('sorts on the requested field, then on id', () => {
     expect(body({ sort: { field: 'title', direction: 'asc' } }).sort).toEqual([
-      { 'title.keyword': { order: 'asc' } },
+      { 'title.keyword': { order: 'asc', missing: '\u{10FFFF}' } },
       { 'id.keyword': { order: 'asc' } },
     ]);
     expect(body({ sort: { field: 'end_date', direction: 'desc' } }).sort).toEqual([
@@ -132,6 +154,13 @@ describe('openSearchQueryCode paging', () => {
     const docs = [{ id: 'a', title: 'Maps' }, { id: 'b' }, { id: 'c' }, { id: 'd', title: 'Letters' }];
     const seen = pageThrough(docs, { field: 'title', direction: 'asc' }, 1);
     expect(seen).toEqual(['d', 'a', 'b', 'c']);
+  });
+
+  test('a page ending on a document with no title has no null in its token', () => {
+    const docs = [{ id: 'a', title: 'Maps' }, { id: 'b' }, { id: 'c' }];
+    const request = resolver.request({ args: { sort: { field: 'title', direction: 'desc' }, limit: 2 } });
+    const { nextToken } = resolver.response({ result: fakeOpenSearch(docs, request.params.body) });
+    expect(JSON.parse(nextToken as string)).toEqual(['', 'c']);
   });
 
   test.each(['asc', 'desc'])('returns every document once on a %s date sort with undated documents', (direction) => {

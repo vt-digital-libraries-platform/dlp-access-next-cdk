@@ -60,7 +60,7 @@ export async function searchCatalog(term: string, scope: SearchScope): Promise<S
 
   const allFields = term.trim();
   if (!allFields) return { items: [], total: 0, error: "Enter a search term." };
-  if (!(scope in QUERIES)) return { items: [], total: 0, error: "Invalid search scope." };
+  if (!Object.hasOwn(QUERIES, scope)) return { items: [], total: 0, error: "Invalid search scope." };
 
   const { field, query } = QUERIES[scope];
   try {
