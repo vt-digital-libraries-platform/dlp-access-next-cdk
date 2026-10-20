@@ -1,5 +1,5 @@
 import { optionsFromContext, planApp } from '../lib/app';
-import { contextFromArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
+import { contextFromArgs, deployArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
 
 const account = '123456789012';
 const userPool = 'us-east-1_AbCd12345';
@@ -19,6 +19,35 @@ describe('contextFromArgs', () => {
 
   test.each([[['-c']], [['-c', 'env']], [['-c', '=dev']]])('rejects %p', (args) => {
     expect(() => contextFromArgs(args)).toThrow(/Invalid context argument/);
+  });
+});
+
+describe('deployArgs', () => {
+  const context = ['-c', 'env=dev', '-c', `account=${account}`];
+
+  test('without --yes, passes every argument through', () => {
+    expect(deployArgs([...context, '--require-approval', 'broadening'], undefined)).toEqual({
+      yes: false,
+      cdkArgs: [...context, '--require-approval', 'broadening'],
+    });
+  });
+
+  test.each(['--yes', '-y'])('%s in CI is removed and answers CDK approval too', (flag) => {
+    expect(deployArgs([flag, ...context], 'true')).toEqual({
+      yes: true,
+      cdkArgs: [...context, '--require-approval', 'never'],
+    });
+  });
+
+  test.each([['--require-approval', 'broadening'], ['--require-approval=broadening']])(
+    '--yes keeps an explicit %s',
+    (...approval) => {
+      expect(deployArgs([...context, ...approval, '--yes'], '1').cdkArgs).toEqual([...context, ...approval]);
+    },
+  );
+
+  test.each([undefined, '', 'false', '0'])('rejects --yes when CI is %p', (ci) => {
+    expect(() => deployArgs(['--yes', ...context], ci)).toThrow(/--yes only applies in CI/);
   });
 });
 
