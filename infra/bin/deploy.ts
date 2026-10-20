@@ -11,7 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { optionsFromContext, planApp } from '../lib/app';
-import { contextFromArgs, deployArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
+import { contextFromArgs, deployArgs, describePlan, isConfirmed, productionWarning, profileFromArgs } from '../lib/deploy';
 import { AwsError, checkDeploy, lookupDeployedState } from '../lib/deploy-check';
 import { sourceCommit, uncommittedChanges } from '../lib/web-stack';
 
@@ -55,8 +55,13 @@ async function main(): Promise<number> {
   let warned = false;
   if (check) {
     const region = plan.config.region;
+    // The same credentials as cdk deploy, which gets every argument.
+    const profile = profileFromArgs(args);
+    const profileArgs = profile ? ['--profile', profile] : [];
     const aws = (awsArgs: string[]) => {
-      const result = spawnSync('aws', [...awsArgs, '--region', region, '--output', 'json'], { encoding: 'utf8' });
+      const result = spawnSync('aws', [...awsArgs, '--region', region, ...profileArgs, '--output', 'json'], {
+        encoding: 'utf8',
+      });
       if (result.error) {
         throw result.error;
       }

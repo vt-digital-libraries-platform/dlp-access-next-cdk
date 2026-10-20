@@ -24,6 +24,26 @@ export function contextFromArgs(args: readonly string[]): Record<string, string>
   return context;
 }
 
+/**
+ * The `--profile` passed through to `cdk deploy`, if any, so the pre-deploy
+ * check's `aws` calls use the same credentials as the deploy.
+ */
+export function profileFromArgs(args: readonly string[]): string | undefined {
+  let profile: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--profile') {
+      profile = args[++i];
+      if (profile === undefined) {
+        throw new Error('--profile needs a profile name');
+      }
+    } else if (arg.startsWith('--profile=')) {
+      profile = arg.slice('--profile='.length);
+    }
+  }
+  return profile;
+}
+
 const YES_FLAGS = ['--yes', '-y'];
 const NO_CHECK_FLAG = '--no-check';
 

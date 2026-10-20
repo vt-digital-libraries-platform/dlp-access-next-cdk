@@ -127,6 +127,9 @@ export function hasManyCode(opts: { indexName: string; foreignKeyField: string }
   );
 }
 
+/** OpenSearch's default max_result_window: the largest `size` a search accepts. */
+export const MAX_SEARCH_LIMIT = 10000;
+
 /**
  * Query.fulltextX: OpenSearch _search against a single index, mirroring the
  * Amplify searchable VTL resolvers (structured `filter` via
@@ -137,12 +140,20 @@ export function hasManyCode(opts: { indexName: string; foreignKeyField: string }
  * `.keyword` subfield) are sorted on the field itself, and OpenSearch returns
  * their sort values as epoch millis or 0/1. Documents without the field sort
  * last, at ±MAX_SAFE_INTEGER rather than OpenSearch's default of ±2^63, which
- * a JS number can't hold exactly.
+ * a JS number can't hold exactly. Documents without a `.keyword` value (the
+ * field is missing, or longer than `ignore_above`) also sort last, at a fixed
+ * string rather than OpenSearch's default, whose sort value is null, so the
+ * page token never holds a null.
  *
  * Every sort ends with `id.keyword`, so documents that tie on the requested
  * field still have a unique position and none are skipped at a page
  * boundary. The page token is the last hit's sort values as a JSON array,
  * passed back as `search_after`.
+ *
+ * `limit` defaults to 100 and is capped at OpenSearch's `max_result_window`
+ * (10000). The search ignores an index that doesn't exist yet: indices are
+ * created by the first document streamed to them, so a new domain returns no
+ * results rather than an error.
  */
 export function openSearchQueryCode(opts: {
   index: string;
@@ -172,7 +183,7 @@ export function openSearchQueryCode(opts: {
   const sortClause = {};
   sortClause[sortField] = numeric
     ? { order: direction, missing: direction === 'asc' ? ${Number.MAX_SAFE_INTEGER} : ${-Number.MAX_SAFE_INTEGER} }
-    : { order: direction };
+    : { order: direction, missing: direction === 'asc' ? '\\u{10FFFF}' : '' };
   // id is unique, so it breaks ties on the requested field.
   const sort = field === 'id' ? [sortClause] : [sortClause, { 'id.keyword': { order: direction } }];
 
@@ -190,11 +201,16 @@ export function openSearchQueryCode(opts: {
   // AppSync JS forbids reassigning variables, so choose the query in one expression.
   const query = args.filter || args.allFields ? { bool: bool } : { match_all: {} };
 
-  const body = { size: args.limit ? args.limit : 100, sort: sort, query: query };
+  const limit = args.limit ?? 100;
+  const body = { size: Math.max(0, Math.min(limit, ${MAX_SEARCH_LIMIT})), sort: sort, query: query };
   if (args.nextToken) {
     body.search_after = JSON.parse(args.nextToken);
   }
-  return { operation: 'GET', path: ${JSON.stringify(`/${index}/_search`)}, params: { body: body } };
+  return {
+    operation: 'GET',
+    path: ${JSON.stringify(`/${index}/_search`)},
+    params: { query: { ignore_unavailable: 'true' }, body: body },
+  };
 }
 
 export function response(ctx) {
