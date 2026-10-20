@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { optionsFromContext, planApp } from '../lib/app';
-import { contextFromArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
+import { callbackUrlReminder, contextFromArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
 
 const INFRA_DIR = path.join(__dirname, '..');
 
@@ -46,7 +46,12 @@ async function main(): Promise<number> {
     return 1;
   }
   const result = spawnSync('npx', ['cdk', 'deploy', '--all', ...args], { cwd: INFRA_DIR, stdio: 'inherit' });
-  return result.status ?? 1;
+  const status = result.status ?? 1;
+  const reminder = callbackUrlReminder(plan);
+  if (status === 0 && reminder) {
+    console.log(`\n${alert(reminder)}`);
+  }
+  return status;
 }
 
 main().then(
