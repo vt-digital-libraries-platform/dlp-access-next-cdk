@@ -28,8 +28,8 @@ Placeholders used below:
 
 Notes that apply to every command:
 
-- **Deploy with `npm run deploy`, not `npx cdk deploy`.** The script checks the options, prints the stacks it will deploy, and runs `cdk deploy --all` only if you type `y` or `yes`. It needs a terminal, so run it yourself. `npx cdk deploy` works but skips the confirmation.
-- **In CI, add `--yes`** (or `-y`) to deploy without the prompt, for example `npm run deploy -- --yes -c env=dev …`. It is accepted only when the `CI` environment variable is `true` or `1` (GitHub Actions sets it), and is rejected otherwise. The plan and any production warning are still printed to the log. It also adds `--require-approval never`, so CDK doesn't stop to approve IAM or security group changes, unless you pass your own `--require-approval`. Approval for CI deploys belongs in the pipeline, such as required reviewers on a GitHub Environment for `production`.
+- **Deploy with `npm run deploy`, not `npx cdk deploy`.** The script checks the options, prints the stacks it will deploy, and runs `cdk deploy --all` only if you type `y` or `yes`. It needs a terminal: without one, and without `--yes`, it exits 1 without deploying. `npx cdk deploy` works but skips the confirmation.
+- **In CI, add `--yes`** to deploy without the prompt. See [Running in CI](#running-in-ci).
 - **CDK never creates, changes or deletes a user pool.** The pool needs its own managed login domain and an `admin` group, set up outside CDK. `-c userPool` only records which pool to use.
 - **Pass `-c identityProvider=VT-SSO-OIDC` on every backend deploy** if users sign in through VT SSO. If you leave it out, the environment falls back to the pool's own accounts (`COGNITO`).
 - **`-c production=true` picks the large sizing:** three `m7g.medium.search` nodes and a `t3.medium` Beanstalk instance. It is independent of `env`. Pass it on every `production` deploy, or the next deploy shrinks the environment to the small sizing (one `t3.small.search` node, `t3.small` instance). When `env` is `production`, the deploy script prints a red warning, and adds a line if this flag is missing.
@@ -209,3 +209,60 @@ Notes:
   aws cloudformation delete-stack --region us-east-1 --stack-name DlpAccessNext-<env>-Data
   aws cloudformation delete-stack --region us-east-1 --stack-name DlpAccessNext-<env>-Auth
   ```
+
+---
+
+## Running in CI
+
+Every deploy command above works in CI with `--yes` added. Every destroy command works with `--force` added.
+
+```bash
+npm run deploy -- --yes -c env=<env> -c account=$ACCOUNT …
+npx cdk destroy --all --force -c env=<env> -c account=$ACCOUNT …
+```
+
+### What `--yes` does
+
+- **It skips the script's confirmation.** The plan, the production warning, the deployed commit and any uncommitted changes are still printed to the job log, followed by `Confirmed by --yes (CI).`
+- **It also answers CDK's approval prompt.** It adds `--require-approval never`, so CDK doesn't stop to approve IAM policy or security group changes. If you pass your own `--require-approval`, that one is used instead.
+- **It's for the script only.** `-y` means the same thing. The script removes the flag before calling `cdk deploy`.
+- **It only works in CI.** The `CI` environment variable must be `true` or `1`; GitHub Actions sets it. Otherwise the script stops with `--yes only applies in CI (CI=true); run without it to confirm the deploy`. On your own machine, answer the prompt.
+- **Production isn't treated differently.** `--yes` skips the production prompt too. The approval for production belongs to the pipeline, such as required reviewers on a GitHub Environment named `production`.
+
+### Notes for pipelines
+
+- **The deployed commit is the one the job checked out.** A frontend deploy bundles HEAD with `git archive`, so the job needs a git checkout, not just the files. On a `pull_request` event, `actions/checkout` checks out a merge commit by default. To deploy the branch's own commit, check out `${{ github.event.pull_request.head.sha }}`. A shallow clone is fine.
+- **The branch name can't come from `git branch --show-current`.** Checkouts in CI are on a detached HEAD, so that command prints nothing. On GitHub Actions, use `-c branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}`: the source branch for pull requests, and the pushed branch otherwise.
+- **The job's role needs to look up the hosted zone.** At synth time, the frontend finds `dlp.cloud.lib.vt.edu` in Route 53. The lookup is cached in `infra/cdk.context.json`, which isn't committed, so every CI run does it.
+- **Keep the context values in pipeline config.** Store `env`, `userPool`, `identityProvider` and, for production, `production=true` as each GitHub Environment's variables, not in the workflow's command line. The redeploy rules still apply: leaving one out changes the environment.
+- **Run one deploy per environment at a time,** for example with `concurrency: deploy-<env>`.
+- **Use short-lived credentials,** such as a role the job assumes through GitHub OIDC, with production's role trusting only the `production` Environment.
+
+### Example: deploy a branch's frontend on push
+
+```yaml
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: dev                      # add required reviewers for production
+    concurrency: deploy-dev
+    permissions:
+      id-token: write                     # for OIDC
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - working-directory: infra
+        run: |
+          npm ci
+          npm run deploy -- --yes -c env=dev -c account=${{ vars.AWS_ACCOUNT_ID }} \
+            -c branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}
+```
+
+For a backend deploy, replace `-c branch=…` with `-c userPool=${{ vars.USER_POOL_ID }} -c identityProvider=VT-SSO-OIDC`. Add `-c production=true` in the production job.
