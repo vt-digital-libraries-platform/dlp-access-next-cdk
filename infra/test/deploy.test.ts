@@ -3,6 +3,7 @@ import { contextFromArgs, describePlan, isConfirmed, productionWarning } from '.
 
 const account = '123456789012';
 const userPool = 'us-east-1_AbCd12345';
+const certificate = `arn:aws:acm:us-east-1:${account}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
 
 describe('contextFromArgs', () => {
   test('reads -c, --context and --context= forms and ignores other flags', () => {
@@ -32,7 +33,7 @@ describe('optionsFromContext', () => {
       backend: undefined,
       userPool: undefined,
       identityProvider: undefined,
-      appUrl: undefined,
+      certificate: undefined,
     });
   });
 });
@@ -40,7 +41,7 @@ describe('optionsFromContext', () => {
 describe('describePlan', () => {
   test('lists every option, with defaults applied, and the stacks', () => {
     const text = describePlan(
-      planApp({ env: 'f-search', account, userPool, branch: 'whunter/Multi_Env', backend: 'provision' }),
+      planApp({ env: 'f-search', account, userPool, branch: 'whunter/Multi_Env', backend: 'provision', certificate }),
     );
     expect(text).toMatch(/Environment\s+f-search/);
     expect(text).toMatch(/Account\s+123456789012/);
@@ -50,7 +51,8 @@ describe('describePlan', () => {
     expect(text).toMatch(/Backend\s+provision/);
     expect(text).toMatch(/User pool\s+us-east-1_AbCd12345/);
     expect(text).toMatch(/Identity provider\s+\(none: the pool's own users\)/);
-    expect(text).toMatch(/App URL\s+\(none\)/);
+    expect(text).toMatch(/App URL\s+https:\/\/whunter-multi-env\.next\.dlp\.cloud\.lib\.vt\.edu$/m);
+    expect(text).toMatch(/Certificate\s+arn:aws:acm:us-east-1:123456789012:certificate\//);
     expect(text).toMatch(/Data on destroy\s+destroy/);
     expect(text).toMatch(
       /Stacks\s+DlpAccessNext-f-search-Data, DlpAccessNext-f-search-Api, DlpAccessNext-f-search-Auth, DlpAccessNext-Web-whunter-multi-env/,
@@ -62,6 +64,8 @@ describe('describePlan', () => {
     expect(text).toMatch(/Production\s+true \(search: 3 x m7g\.medium\.search across 3 AZ; web: t3\.medium\)/);
     expect(text).toMatch(/Branch\s+\(none\)/);
     expect(text).toMatch(/Backend\s+\(none\)/);
+    expect(text).toMatch(/App URL\s+\(none\)/);
+    expect(text).toMatch(/Certificate\s+\(none\)/);
     expect(text).toMatch(/Data on destroy\s+retain/);
     expect(text).toMatch(
       /Stacks\s+DlpAccessNext-production-Data, DlpAccessNext-production-Api, DlpAccessNext-production-Auth$/m,
@@ -69,14 +73,14 @@ describe('describePlan', () => {
   });
 
   test('attach deploys only the Web stack', () => {
-    const text = describePlan(planApp({ env: 'dev', account, branch: 'main' }));
+    const text = describePlan(planApp({ env: 'dev', account, branch: 'main', certificate }));
     expect(text).toMatch(/Backend\s+attach/);
     expect(text).toMatch(/User pool\s+\(the environment's\)/);
     expect(text).toMatch(/Identity provider\s+\(the environment's\)/);
     expect(text).toMatch(/Stacks\s+DlpAccessNext-Web-main$/m);
   });
 
-  test('shows the user pool, its identity provider and the app URL', () => {
+  test('shows the user pool and its identity provider', () => {
     const text = describePlan(
       planApp({
         env: 'dev',
@@ -85,12 +89,11 @@ describe('describePlan', () => {
         backend: 'provision',
         userPool,
         identityProvider: 'VT-SSO-OIDC',
-        appUrl: 'https://next.example.edu/',
+        certificate,
       }),
     );
     expect(text).toMatch(/User pool\s+us-east-1_AbCd12345/);
     expect(text).toMatch(/Identity provider\s+VT-SSO-OIDC \(must already be on the user pool/);
-    expect(text).toMatch(/App URL\s+https:\/\/next\.example\.edu$/m);
   });
 });
 

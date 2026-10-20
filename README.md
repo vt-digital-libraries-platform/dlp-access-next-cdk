@@ -18,7 +18,7 @@ Each **environment** has its own data and API. Environments are `dev`, `pre-prod
 | `DlpAccessNext-<env>-Data` | Seven DynamoDB tables (`<Model>-dlpnext-<env>`) and an OpenSearch 2.19 domain (`dlpnext-<env>`) |
 | `DlpAccessNext-<env>-Api` | The AppSync API (IAM auth), the Lambda that streams Archive and Collection changes into OpenSearch, and the environment's Beanstalk instance role (`dlp-access-next-<env>-eb`) |
 | `DlpAccessNext-<env>-Auth` | A pointer to the environment's existing Cognito user pool and identity provider (two SSM parameters). The pool itself is made outside CDK |
-| `DlpAccessNext-Web-<branch>` | One git branch of the Next.js app: a Beanstalk application and single-instance Node.js 24 environment (`dlpnext-<branch>`) that calls one environment's API, and the branch's Cognito app client on the environment's user pool |
+| `DlpAccessNext-Web-<branch>` | One git branch of the Next.js app: a Beanstalk application and Node.js 24 environment (`dlpnext-<branch>`, one instance behind an HTTPS load balancer) at `https://<branch>.next.dlp.cloud.lib.vt.edu`, that calls one environment's API, and the branch's Cognito app client on the environment's user pool |
 
 Many branches can share one environment. Only feature environments delete their tables and domain when their stacks are destroyed. `dev`, `pre-production` and `production` keep their data and have deletion protection and point-in-time recovery turned on.
 
@@ -58,11 +58,11 @@ ACCOUNT=$(aws sts get-caller-identity --query Account --output text)   # the acc
 npm run deploy -- -c env=dev -c account=$ACCOUNT -c userPool=<user pool ID> -c identityProvider=VT-SSO-OIDC
 
 # Your branch of the app, attached to an environment that is already deployed
-npm run deploy -- -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current)
+npm run deploy -- -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current) -c certificate=<certificate ARN>
 
 # Your branch of the app plus a new feature environment for it
 npm run deploy -- -c env=f-search -c account=$ACCOUNT -c branch=$(git branch --show-current) -c backend=provision \
-  -c userPool=<user pool ID> -c identityProvider=VT-SSO-OIDC
+  -c certificate=<certificate ARN> -c userPool=<user pool ID> -c identityProvider=VT-SSO-OIDC
 
 # Production: its own account, with production sizing
 npm run deploy -- -c env=production -c account=<production account ID> -c production=true -c userPool=<user pool ID>
@@ -74,17 +74,17 @@ npm run deploy -- -c env=production -c account=<production account ID> -c produc
 - `-c backend=provision` also deploys the environment's Data, Api and Auth stacks, before the Web stack.
 - `-c userPool=<user pool ID>` is the existing Cognito user pool, in the environment's region, that the environment's users sign in to. CDK does not create or change user pools: the pool needs its own managed login domain and `admin` group. It is required on every deploy of the environment's stacks (no `-c branch`, or `-c backend=provision`) and not accepted otherwise. Passing a different ID repoints the environment, and each Web stack moves its app client to the new pool the next time it deploys.
 - `-c identityProvider=<name>` names the federated identity provider on the user pool that users sign in through, such as `VT-SSO-OIDC`. Each branch's app client then allows only that provider and the app sends users straight to it. It has to exist on the pool before a Web stack deploys. Without the option, users are the pool's own. Like `-c userPool`, pass it on every deploy of the environment's stacks.
-- `-c appUrl=https://<host>` (with `-c branch`) registers the app's public origin for sign-in on the branch's app client. Cognito only accepts `http` for localhost and the Beanstalk environments serve HTTP only, so until the app has HTTPS in front of it, sign-in works only when it runs on `localhost:3000`.
+- `-c certificate=<ARN>` is required with `-c branch`. Each branch is served at `https://<branch>.next.dlp.cloud.lib.vt.edu` (a CNAME in the `dlp.cloud.lib.vt.edu` hosted zone, looked up when the app is synthesized) by an Application Load Balancer that terminates HTTPS with this existing ACM certificate, which must cover `*.next.dlp.cloud.lib.vt.edu` and be in the environment's account and region. HTTP is redirected to HTTPS. The URL is registered for sign-in on the branch's app client and set as `APP_BASE_URL`.
 - Deploying the same branch with a different `env` repoints its Web stack at that environment.
 - `-c production=true` switches to production sizing: three OpenSearch nodes across three AZs instead of one, and a `t3.medium` Beanstalk instance instead of `t3.small`. It defaults to false and is separate from the environment name, so pass it for the real `production` deploy.
 - No account IDs are stored in the repo, and nothing ties an environment to an account: `-c account` alone decides where the stacks go, so double-check it, especially for `production`.
 - Branch names become slugs (`whunter/Multi_Env` becomes `whunter-multi-env`) of at most 32 characters. Environment names are lowercase and at most 20 characters.
-- The Web stack's `EndpointUrl` output and the Beanstalk console give the app's address. It serves HTTP only, with no load balancer or custom domain.
+- The Web stack's `AppUrl` output is the app's address. `EndpointUrl` is the load balancer's own name, which the certificate does not cover.
 
 To tear down a branch deployment:
 
 ```bash
-npx cdk destroy DlpAccessNext-Web-<branch> -c env=<env> -c account=$ACCOUNT -c branch=<branch>
+npx cdk destroy DlpAccessNext-Web-<branch> -c env=<env> -c account=$ACCOUNT -c branch=<branch> -c certificate=<certificate ARN>
 ```
 
 ## Tests
