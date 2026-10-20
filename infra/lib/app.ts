@@ -3,7 +3,7 @@ import { ApiStack } from './api-stack';
 import { AuthStack } from './auth-stack';
 import { DataStack } from './data-stack';
 import { EnvironmentConfig, resolveEnvironment } from './environments';
-import { WebStack, branchSlug, webDomainName, webResourceName } from './web-stack';
+import { CERTIFICATE_ID, WebStack, branchSlug, webDomainName, webResourceName } from './web-stack';
 
 /**
  * CDK context, as passed with `-c env=... -c account=... -c production=... -c branch=... -c backend=...
@@ -39,9 +39,10 @@ export interface AppOptions {
    */
   readonly identityProvider?: string;
   /**
-   * With a branch, and required with one: ARN of the existing ACM
-   * certificate, in the environment's account and region, that covers the
-   * branch's domain name (`*.dlp-access-dev.dlp.cloud.lib.vt.edu`).
+   * With a branch: ARN of the existing ACM certificate, in the
+   * environment's account and region, that covers the branch's domain name
+   * (`*.dlp-access-dev.dlp.cloud.lib.vt.edu`). Defaults to the certificate
+   * `CERTIFICATE_ID` in that account and region.
    */
   readonly certificate?: string;
 }
@@ -176,11 +177,6 @@ export function planApp(options: AppOptions): AppPlan {
   if (options.certificate !== undefined && branch === undefined) {
     throw new Error('-c certificate only applies with -c branch=<git branch>');
   }
-  if (branch !== undefined && options.certificate === undefined) {
-    throw new Error(
-      `Missing CDK context: pass -c certificate=<ACM certificate ARN>, the certificate covering ${webDomainName(branch)}`,
-    );
-  }
   if (options.certificate !== undefined) {
     const [, region, certificateAccount] = CERTIFICATE_ARN_PATTERN.exec(options.certificate) ?? [];
     if (region === undefined) {
@@ -201,7 +197,10 @@ export function planApp(options: AppOptions): AppPlan {
     userPool: options.userPool,
     identityProvider: options.identityProvider,
     appUrl: branch === undefined ? undefined : `https://${webDomainName(branch)}`,
-    certificate: options.certificate,
+    certificate:
+      branch === undefined
+        ? undefined
+        : (options.certificate ?? `arn:aws:acm:${config.region}:${options.account}:certificate/${CERTIFICATE_ID}`),
     dataStackName: provision ? `${prefix}-Data` : undefined,
     apiStackName: provision ? `${prefix}-Api` : undefined,
     authStackName: provision ? `${prefix}-Auth` : undefined,
