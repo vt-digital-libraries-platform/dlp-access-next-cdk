@@ -56,7 +56,8 @@ export class DataStack extends Stack {
     );
 
     // No access policy: access is granted through IAM identity policies on
-    // the roles that need it, as on the Amplify domains.
+    // the roles that need it, as on the Amplify domains. The domain is
+    // destroyed with the stack in every environment, unlike the tables.
     const domain = new opensearch.Domain(this, 'SearchDomain', {
       domainName: `dlpnext-${config.name}`,
       version: opensearch.EngineVersion.OPENSEARCH_2_19,
@@ -77,7 +78,7 @@ export class DataStack extends Stack {
       nodeToNodeEncryption: true,
       enforceHttps: true,
       tlsSecurityPolicy: opensearch.TLSSecurityPolicy.TLS_1_2,
-      removalPolicy: config.removalPolicy,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
     this.searchDomain = domain;
 
