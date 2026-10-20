@@ -493,7 +493,7 @@ describe('Web stack', () => {
     [{ env: 'dev', branch: 'x', userPool }, /-c userPool only applies/],
     [{ env: 'dev', branch: 'x', identityProvider: 'VT-SSO-OIDC' }, /-c identityProvider only applies/],
     [{ env: 'dev', userPool, certificate }, /-c certificate only applies with -c branch/],
-    [{ env: 'dev', branch: 'x', certificate: undefined }, /pass -c certificate=<ACM certificate ARN>, the certificate covering x\.next\.dlp\.cloud\.lib\.vt\.edu/],
+    [{ env: 'dev', branch: 'x', certificate: undefined }, /pass -c certificate=<ACM certificate ARN>, the certificate covering x\.dlp-access-dev\.dlp\.cloud\.lib\.vt\.edu/],
     [{ env: 'dev', branch: 'x', certificate: 'not-an-arn' }, /Invalid certificate/],
     [{ env: 'dev', branch: 'x', certificate: certificate.replace('us-east-1', 'us-west-2') }, /must be in account .* and us-east-1/],
     [{ env: 'dev', branch: 'x', certificate: certificate.replace(account, '210987654321') }, /must be in account 123456789012/],
@@ -548,8 +548,8 @@ describe('Web stack', () => {
       GenerateSecret: true,
       AllowedOAuthFlows: ['code'],
       AllowedOAuthScopes: ['openid', 'email'],
-      CallbackURLs: ['https://feature-search.next.dlp.cloud.lib.vt.edu/authorize', 'http://localhost:3000/authorize'],
-      LogoutURLs: ['https://feature-search.next.dlp.cloud.lib.vt.edu/', 'http://localhost:3000/'],
+      CallbackURLs: ['https://feature-search.dlp-access-dev.dlp.cloud.lib.vt.edu/authorize', 'http://localhost:3000/authorize'],
+      LogoutURLs: ['https://feature-search.dlp-access-dev.dlp.cloud.lib.vt.edu/', 'http://localhost:3000/'],
       SupportedIdentityProviders: [{ Ref: Match.anyValue() }],
     });
     web.hasParameter('*', {
@@ -619,17 +619,17 @@ describe('Web stack', () => {
         option(
           'aws:elasticbeanstalk:application:environment',
           'APP_BASE_URL',
-          'https://feature-search.next.dlp.cloud.lib.vt.edu',
+          'https://feature-search.dlp-access-dev.dlp.cloud.lib.vt.edu',
         ),
       ]),
     });
     const environmentId = Object.keys(web.findResources('AWS::ElasticBeanstalk::Environment'))[0];
     web.hasResourceProperties('AWS::Route53::RecordSet', {
-      Name: 'feature-search.next.dlp.cloud.lib.vt.edu.',
+      Name: 'feature-search.dlp-access-dev.dlp.cloud.lib.vt.edu.',
       Type: 'CNAME',
       ResourceRecords: [{ 'Fn::GetAtt': [environmentId, 'EndpointURL'] }],
     });
-    web.hasOutput('AppUrl', { Value: 'https://feature-search.next.dlp.cloud.lib.vt.edu' });
+    web.hasOutput('AppUrl', { Value: 'https://feature-search.dlp-access-dev.dlp.cloud.lib.vt.edu' });
   });
 
   test('nginx redirects HTTP to HTTPS behind the load balancer', () => {

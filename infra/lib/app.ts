@@ -41,7 +41,7 @@ export interface AppOptions {
   /**
    * With a branch, and required with one: ARN of the existing ACM
    * certificate, in the environment's account and region, that covers the
-   * branch's domain name (`*.next.dlp.cloud.lib.vt.edu`).
+   * branch's domain name (`*.dlp-access-dev.dlp.cloud.lib.vt.edu`).
    */
   readonly certificate?: string;
 }

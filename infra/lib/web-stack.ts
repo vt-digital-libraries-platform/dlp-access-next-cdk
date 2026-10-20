@@ -36,7 +36,7 @@ export const CALLBACK_PATH = '/authorize';
 // Each branch is served at <slug>.<APP_DOMAIN>, by a record in the hosted
 // zone HOSTED_ZONE, over HTTPS with an existing certificate covering
 // *.<APP_DOMAIN>.
-export const APP_DOMAIN = 'next.dlp.cloud.lib.vt.edu';
+export const APP_DOMAIN = 'dlp-access-dev.dlp.cloud.lib.vt.edu';
 export const HOSTED_ZONE = 'dlp.cloud.lib.vt.edu';
 const TLS_POLICY = 'ELBSecurityPolicy-TLS13-1-2-2021-06';
 
@@ -260,7 +260,7 @@ export function webResourceName(slug: string): string {
   return `${WEB_PREFIX}${slug}`;
 }
 
-/** The branch's public domain name, e.g. `whunter-multi-env.next.dlp.cloud.lib.vt.edu`. */
+/** The branch's public domain name, e.g. `whunter-multi-env.dlp-access-dev.dlp.cloud.lib.vt.edu`. */
 export function webDomainName(slug: string): string {
   return `${slug}.${APP_DOMAIN}`;
 }

@@ -51,7 +51,7 @@ describe('describePlan', () => {
     expect(text).toMatch(/Backend\s+provision/);
     expect(text).toMatch(/User pool\s+us-east-1_AbCd12345/);
     expect(text).toMatch(/Identity provider\s+\(none: the pool's own users\)/);
-    expect(text).toMatch(/App URL\s+https:\/\/whunter-multi-env\.next\.dlp\.cloud\.lib\.vt\.edu$/m);
+    expect(text).toMatch(/App URL\s+https:\/\/whunter-multi-env\.dlp-access-dev\.dlp\.cloud\.lib\.vt\.edu$/m);
     expect(text).toMatch(/Certificate\s+arn:aws:acm:us-east-1:123456789012:certificate\//);
     expect(text).toMatch(/Data on destroy\s+destroy/);
     expect(text).toMatch(
