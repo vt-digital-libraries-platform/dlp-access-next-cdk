@@ -10,7 +10,8 @@ const attach = planApp({ env: 'dev', account, branch: 'whunter/Multi_Env', certi
 
 /**
  * A fake AWS CLI: `resources` maps "service command name" to the parsed
- * output, or to an Error to throw. Anything missing is "not found".
+ * output, or to an Error to throw (a command without a name argument is just
+ * "service command"). Anything missing is "not found".
  */
 function fakeAws(resources: Record<string, unknown>, caller = account): AwsCli {
   return (args) => {
@@ -18,7 +19,7 @@ function fakeAws(resources: Record<string, unknown>, caller = account): AwsCli {
     if (service === 'sts') {
       return { Account: caller };
     }
-    const key = `${service} ${command} ${args[3]}`;
+    const key = args.length > 2 ? `${service} ${command} ${args[3]}` : `${service} ${command}`;
     const found = resources[key];
     if (found instanceof Error) {
       throw found;
@@ -70,8 +71,7 @@ describe('checkDeploy', () => {
   test('warns about tables and a search domain left outside a Data stack being created', () => {
     const { stacks, warnings } = check(provision, {
       'cloudformation describe-stacks DlpAccessNext-dev-Data': stack('REVIEW_IN_PROGRESS'),
-      'dynamodb describe-table Archive-dlpnext-dev': { Table: {} },
-      'dynamodb describe-table Site-dlpnext-dev': { Table: {} },
+      'dynamodb list-tables': { TableNames: ['Archive-dlpnext-dev', 'Archive-dlpnext-f-other', 'Site-dlpnext-dev'] },
       'opensearch describe-domain dlpnext-dev': domain('t3.small.search', 1),
     });
     expect(stacks[0]).toMatch(/Data: create \(an earlier create/);
