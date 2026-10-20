@@ -167,12 +167,12 @@ describe('search domain', () => {
     });
   });
 
-  test('removal policy follows the environment', () => {
+  test('the domain is destroyed with the stack in every environment', () => {
     const policy = (t: Template) =>
       Object.values(t.findResources('AWS::OpenSearchService::Domain'))[0].DeletionPolicy;
     expect(policy(feature.data)).toBe('Delete');
-    expect(policy(dev.data)).toBe('Retain');
-    expect(policy(preProduction.data)).toBe('Retain');
+    expect(policy(dev.data)).toBe('Delete');
+    expect(policy(preProduction.data)).toBe('Delete');
   });
 
   test.each(['archive', 'collection'])('the %s index template sets the generated mappings', (index) => {

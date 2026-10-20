@@ -22,8 +22,9 @@ export interface EnvironmentConfig {
     readonly instanceType: string;
   };
   /**
-   * RETAIN also turns on table deletion protection and point-in-time
-   * recovery; DESTROY turns both off.
+   * Applies to the tables. RETAIN also turns on table deletion protection and
+   * point-in-time recovery; DESTROY turns both off. The search domain is
+   * always destroyed with its stack.
    */
   readonly removalPolicy: RemovalPolicy;
 }
@@ -71,7 +72,7 @@ const ENVIRONMENTS: Record<string, Settings> = {
 
 /**
  * Feature environments are short-lived and prefixed `f-`. They are the only
- * environments whose data is destroyed with their stacks.
+ * environments whose tables are destroyed with their stacks.
  */
 const FEATURE_PREFIX = 'f-';
 const FEATURE: Settings = {
