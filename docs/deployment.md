@@ -167,7 +167,7 @@ Each frontend's Beanstalk application is named `dlpnext-<slug>`. Its description
 
 ```bash
 aws elasticbeanstalk describe-applications --region us-east-1 \
-  --query "Applications[?ends_with(Description, 'using the <env> environment')].ApplicationName" \
+  --query "Applications[?Description && ends_with(Description, 'using the <env> environment')].ApplicationName" \
   --output text
 ```
 
@@ -175,7 +175,7 @@ Then destroy each one by its slug (the application name without `dlpnext-`):
 
 ```bash
 for app in $(aws elasticbeanstalk describe-applications --region us-east-1 \
-    --query "Applications[?ends_with(Description, 'using the <env> environment')].ApplicationName" \
+    --query "Applications[?Description && ends_with(Description, 'using the <env> environment')].ApplicationName" \
     --output text); do
   npx cdk destroy --all -c env=<env> -c account=$ACCOUNT -c branch="${app#dlpnext-}"
 done
