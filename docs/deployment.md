@@ -83,7 +83,7 @@ Notes:
 
 - The backend's Api and Auth stacks must already be deployed. If they aren't, the deploy fails with "Unable to fetch parameters".
 - Don't pass `-c userPool` or `-c identityProvider`: they are rejected here. The frontend reads them from the backend's SSM parameters.
-- **The deploy bundles your working tree**, including uncommitted changes. Everything is included except `.gitignore` entries, `infra`, docs and `.env*` files. Beanstalk builds the bundle on the instance.
+- **The deploy ships the commit at HEAD, not your working tree.** Commit what you want deployed first. Uncommitted and untracked changes are left out, and `npm run deploy` lists them before it asks to continue. The bundle leaves out `infra`, docs, Markdown files, `.scratch` and `.env*` files. Beanstalk builds it on the instance. The application version's description records the commit.
 - The certificate defaults to the stored wildcard certificate for `*.dlp-access-dev.dlp.cloud.lib.vt.edu`. Pass `-c certificate=<ACM certificate ARN>` only to use a different one, which must be in the same account and region.
 - The frontend creates its own Cognito app client on the environment's pool. The provider named by the backend's `identityProvider` must exist on the pool, or creating the client fails.
 - The slug can be at most 32 characters. If the branch name is longer, pass a shorter `-c branch=<name>`.
@@ -99,7 +99,7 @@ npm run deploy -- -c env=<env> -c account=$ACCOUNT \
 Notes:
 
 - `-c backend=provision` adds the environment's Data, Api and Auth stacks to the app. They deploy first and the Web stack follows.
-- The notes for each half apply: retained tier tables block a re-create, and the working tree is bundled.
+- The notes for each half apply: retained tier tables block a re-create, and only the commit at HEAD is deployed.
 - Add `-c production=true` for production.
 
 ---
@@ -132,7 +132,7 @@ npm run deploy -- -c env=<env> -c account=$ACCOUNT -c branch=$(git branch --show
 
 Notes:
 
-- This uploads a new source bundle from your working tree and deploys it as a new application version.
+- This uploads the commit at HEAD as a new application version. Commit first: uncommitted changes aren't deployed. If HEAD's files haven't changed since the last deploy, the bundle is the same and the app isn't redeployed.
 - Deploying the same branch with a different `env` repoints its existing frontend to that backend.
 
 ### Both

@@ -1,10 +1,11 @@
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { booleanContext, buildApp, planApp } from '../lib/app';
 import { buildSearchMappings, numericSortFields, searchMappings } from '../lib/search-mappings';
-import { CALLBACK_PATH, CERTIFICATE_ID } from '../lib/web-stack';
+import { CALLBACK_PATH, CERTIFICATE_ID, sourceCommit } from '../lib/web-stack';
 
 const account = '123456789012';
 const userPool = 'us-east-1_AbCd12345';
@@ -666,11 +667,36 @@ describe('Web stack', () => {
     const staged = path.join((attached.node.root as App).outdir, attached.sourceBundle.assetPath);
     const entries = fs.readdirSync(staged);
     expect(entries).toEqual(expect.arrayContaining(['package.json', 'package-lock.json', 'src', '.platform']));
-    for (const excluded of ['node_modules', '.next', '.git', 'infra', '.elasticbeanstalk', 'CLAUDE.md']) {
+    for (const excluded of ['node_modules', '.next', '.git', 'infra', '.elasticbeanstalk', '.scratch', 'docs', 'CLAUDE.md']) {
       expect(entries).not.toContain(excluded);
     }
     expect(entries.filter((e) => e.startsWith('.env'))).toEqual([]);
     const hook = fs.statSync(path.join(staged, '.platform', 'hooks', 'prebuild', '01_build.sh'));
     expect(hook.mode & 0o111).not.toBe(0);
+  });
+
+  test('source bundle is the commit at HEAD, without uncommitted changes', () => {
+    const repo = path.join(__dirname, '..', '..');
+    const untracked = path.join(repo, 'src', 'uncommitted-test-file.ts');
+    const packageJson = path.join(repo, 'package.json');
+    const local = fs.readFileSync(packageJson, 'utf8');
+    const committed = execFileSync('git', ['show', 'HEAD:package.json'], { cwd: repo, encoding: 'utf8' });
+    fs.writeFileSync(untracked, 'export {};\n');
+    fs.writeFileSync(packageJson, `${local}\n`);
+    try {
+      const stack = buildApp(new App(), { env: 'dev', account, branch: 'main', certificate }).web!;
+      const staged = path.join((stack.node.root as App).outdir, stack.sourceBundle.assetPath);
+      expect(fs.existsSync(path.join(staged, 'src', 'uncommitted-test-file.ts'))).toBe(false);
+      expect(fs.readFileSync(path.join(staged, 'package.json'), 'utf8')).toBe(committed);
+    } finally {
+      fs.rmSync(untracked, { force: true });
+      fs.writeFileSync(packageJson, local);
+    }
+  });
+
+  test('application version records the deployed commit', () => {
+    web.hasResourceProperties('AWS::ElasticBeanstalk::ApplicationVersion', {
+      Description: `commit ${sourceCommit()}`,
+    });
   });
 });
