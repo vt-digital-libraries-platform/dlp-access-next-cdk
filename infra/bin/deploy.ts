@@ -2,12 +2,13 @@
 // Deploys with `cdk deploy --all`, after showing the parsed options and
 // asking for confirmation. Takes the same arguments as `cdk deploy`:
 //   npm run deploy -- -c env=dev -c account=$ACCOUNT [-c branch=...] [other cdk flags]
+// In CI (CI=true), --yes skips the confirmation; see deployArgs.
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { optionsFromContext, planApp } from '../lib/app';
-import { contextFromArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
+import { contextFromArgs, deployArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
 import { sourceCommit, uncommittedChanges } from '../lib/web-stack';
 
 const INFRA_DIR = path.join(__dirname, '..');
@@ -25,7 +26,7 @@ function ask(question: string): Promise<string> {
 }
 
 async function main(): Promise<number> {
-  const args = process.argv.slice(2);
+  const { yes, cdkArgs: args } = deployArgs(process.argv.slice(2), process.env.CI);
   // The app also sees cdk.json's context, with -c values taking precedence.
   const cdkJson = JSON.parse(fs.readFileSync(path.join(INFRA_DIR, 'cdk.json'), 'utf8'));
   const context: Record<string, unknown> = { ...cdkJson.context, ...contextFromArgs(args) };
@@ -47,12 +48,16 @@ async function main(): Promise<number> {
     }
   }
 
-  const question = warning
-    ? alert('Deploy to PRODUCTION? Type "yes" or "y" to continue: ')
-    : 'Deploy? Type "yes" or "y" to continue: ';
-  if (!isConfirmed(await ask(question))) {
-    console.log('Not deployed.');
-    return 1;
+  if (yes) {
+    console.log('Confirmed by --yes (CI).');
+  } else {
+    const question = warning
+      ? alert('Deploy to PRODUCTION? Type "yes" or "y" to continue: ')
+      : 'Deploy? Type "yes" or "y" to continue: ';
+    if (!isConfirmed(await ask(question))) {
+      console.log('Not deployed.');
+      return 1;
+    }
   }
   const result = spawnSync('npx', ['cdk', 'deploy', '--all', ...args], { cwd: INFRA_DIR, stdio: 'inherit' });
   return result.status ?? 1;
