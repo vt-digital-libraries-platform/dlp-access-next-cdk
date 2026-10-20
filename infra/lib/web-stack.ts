@@ -149,9 +149,20 @@ export class WebStack extends Stack {
     });
     // The environment's instance role is shared by its branches and owned by
     // its Api stack; this grant is the branch's own and is in place before
-    // the environment's first instance starts.
+    // the environment's first instance starts. Named after the branch: an
+    // inline policy name must be unique on the role, and `grantRead` would
+    // name it after its construct path, the same in every Web stack.
     const instanceRole = iam.Role.fromRoleName(this, 'InstanceRole', ebInstanceProfileName(config.name));
-    const secretRead = clientSecret.grantRead(instanceRole);
+    const secretRead = new iam.Policy(this, 'ClientSecretRead', {
+      policyName: `${name}-client-secret`,
+      roles: [instanceRole],
+      statements: [
+        new iam.PolicyStatement({
+          actions: ['secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret'],
+          resources: [clientSecret.secretArn],
+        }),
+      ],
+    });
 
     const settings: Record<string, Record<string, string>> = {
       'aws:elasticbeanstalk:environment': {
@@ -216,7 +227,7 @@ export class WebStack extends Stack {
       ),
     });
     environment.addResourceDependency(application);
-    secretRead.applyBefore(environment);
+    environment.node.addDependency(secretRead);
 
     // The endpoint is the load balancer's DNS name. Looked up at synth time
     // and cached in cdk.context.json.

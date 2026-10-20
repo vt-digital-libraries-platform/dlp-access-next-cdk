@@ -600,6 +600,8 @@ describe('Web stack', () => {
     expect(readers).toHaveLength(1);
     const [[policyId, policy]] = readers;
     expect(policy.Properties.Roles).toEqual(['dlp-access-next-pre-production-eb']);
+    // Inline policy names are unique per role, which the environment's branches share.
+    expect(policy.Properties.PolicyName).toBe('dlpnext-feature-search-client-secret');
     expect(policy.Properties.PolicyDocument.Statement).toEqual([
       expect.objectContaining({
         Effect: 'Allow',
