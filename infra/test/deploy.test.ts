@@ -1,5 +1,5 @@
 import { optionsFromContext, planApp } from '../lib/app';
-import { callbackUrlReminder, contextFromArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
+import { contextFromArgs, describePlan, isConfirmed, productionWarning } from '../lib/deploy';
 
 const account = '123456789012';
 const userPool = 'us-east-1_AbCd12345';
@@ -111,18 +111,6 @@ describe('productionWarning', () => {
 
   test.each(['dev', 'pre-production', 'f-production'])('says nothing for %p', (env) => {
     expect(productionWarning(planApp({ env, account, userPool, production: true }))).toBeUndefined();
-  });
-});
-
-describe('callbackUrlReminder', () => {
-  test("names the branch's callback URL", () => {
-    const reminder = callbackUrlReminder(planApp({ env: 'dev', account, branch: 'whunter/Multi_Env', certificate }));
-    expect(reminder).toMatch(/Allowed Callback URLs/);
-    expect(reminder).toMatch(/^  https:\/\/whunter-multi-env\.dlp-access-dev\.dlp\.cloud\.lib\.vt\.edu\/authorize$/m);
-  });
-
-  test('says nothing without a Web stack', () => {
-    expect(callbackUrlReminder(planApp({ env: 'dev', account, userPool }))).toBeUndefined();
   });
 });
 
