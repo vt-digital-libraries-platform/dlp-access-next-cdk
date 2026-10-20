@@ -8,6 +8,7 @@ import { CALLBACK_PATH } from '../lib/web-stack';
 
 const account = '123456789012';
 const userPool = 'us-east-1_AbCd12345';
+const certificate = `arn:aws:acm:us-east-1:${account}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
 
 function synth(envName: string) {
   const { data, api } = buildApp(new App(), { env: envName, account, userPool });
@@ -456,7 +457,7 @@ describe('Web stack', () => {
 
   test('attach deploys only the Web stack, named after the slugified branch', () => {
     const app = new App();
-    const { data, api, auth, web } = buildApp(app, { env: 'dev', account, branch: 'whunter/Multi_Env' });
+    const { data, api, auth, web } = buildApp(app, { env: 'dev', account, branch: 'whunter/Multi_Env', certificate });
     expect(data).toBeUndefined();
     expect(api).toBeUndefined();
     expect(auth).toBeUndefined();
@@ -472,6 +473,7 @@ describe('Web stack', () => {
       userPool,
       branch: 'search',
       backend: 'provision',
+      certificate,
     });
     expect(stackNames(app).sort()).toEqual([
       'DlpAccessNext-Web-search',
@@ -490,27 +492,31 @@ describe('Web stack', () => {
     [{ env: 'dev', branch: 'a'.repeat(33) }, /Invalid branch/],
     [{ env: 'dev', branch: 'x', userPool }, /-c userPool only applies/],
     [{ env: 'dev', branch: 'x', identityProvider: 'VT-SSO-OIDC' }, /-c identityProvider only applies/],
-    [{ env: 'dev', userPool, appUrl: 'https://next.example.edu' }, /-c appUrl only applies with -c branch/],
-    [{ env: 'dev', branch: 'x', appUrl: 'http://next.example.edu' }, /Invalid appUrl/],
-    [{ env: 'dev', branch: 'x', appUrl: 'https://next.example.edu/app' }, /Invalid appUrl/],
-    [{ env: 'dev', branch: 'x', appUrl: 'next.example.edu' }, /Invalid appUrl/],
+    [{ env: 'dev', userPool, certificate }, /-c certificate only applies with -c branch/],
+    [{ env: 'dev', branch: 'x', certificate: undefined }, /pass -c certificate=<ACM certificate ARN>, the certificate covering x\.next\.dlp\.cloud\.lib\.vt\.edu/],
+    [{ env: 'dev', branch: 'x', certificate: 'not-an-arn' }, /Invalid certificate/],
+    [{ env: 'dev', branch: 'x', certificate: certificate.replace('us-east-1', 'us-west-2') }, /must be in account .* and us-east-1/],
+    [{ env: 'dev', branch: 'x', certificate: certificate.replace(account, '210987654321') }, /must be in account 123456789012/],
   ])('rejects %p', (options, message) => {
-    expect(() => buildApp(new App(), { account, ...options })).toThrow(message);
+    expect(() => buildApp(new App(), { account, certificate, ...options })).toThrow(message);
   });
 
-  const attached = buildApp(new App(), { env: 'pre-production', account, branch: 'feature/search' }).web!;
+  const attached = buildApp(new App(), { env: 'pre-production', account, branch: 'feature/search', certificate }).web!;
   const web = Template.fromStack(attached);
   const option = (namespace: string, optionName: string, value: unknown) =>
     Match.objectLike({ Namespace: namespace, OptionName: optionName, Value: value });
 
-  test('Node.js single-instance environment named after the branch', () => {
+  test('Node.js environment named after the branch, with one instance behind a load balancer', () => {
     web.hasResourceProperties('AWS::ElasticBeanstalk::Application', { ApplicationName: 'dlpnext-feature-search' });
     web.hasResourceProperties('AWS::ElasticBeanstalk::Environment', {
       ApplicationName: 'dlpnext-feature-search',
       EnvironmentName: 'dlpnext-feature-search',
       SolutionStackName: Match.stringLikeRegexp('Amazon Linux 2023 .* running Node.js 24'),
       OptionSettings: Match.arrayWith([
-        option('aws:elasticbeanstalk:environment', 'EnvironmentType', 'SingleInstance'),
+        option('aws:elasticbeanstalk:environment', 'EnvironmentType', 'LoadBalanced'),
+        option('aws:elasticbeanstalk:environment', 'LoadBalancerType', 'application'),
+        option('aws:autoscaling:asg', 'MinSize', '1'),
+        option('aws:autoscaling:asg', 'MaxSize', '1'),
         option('aws:autoscaling:launchconfiguration', 'DisableIMDSv1', 'true'),
         option('aws:ec2:instances', 'InstanceTypes', 't3.small'),
       ]),
@@ -542,8 +548,8 @@ describe('Web stack', () => {
       GenerateSecret: true,
       AllowedOAuthFlows: ['code'],
       AllowedOAuthScopes: ['openid', 'email'],
-      CallbackURLs: ['http://localhost:3000/authorize'],
-      LogoutURLs: ['http://localhost:3000/'],
+      CallbackURLs: ['https://feature-search.next.dlp.cloud.lib.vt.edu/authorize', 'http://localhost:3000/authorize'],
+      LogoutURLs: ['https://feature-search.next.dlp.cloud.lib.vt.edu/', 'http://localhost:3000/'],
       SupportedIdentityProviders: [{ Ref: Match.anyValue() }],
     });
     web.hasParameter('*', {
@@ -562,7 +568,6 @@ describe('Web stack', () => {
         setting('COGNITO_IDENTITY_PROVIDER', { Ref: Match.anyValue() }),
       ]),
     });
-    expect(JSON.stringify(web.toJSON())).not.toMatch(/APP_BASE_URL/);
   });
 
   const secretId = Object.keys(web.findResources('AWS::SecretsManager::Secret'))[0];
@@ -605,27 +610,38 @@ describe('Web stack', () => {
     expect(environment.DependsOn).toContain(policyId);
   });
 
-  test('appUrl is registered for sign-in and passed to the app', () => {
-    const { web: withUrl } = buildApp(new App(), {
-      env: 'dev',
-      account,
-      branch: 'main',
-      appUrl: 'https://next.example.edu/',
-    });
-    const template = Template.fromStack(withUrl!);
-    template.hasResourceProperties('AWS::Cognito::UserPoolClient', {
-      CallbackURLs: ['https://next.example.edu/authorize', 'http://localhost:3000/authorize'],
-      LogoutURLs: ['https://next.example.edu/', 'http://localhost:3000/'],
-    });
-    template.hasResourceProperties('AWS::ElasticBeanstalk::Environment', {
+  test('serves the branch over HTTPS at its own domain name', () => {
+    web.hasResourceProperties('AWS::ElasticBeanstalk::Environment', {
       OptionSettings: Match.arrayWith([
-        option('aws:elasticbeanstalk:application:environment', 'APP_BASE_URL', 'https://next.example.edu'),
+        option('aws:elbv2:listener:443', 'Protocol', 'HTTPS'),
+        option('aws:elbv2:listener:443', 'SSLCertificateArns', certificate),
+        option('aws:elbv2:listener:443', 'SSLPolicy', Match.stringLikeRegexp('^ELBSecurityPolicy-TLS13')),
+        option(
+          'aws:elasticbeanstalk:application:environment',
+          'APP_BASE_URL',
+          'https://feature-search.next.dlp.cloud.lib.vt.edu',
+        ),
       ]),
     });
+    const environmentId = Object.keys(web.findResources('AWS::ElasticBeanstalk::Environment'))[0];
+    web.hasResourceProperties('AWS::Route53::RecordSet', {
+      Name: 'feature-search.next.dlp.cloud.lib.vt.edu.',
+      Type: 'CNAME',
+      ResourceRecords: [{ 'Fn::GetAtt': [environmentId, 'EndpointURL'] }],
+    });
+    web.hasOutput('AppUrl', { Value: 'https://feature-search.next.dlp.cloud.lib.vt.edu' });
+  });
+
+  test('nginx redirects HTTP to HTTPS behind the load balancer', () => {
+    const conf = fs.readFileSync(
+      path.join(__dirname, '..', '..', '.platform', 'nginx', 'conf.d', 'elasticbeanstalk', 'https-redirect.conf'),
+      'utf8',
+    );
+    expect(conf).toMatch(/if \(\$http_x_forwarded_proto = "http"\)\s*{\s*return 301 https:\/\/\$host\$request_uri;/);
   });
 
   test('the production flag uses a larger instance', () => {
-    const { web: prod } = buildApp(new App(), { env: 'production', account, production: true, branch: 'main' });
+    const { web: prod } = buildApp(new App(), { env: 'production', account, production: true, branch: 'main', certificate });
     Template.fromStack(prod!).hasResourceProperties('AWS::ElasticBeanstalk::Environment', {
       OptionSettings: Match.arrayWith([option('aws:ec2:instances', 'InstanceTypes', 't3.medium')]),
     });

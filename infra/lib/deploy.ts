@@ -50,6 +50,7 @@ export function describePlan(plan: AppPlan): string {
     ['User pool', userPool],
     ['Identity provider', identityProvider],
     ['App URL', plan.appUrl ?? '(none)'],
+    ['Certificate', plan.certificate ?? '(none)'],
     ['Data on destroy', String(config.removalPolicy).toLowerCase()],
     ['Stacks', stacks.join(', ')],
   ];

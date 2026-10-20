@@ -4,6 +4,7 @@ import { CfnOutput, IgnoreMode, RemovalPolicy, SecretValue, Stack, StackProps } 
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as elasticbeanstalk from 'aws-cdk-lib/aws-elasticbeanstalk';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
@@ -32,6 +33,13 @@ const LOCAL_ORIGIN = 'http://localhost:3000';
 // CALLBACK_PATH in src/lib/auth.ts, which a test checks.
 export const CALLBACK_PATH = '/authorize';
 
+// Each branch is served at <slug>.<APP_DOMAIN>, by a record in the hosted
+// zone HOSTED_ZONE, over HTTPS with an existing certificate covering
+// *.<APP_DOMAIN>.
+export const APP_DOMAIN = 'next.dlp.cloud.lib.vt.edu';
+export const HOSTED_ZONE = 'dlp.cloud.lib.vt.edu';
+const TLS_POLICY = 'ELBSecurityPolicy-TLS13-1-2-2021-06';
+
 // Beyond .gitignore: files in the repo that the Next.js server doesn't need.
 // `.env*` is repeated here so local secrets stay out even if .gitignore changes.
 const BUNDLE_EXCLUDES = ['.git', '.github', '.claude', '.elasticbeanstalk', 'infra', 'docs', '*.md', '.env*'];
@@ -41,11 +49,8 @@ export interface WebStackProps extends StackProps {
   readonly config: EnvironmentConfig;
   /** Branch slug; names the Beanstalk application and environment. */
   readonly branch: string;
-  /**
-   * The app's public HTTPS origin, registered as a sign-in callback. Without
-   * it, sign-in only works for the app running on localhost.
-   */
-  readonly appUrl?: string;
+  /** ARN of the ACM certificate covering the branch's domain name. */
+  readonly certificateArn: string;
 }
 
 /**
@@ -53,7 +58,8 @@ export interface WebStackProps extends StackProps {
  * its environment's API and user pool by fixed names (the instance profile
  * and SSM parameters), so it deploys the same way whether the environment's
  * stacks are in this CDK app or were deployed earlier. The Cognito app
- * client the app signs users in with is the branch's own.
+ * client the app signs users in with is the branch's own, and so is its
+ * domain name, served over HTTPS by the environment's load balancer.
  */
 export class WebStack extends Stack {
   /** The repo source uploaded as the Beanstalk application version. */
@@ -61,8 +67,10 @@ export class WebStack extends Stack {
 
   constructor(scope: Construct, id: string, props: WebStackProps) {
     super(scope, id, props);
-    const { config, branch, appUrl } = props;
+    const { config, branch, certificateArn } = props;
     const name = webResourceName(branch);
+    const domainName = webDomainName(branch);
+    const appUrl = `https://${domainName}`;
 
     // The same files `eb deploy` ships from git; the platform's prebuild
     // hook (.platform/hooks) installs dependencies and runs `next build`.
@@ -111,7 +119,7 @@ export class WebStack extends Stack {
       this,
       identityProviderParameterName(config.name),
     );
-    const origins = appUrl ? [appUrl, LOCAL_ORIGIN] : [LOCAL_ORIGIN];
+    const origins = [appUrl, LOCAL_ORIGIN];
     const appClient = new cognito.UserPoolClient(this, 'AppClient', {
       userPool: cognito.UserPool.fromUserPoolId(this, 'UserPool', userPoolId),
       userPoolClientName: name,
@@ -147,8 +155,20 @@ export class WebStack extends Stack {
 
     const settings: Record<string, Record<string, string>> = {
       'aws:elasticbeanstalk:environment': {
-        EnvironmentType: 'SingleInstance',
+        // One instance behind an ALB, which terminates HTTPS. Port 80 stays
+        // open; nginx redirects it to HTTPS (.platform/nginx).
+        EnvironmentType: 'LoadBalanced',
+        LoadBalancerType: 'application',
         ServiceRole: serviceRole.roleArn,
+      },
+      'aws:autoscaling:asg': {
+        MinSize: '1',
+        MaxSize: '1',
+      },
+      'aws:elbv2:listener:443': {
+        Protocol: 'HTTPS',
+        SSLCertificateArns: certificateArn,
+        SSLPolicy: TLS_POLICY,
       },
       'aws:autoscaling:launchconfiguration': {
         IamInstanceProfile: ebInstanceProfileName(config.name),
@@ -164,7 +184,7 @@ export class WebStack extends Stack {
         COGNITO_CLIENT_ID: appClient.userPoolClientId,
         COGNITO_IDENTITY_PROVIDER: identityProvider,
         // The origin the browser uses; the server only sees the proxy's.
-        ...(appUrl ? { APP_BASE_URL: appUrl } : {}),
+        APP_BASE_URL: appUrl,
       },
       'aws:elasticbeanstalk:application:environmentsecrets': {
         COGNITO_CLIENT_SECRET: clientSecret.secretArn,
@@ -198,7 +218,16 @@ export class WebStack extends Stack {
     environment.addResourceDependency(application);
     secretRead.applyBefore(environment);
 
+    // The endpoint is the load balancer's DNS name. Looked up at synth time
+    // and cached in cdk.context.json.
+    new route53.CnameRecord(this, 'DomainRecord', {
+      zone: route53.HostedZone.fromLookup(this, 'HostedZone', { domainName: HOSTED_ZONE }),
+      recordName: domainName,
+      domainName: environment.attrEndpointUrl,
+    });
+
     new CfnOutput(this, 'EnvironmentName', { value: name });
+    new CfnOutput(this, 'AppUrl', { value: appUrl });
     new CfnOutput(this, 'EndpointUrl', { value: environment.attrEndpointUrl });
     // For running the branch locally. The client secret itself is not an
     // output; read it with `aws secretsmanager get-secret-value`.
@@ -229,4 +258,9 @@ export function webResourceName(slug: string): string {
     );
   }
   return `${WEB_PREFIX}${slug}`;
+}
+
+/** The branch's public domain name, e.g. `whunter-multi-env.next.dlp.cloud.lib.vt.edu`. */
+export function webDomainName(slug: string): string {
+  return `${slug}.${APP_DOMAIN}`;
 }

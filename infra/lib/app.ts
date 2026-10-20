@@ -3,11 +3,11 @@ import { ApiStack } from './api-stack';
 import { AuthStack } from './auth-stack';
 import { DataStack } from './data-stack';
 import { EnvironmentConfig, resolveEnvironment } from './environments';
-import { WebStack, branchSlug, webResourceName } from './web-stack';
+import { WebStack, branchSlug, webDomainName, webResourceName } from './web-stack';
 
 /**
  * CDK context, as passed with `-c env=... -c account=... -c production=... -c branch=... -c backend=...
- * -c userPool=... -c identityProvider=... -c appUrl=...`.
+ * -c userPool=... -c identityProvider=... -c certificate=...`.
  */
 export interface AppOptions {
   readonly env?: string;
@@ -39,12 +39,11 @@ export interface AppOptions {
    */
   readonly identityProvider?: string;
   /**
-   * With a branch: the public HTTPS origin of the app, such as
-   * `https://next.example.edu`. It is registered as a sign-in callback on
-   * the branch's Cognito app client. Without it, sign-in only works for the
-   * app running on localhost.
+   * With a branch, and required with one: ARN of the existing ACM
+   * certificate, in the environment's account and region, that covers the
+   * branch's domain name (`*.next.dlp.cloud.lib.vt.edu`).
    */
-  readonly appUrl?: string;
+  readonly certificate?: string;
 }
 
 /** The validated options, with defaults applied, and the stacks they produce. */
@@ -60,8 +59,10 @@ export interface AppPlan {
   readonly userPool?: string;
   /** undefined when the Auth stack isn't deployed, or users are the pool's own. */
   readonly identityProvider?: string;
-  /** undefined without `-c appUrl`. */
+  /** The branch's public HTTPS origin; undefined without `-c branch`. */
   readonly appUrl?: string;
+  /** undefined without `-c branch`. */
+  readonly certificate?: string;
   readonly dataStackName?: string;
   readonly apiStackName?: string;
   readonly authStackName?: string;
@@ -79,6 +80,7 @@ const BACKENDS = ['attach', 'provision'];
 const ACCOUNT_PATTERN = /^\d{12}$/;
 // <region>_<id>, e.g. us-east-1_AbCd12345
 const USER_POOL_ID_PATTERN = /^([a-z0-9-]+)_[0-9a-zA-Z]+$/;
+const CERTIFICATE_ARN_PATTERN = /^arn:aws:acm:([a-z0-9-]+):(\d{12}):certificate\/[0-9a-f-]+$/;
 // Cognito provider names are at most 32 characters, without spaces or underscores.
 const IDENTITY_PROVIDER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9.-]{0,31}$/;
 
@@ -110,7 +112,7 @@ export function optionsFromContext(context: (key: string) => unknown): AppOption
     backend: str('backend'),
     userPool: str('userPool'),
     identityProvider: str('identityProvider'),
-    appUrl: str('appUrl'),
+    certificate: str('certificate'),
   };
 }
 
@@ -171,10 +173,25 @@ export function planApp(options: AppOptions): AppPlan {
       throw new Error(`Invalid userPool "${options.userPool}": the pool must be in ${config.region}, the environment's region`);
     }
   }
-  if (options.appUrl !== undefined && branch === undefined) {
-    throw new Error('-c appUrl only applies with -c branch=<git branch>');
+  if (options.certificate !== undefined && branch === undefined) {
+    throw new Error('-c certificate only applies with -c branch=<git branch>');
   }
-  const appUrl = options.appUrl === undefined ? undefined : appOrigin(options.appUrl);
+  if (branch !== undefined && options.certificate === undefined) {
+    throw new Error(
+      `Missing CDK context: pass -c certificate=<ACM certificate ARN>, the certificate covering ${webDomainName(branch)}`,
+    );
+  }
+  if (options.certificate !== undefined) {
+    const [, region, certificateAccount] = CERTIFICATE_ARN_PATTERN.exec(options.certificate) ?? [];
+    if (region === undefined) {
+      throw new Error(`Invalid certificate "${options.certificate}": use an ACM certificate ARN`);
+    }
+    if (region !== config.region || certificateAccount !== options.account) {
+      throw new Error(
+        `Invalid certificate "${options.certificate}": the certificate must be in account ${options.account} and ${config.region}, the environment's region`,
+      );
+    }
+  }
   return {
     config,
     account: options.account,
@@ -183,26 +200,13 @@ export function planApp(options: AppOptions): AppPlan {
     backend: branch === undefined ? undefined : backend,
     userPool: options.userPool,
     identityProvider: options.identityProvider,
-    appUrl,
+    appUrl: branch === undefined ? undefined : `https://${webDomainName(branch)}`,
+    certificate: options.certificate,
     dataStackName: provision ? `${prefix}-Data` : undefined,
     apiStackName: provision ? `${prefix}-Api` : undefined,
     authStackName: provision ? `${prefix}-Auth` : undefined,
     webStackName: branch === undefined ? undefined : `DlpAccessNext-Web-${branch}`,
   };
-}
-
-/** Checks `-c appUrl` and returns its origin. Cognito only accepts HTTPS callbacks, except for localhost. */
-function appOrigin(appUrl: string): string {
-  let url: URL | undefined;
-  try {
-    url = new URL(appUrl);
-  } catch {
-    // Reported below.
-  }
-  if (url?.protocol !== 'https:' || url.origin !== appUrl.replace(/\/$/, '')) {
-    throw new Error(`Invalid appUrl "${appUrl}": use the app's HTTPS origin, such as https://next.example.edu`);
-  }
-  return url.origin;
 }
 
 /** Adds the stacks that `planApp` works out to the app. */
@@ -234,8 +238,8 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
   }
 
   let web: WebStack | undefined;
-  if (plan.webStackName && plan.branch) {
-    web = new WebStack(app, plan.webStackName, { env, config, branch: plan.branch, appUrl: plan.appUrl });
+  if (plan.webStackName && plan.branch && plan.certificate) {
+    web = new WebStack(app, plan.webStackName, { env, config, branch: plan.branch, certificateArn: plan.certificate });
     // The Web stack reads the API URL and the sign-in settings from the SSM
     // parameters the Api and Auth stacks write, so it must deploy after them.
     for (const stack of [api, auth]) {

@@ -9,3 +9,5 @@ cdk.out
 .venv
 __pycache__
 .pytest_cache
+# Context lookups (the hosted zone) record the account ID, which stays out of the repo.
+cdk.context.json
