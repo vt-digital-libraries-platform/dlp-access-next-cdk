@@ -1,4 +1,5 @@
 import { AppPlan } from './app';
+import { CALLBACK_PATH } from './web-stack';
 
 /**
  * Collects the `-c key=value` and `--context key=value` (or
@@ -74,6 +75,21 @@ export function productionWarning(plan: AppPlan): string | undefined {
   }
   lines.push(rule);
   return lines.join('\n');
+}
+
+/**
+ * A reminder to show after a successful deploy that includes a Web stack,
+ * naming the branch's callback URL; undefined when there is no Web stack.
+ */
+export function callbackUrlReminder(plan: AppPlan): string | undefined {
+  if (plan.appUrl === undefined) {
+    return undefined;
+  }
+  return [
+    "Reminder: add this branch's URL to Cognito's Allowed Callback URLs:",
+    '',
+    `  ${plan.appUrl}${CALLBACK_PATH}`,
+  ].join('\n');
 }
 
 /** Only "y" or "yes", in any case, confirms. */
