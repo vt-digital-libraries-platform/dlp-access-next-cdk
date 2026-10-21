@@ -15,7 +15,7 @@ Each **backend environment** has its own data and API. Backend environments are 
 | `DlpAccessNext-<env>-Data` | Seven DynamoDB tables (`<Model>-dlpnext-<env>`) and an OpenSearch 2.19 domain (`dlpnext-<env>`) |
 | `DlpAccessNext-<env>-Api` | The AppSync API (IAM auth), the Lambda that streams Archive and Collection changes into OpenSearch, and the environment's Beanstalk instance role (`dlp-access-next-<env>-eb`) |
 | `DlpAccessNext-<env>-Auth` | A pointer to the environment's existing Cognito user pool and identity provider (two SSM parameters). The pool itself is made outside CDK |
-| `DlpAccessNext-Web-<branch>` | One git branch of the dlp-access-next app: an Elastick Beanstalk application in a Node.js environment (`dlpnext-<branch>`, one instance behind an HTTPS load balancer) at `https://<branch>.dlp-access-dev.dlp.cloud.lib.vt.edu`, that calls one environment's API, and the branch's Cognito app client on the environment's user pool |
+| `DlpAccessNext-Web-<branch>` | One git branch of the dlp-access-next app: an Elastic Beanstalk application in a Node.js environment (`dlpnext-<branch>`, one instance behind an HTTPS load balancer) at `https://<branch>.dlp-access-dev.dlp.cloud.lib.vt.edu`, that calls one environment's API, and the branch's Cognito app client on the environment's user pool |
 
 Many branches can share one backend environment. Only feature environments delete their tables and opensearch domain when their stacks are destroyed. `dev`, `pre-production` and `production` keep their data and have deletion protection and point-in-time recovery turned on.
 
@@ -90,9 +90,9 @@ npx cdk destroy DlpAccessNext-Web-<branch> -c backend-env=<env> -c aws-account-i
 
 Destroy a backend env (must delete attached frontends first):
 ```bash
-# destroy backend (dev)
-npx cdk destroy --all -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current) && \
-npx cdk destroy --all -c env=dev -c account=$ACCOUNT -c userPool=us-east-1_wy1lPpMYt
+# destroy's current branch frontend
+npx cdk destroy --all -c backend-env=dev -c aws-account-id=$ACCOUNT -c frontend-branch=$(git branch --show-current) && \
+npx cdk destroy --all -c backend-env=dev -c aws-account-id=$ACCOUNT -c user-pool-id=<user pool ID>
 ```
 
 
