@@ -93,7 +93,7 @@ export function describePlan(plan: AppPlan): string {
       'Production',
       `${plan.production} (search: ${search.dataNodes} x ${search.instanceType} across ${search.availabilityZones} AZ; web: ${config.web.instanceType})`,
     ],
-    ['Branch', plan.branch ?? '(none)'],
+    ['Branch', plan.frontendBranch ?? '(none)'],
     ['Backend', plan.backend ?? '(none)'],
     ['User pool', userPool],
     ['Identity provider', identityProvider],

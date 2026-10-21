@@ -84,13 +84,13 @@ export function lookupDeployedState(plan: AppPlan, aws: AwsCli): DeployedState {
   }
 
   let webEnvironment: string | undefined;
-  if (plan.webStackName && plan.branchSlug && !willCreate(stacks[plan.webStackName])) {
-    webEnvironment = find(`application ${webResourceName(plan.branchSlug)}`, () => {
+  if (plan.webStackName && plan.frontendBranchSlug && !willCreate(stacks[plan.webStackName])) {
+    webEnvironment = find(`application ${webResourceName(plan.frontendBranchSlug)}`, () => {
       const [app] = aws([
         'elasticbeanstalk',
         'describe-applications',
         '--application-names',
-        webResourceName(plan.branchSlug!),
+        webResourceName(plan.frontendBranchSlug!),
       ]).Applications;
       return /using the (\S+) environment$/.exec(app?.Description ?? '')?.[1];
     });
@@ -192,9 +192,9 @@ export function checkDeploy(plan: AppPlan, state: DeployedState): DeployCheck {
       );
     }
     const deployedBranch = web.outputs.Branch;
-    if (deployedBranch !== undefined && deployedBranch !== plan.branch) {
+    if (deployedBranch !== undefined && deployedBranch !== plan.frontendBranch) {
       warnings.push(
-        `${plan.webStackName} was deployed from the branch ${deployedBranch}, not ${plan.branch}: ` +
+        `${plan.webStackName} was deployed from the branch ${deployedBranch}, not ${plan.frontendBranch}: ` +
           'the two names have the same slug, so this replaces that branch\'s frontend.',
       );
     }

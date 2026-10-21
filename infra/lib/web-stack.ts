@@ -69,9 +69,9 @@ export interface WebStackProps extends StackProps {
   /** The environment whose API the app calls. */
   readonly config: EnvironmentConfig;
   /** Branch slug; names the Beanstalk application and environment. */
-  readonly branchSlug: string;
+  readonly frontendBranchSlug: string;
   /** The git branch name the slug came from. */
-  readonly branch: string;
+  readonly frontendBranch: string;
   /** ARN of the ACM certificate covering the branch's domain name. */
   readonly certificateArn: string;
 }
@@ -90,7 +90,7 @@ export class WebStack extends Stack {
 
   constructor(scope: Construct, id: string, props: WebStackProps) {
     super(scope, id, props);
-    const { config, branchSlug: slug, branch, certificateArn } = props;
+    const { config, frontendBranchSlug: slug, frontendBranch, certificateArn } = props;
     const name = webResourceName(slug);
     const domainName = webDomainName(slug);
     const appUrl = `https://${domainName}`;
@@ -275,7 +275,7 @@ export class WebStack extends Stack {
 
     new CfnOutput(this, 'EnvironmentName', { value: name });
     // Lets the deploy script spot two branch names that share a slug.
-    new CfnOutput(this, 'Branch', { value: branch });
+    new CfnOutput(this, 'Branch', { value: frontendBranch });
     new CfnOutput(this, 'AppUrl', { value: appUrl });
     new CfnOutput(this, 'EndpointUrl', { value: environment.attrEndpointUrl });
     // For running the branch locally. The client secret itself is not an

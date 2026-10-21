@@ -53,9 +53,9 @@ export interface AppPlan {
   readonly account: string;
   readonly production: boolean;
   /** The git branch name as given with `-c branch`. */
-  readonly branch?: string;
+  readonly frontendBranch?: string;
   /** The branch's slug; undefined without `-c branch`. */
-  readonly branchSlug?: string;
+  readonly frontendBranchSlug?: string;
   /** undefined without `-c branch`. */
   readonly backend?: string;
   /** undefined when the Auth stack isn't deployed. */
@@ -194,8 +194,8 @@ export function planApp(options: AppOptions): AppPlan {
     config,
     account: options.account,
     production,
-    branch: options.branch,
-    branchSlug: slug,
+    frontendBranch: options.branch,
+    frontendBranchSlug: slug,
     backend: slug === undefined ? undefined : backend,
     userPool: options.userPool,
     identityProvider: options.identityProvider,
@@ -240,12 +240,12 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
   }
 
   let web: WebStack | undefined;
-  if (plan.webStackName && plan.branch && plan.branchSlug && plan.certificate) {
+  if (plan.webStackName && plan.frontendBranch && plan.frontendBranchSlug && plan.certificate) {
     web = new WebStack(app, plan.webStackName, {
       env,
       config,
-      branch: plan.branch,
-      branchSlug: plan.branchSlug,
+      frontendBranch: plan.frontendBranch,
+      frontendBranchSlug: plan.frontendBranchSlug,
       certificateArn: plan.certificate,
     });
     // The Web stack reads the API URL and the sign-in settings from the SSM
