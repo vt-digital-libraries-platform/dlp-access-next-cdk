@@ -85,13 +85,9 @@ export function lookupDeployedState(plan: AppPlan, aws: AwsCli): DeployedState {
 
   let webEnvironment: string | undefined;
   if (plan.webStackName && plan.frontendBranchSlug && !willCreate(stacks[plan.webStackName])) {
-    webEnvironment = find(`application ${webResourceName(plan.frontendBranchSlug)}`, () => {
-      const [app] = aws([
-        'elasticbeanstalk',
-        'describe-applications',
-        '--application-names',
-        webResourceName(plan.frontendBranchSlug!),
-      ]).Applications;
+    const application = webResourceName(plan.frontendBranchSlug);
+    webEnvironment = find(`application ${application}`, () => {
+      const [app] = aws(['elasticbeanstalk', 'describe-applications', '--application-names', application]).Applications;
       return /using the (\S+) environment$/.exec(app?.Description ?? '')?.[1];
     });
   }
