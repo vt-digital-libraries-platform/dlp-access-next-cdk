@@ -52,24 +52,26 @@ export interface AppPlan {
   readonly config: EnvironmentConfig;
   readonly account: string;
   readonly production: boolean;
-  /** The git branch name as given with `-c frontend-branch`. */
-  readonly frontendBranch?: string;
-  /** The branch's slug; undefined without `-c frontend-branch`. */
-  readonly frontendBranchSlug?: string;
-  /** undefined without `-c frontend-branch`. */
-  readonly backend?: string;
+  /** The branch's Web stack; undefined without `-c frontend-branch`. */
+  readonly frontend?: FrontendPlan;
   /** undefined when the Auth stack isn't deployed. */
   readonly userPool?: string;
   /** undefined when the Auth stack isn't deployed, or users are the pool's own. */
   readonly identityProvider?: string;
-  /** The branch's public HTTPS origin; undefined without `-c frontend-branch`. */
-  readonly appUrl?: string;
-  /** undefined without `-c frontend-branch`. */
-  readonly certificate?: string;
   readonly dataStackName?: string;
   readonly apiStackName?: string;
   readonly authStackName?: string;
-  readonly webStackName?: string;
+}
+
+export interface FrontendPlan {
+  /** The git branch name as given with `-c frontend-branch`. */
+  readonly branch: string;
+  readonly slug: string;
+  readonly backend: string;
+  /** The branch's public HTTPS origin. */
+  readonly appUrl: string;
+  readonly certificate: string;
+  readonly stackName: string;
 }
 
 export interface AppStacks {
@@ -157,9 +159,12 @@ export function planApp(options: AppOptions): AppPlan {
 
   const prefix = `DlpAccessNext-${config.name}`;
   const provision = options.frontendBranch === undefined || backend === 'provision';
-  const slug = options.frontendBranch === undefined ? undefined : branchSlug(options.frontendBranch);
-  if (slug !== undefined) {
-    webResourceName(slug);
+  const branch =
+    options.frontendBranch === undefined
+      ? undefined
+      : { branch: options.frontendBranch, slug: branchSlug(options.frontendBranch) };
+  if (branch) {
+    webResourceName(branch.slug);
   }
 
   for (const [field, option] of [['userPool', 'user-pool'], ['identityProvider', 'identity-provider']] as const) {
@@ -188,7 +193,7 @@ export function planApp(options: AppOptions): AppPlan {
       throw new Error(`Invalid user-pool "${options.userPool}": the pool must be in ${config.region}, the environment's region`);
     }
   }
-  if (options.certificate !== undefined && slug === undefined) {
+  if (options.certificate !== undefined && !branch) {
     throw new Error('-c certificate only applies with -c frontend-branch=<git branch>');
   }
   if (options.certificate !== undefined) {
@@ -206,20 +211,18 @@ export function planApp(options: AppOptions): AppPlan {
     config,
     account: options.account,
     production,
-    frontendBranch: options.frontendBranch,
-    frontendBranchSlug: slug,
-    backend: slug === undefined ? undefined : backend,
+    frontend: branch && {
+      ...branch,
+      backend,
+      appUrl: `https://${webDomainName(branch.slug)}`,
+      certificate: options.certificate ?? `arn:aws:acm:${config.region}:${options.account}:certificate/${CERTIFICATE_ID}`,
+      stackName: `DlpAccessNext-Web-${branch.slug}`,
+    },
     userPool: options.userPool,
     identityProvider: options.identityProvider,
-    appUrl: slug === undefined ? undefined : `https://${webDomainName(slug)}`,
-    certificate:
-      slug === undefined
-        ? undefined
-        : (options.certificate ?? `arn:aws:acm:${config.region}:${options.account}:certificate/${CERTIFICATE_ID}`),
     dataStackName: provision ? `${prefix}-Data` : undefined,
     apiStackName: provision ? `${prefix}-Api` : undefined,
     authStackName: provision ? `${prefix}-Auth` : undefined,
-    webStackName: slug === undefined ? undefined : `DlpAccessNext-Web-${slug}`,
   };
 }
 
@@ -252,13 +255,13 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
   }
 
   let web: WebStack | undefined;
-  if (plan.webStackName && plan.frontendBranch && plan.frontendBranchSlug && plan.certificate) {
-    web = new WebStack(app, plan.webStackName, {
+  if (plan.frontend) {
+    web = new WebStack(app, plan.frontend.stackName, {
       env,
       config,
-      frontendBranch: plan.frontendBranch,
-      frontendBranchSlug: plan.frontendBranchSlug,
-      certificateArn: plan.certificate,
+      frontendBranch: plan.frontend.branch,
+      frontendBranchSlug: plan.frontend.slug,
+      certificateArn: plan.frontend.certificate,
     });
     // The Web stack reads the API URL and the sign-in settings from the SSM
     // parameters the Api and Auth stacks write, so it must deploy after them.

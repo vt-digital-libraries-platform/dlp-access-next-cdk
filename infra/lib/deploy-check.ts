@@ -53,7 +53,7 @@ export function lookupDeployedState(plan: AppPlan, aws: AwsCli): DeployedState {
     return { callerAccount, stacks: {}, existingTables: [], errors };
   }
 
-  const stackNames = [plan.dataStackName, plan.apiStackName, plan.authStackName, plan.webStackName].filter(
+  const stackNames = [plan.dataStackName, plan.apiStackName, plan.authStackName, plan.frontend?.stackName].filter(
     (name): name is string => name !== undefined,
   );
   const stacks: Record<string, StackState | undefined> = {};
@@ -84,8 +84,8 @@ export function lookupDeployedState(plan: AppPlan, aws: AwsCli): DeployedState {
   }
 
   let webEnvironment: string | undefined;
-  if (plan.webStackName && plan.frontendBranchSlug && !willCreate(stacks[plan.webStackName])) {
-    const application = webResourceName(plan.frontendBranchSlug);
+  if (plan.frontend && !willCreate(stacks[plan.frontend.stackName])) {
+    const application = webResourceName(plan.frontend.slug);
     webEnvironment = find(`application ${application}`, () => {
       const [app] = aws(['elasticbeanstalk', 'describe-applications', '--application-names', application]).Applications;
       return /using the (\S+) environment$/.exec(app?.Description ?? '')?.[1];
@@ -179,18 +179,19 @@ export function checkDeploy(plan: AppPlan, state: DeployedState): DeployCheck {
     }
   }
 
-  const web = plan.webStackName ? state.stacks[plan.webStackName] : undefined;
-  if (web && !willCreate(web)) {
+  const { frontend } = plan;
+  const web = frontend ? state.stacks[frontend.stackName] : undefined;
+  if (frontend && web && !willCreate(web)) {
     if (state.webEnvironment !== undefined && state.webEnvironment !== plan.config.name) {
       warnings.push(
-        `Moves the frontend ${plan.webStackName} from the ${state.webEnvironment} environment to ${plan.config.name}, ` +
+        `Moves the frontend ${frontend.stackName} from the ${state.webEnvironment} environment to ${plan.config.name}, ` +
           "including its sign-in client, which moves to that environment's user pool.",
       );
     }
     const deployedBranch = web.outputs.Branch;
-    if (deployedBranch !== undefined && deployedBranch !== plan.frontendBranch) {
+    if (deployedBranch !== undefined && deployedBranch !== frontend.branch) {
       warnings.push(
-        `${plan.webStackName} was deployed from the branch ${deployedBranch}, not ${plan.frontendBranch}: ` +
+        `${frontend.stackName} was deployed from the branch ${deployedBranch}, not ${frontend.branch}: ` +
           'the two names have the same slug, so this replaces that branch\'s frontend.',
       );
     }

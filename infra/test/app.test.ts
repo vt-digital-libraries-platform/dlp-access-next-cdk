@@ -502,11 +502,11 @@ describe('Web stack', () => {
   });
 
   test('defaults the certificate to CERTIFICATE_ID in the deploy account and environment region', () => {
-    expect(planApp({ backendEnv: 'dev', account, frontendBranch: 'x' }).certificate).toBe(
+    expect(planApp({ backendEnv: 'dev', account, frontendBranch: 'x' }).frontend?.certificate).toBe(
       `arn:aws:acm:us-east-1:${account}:certificate/${CERTIFICATE_ID}`,
     );
-    expect(planApp({ backendEnv: 'dev', account, frontendBranch: 'x', certificate }).certificate).toBe(certificate);
-    expect(planApp({ backendEnv: 'dev', account, userPool }).certificate).toBeUndefined();
+    expect(planApp({ backendEnv: 'dev', account, frontendBranch: 'x', certificate }).frontend?.certificate).toBe(certificate);
+    expect(planApp({ backendEnv: 'dev', account, userPool }).frontend).toBeUndefined();
   });
 
   const attached = buildApp(new App(), { backendEnv: 'pre-production', account, frontendBranch: 'feature/search', certificate }).web!;

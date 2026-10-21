@@ -76,7 +76,7 @@ export function deployArgs(
 export function describePlan(plan: AppPlan): string {
   const { config } = plan;
   const search = config.search;
-  const stacks = [plan.dataStackName, plan.apiStackName, plan.authStackName, plan.webStackName].filter(Boolean);
+  const stacks = [plan.dataStackName, plan.apiStackName, plan.authStackName, plan.frontend?.stackName].filter(Boolean);
   // Without an Auth stack, the Web stack uses whichever pool and provider the environment already has.
   const attached = "(the environment's)";
   const userPool = plan.userPool ?? attached;
@@ -93,12 +93,12 @@ export function describePlan(plan: AppPlan): string {
       'Production',
       `${plan.production} (search: ${search.dataNodes} x ${search.instanceType} across ${search.availabilityZones} AZ; web: ${config.web.instanceType})`,
     ],
-    ['Branch', plan.frontendBranch ?? '(none)'],
-    ['Backend', plan.backend ?? '(none)'],
+    ['Branch', plan.frontend?.branch ?? '(none)'],
+    ['Backend', plan.frontend?.backend ?? '(none)'],
     ['User pool', userPool],
     ['Identity provider', identityProvider],
-    ['App URL', plan.appUrl ?? '(none)'],
-    ['Certificate', plan.certificate ?? '(none)'],
+    ['App URL', plan.frontend?.appUrl ?? '(none)'],
+    ['Certificate', plan.frontend?.certificate ?? '(none)'],
     ['Data on destroy', String(config.removalPolicy).toLowerCase()],
     ['Stacks', stacks.join(', ')],
   ];

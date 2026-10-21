@@ -43,7 +43,7 @@ async function main(): Promise<number> {
     console.log(`${alert(warning)}\n`);
   }
   console.log(`About to deploy to AWS:\n\n${describePlan(plan)}\n`);
-  if (plan.webStackName) {
+  if (plan.frontend) {
     // The Web stack deploys HEAD, so local edits are left out.
     console.log(`App source: commit ${sourceCommit()}\n`);
     const changes = uncommittedChanges();
