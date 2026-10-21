@@ -491,6 +491,7 @@ describe('Web stack', () => {
     [{ backendEnv: 'dev', frontendBranch: 'x', backend: 'create' }, /Invalid backend "create"/],
     [{ backendEnv: 'dev', frontendBranch: '///' }, /Invalid branch/],
     [{ backendEnv: 'dev', frontendBranch: 'a'.repeat(33) }, /Invalid branch/],
+    [{ backendEnv: 'dev', frontendBranch: 'main\x1b[2K' }, /Invalid frontend-branch "main\\u001b\[2K": a git branch name has no control characters/],
     [{ backendEnv: 'dev', frontendBranch: 'x', userPool }, /-c user-pool only applies/],
     [{ backendEnv: 'dev', frontendBranch: 'x', identityProvider: 'VT-SSO-OIDC' }, /-c identity-provider only applies/],
     [{ backendEnv: 'dev', userPool, certificate }, /-c certificate only applies with -c frontend-branch/],

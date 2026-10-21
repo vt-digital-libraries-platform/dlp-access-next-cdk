@@ -95,6 +95,9 @@ const USER_POOL_ID_PATTERN = /^([a-z0-9-]+)_[0-9a-zA-Z]+$/;
 const CERTIFICATE_ARN_PATTERN = /^arn:aws:acm:([a-z0-9-]+):(\d{12}):certificate\/[0-9a-f-]+$/;
 // Cognito provider names are at most 32 characters, without spaces or underscores.
 const IDENTITY_PROVIDER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9.-]{0,31}$/;
+// Git never allows these in a branch name, and the deploy script prints the
+// name before asking to confirm, where escape sequences could rewrite the screen.
+const CONTROL_CHARACTERS = /[\x00-\x1f\x7f]/;
 
 /**
  * Reads a boolean context value. `-c name=true` arrives as the string
@@ -159,6 +162,9 @@ export function planApp(options: AppOptions): AppPlan {
 
   const prefix = `DlpAccessNext-${config.name}`;
   const provision = options.frontendBranch === undefined || backend === 'provision';
+  if (options.frontendBranch !== undefined && CONTROL_CHARACTERS.test(options.frontendBranch)) {
+    throw new Error(`Invalid frontend-branch ${JSON.stringify(options.frontendBranch)}: a git branch name has no control characters`);
+  }
   const branch =
     options.frontendBranch === undefined
       ? undefined
