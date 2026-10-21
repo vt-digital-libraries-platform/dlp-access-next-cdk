@@ -96,7 +96,7 @@ describe('describePlan', () => {
     expect(text).toMatch(/Account\s+123456789012/);
     expect(text).toMatch(/Region\s+us-east-1/);
     expect(text).toMatch(/Production\s+false \(search: 1 x t3\.small\.search across 1 AZ; web: t3\.small\)/);
-    expect(text).toMatch(/Branch\s+whunter-multi-env/);
+    expect(text).toMatch(/Branch\s+whunter\/Multi_Env/);
     expect(text).toMatch(/Backend\s+provision/);
     expect(text).toMatch(/User pool\s+us-east-1_AbCd12345/);
     expect(text).toMatch(/Identity provider\s+\(none: the pool's own users\)/);

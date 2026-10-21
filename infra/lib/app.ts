@@ -52,10 +52,10 @@ export interface AppPlan {
   readonly config: EnvironmentConfig;
   readonly account: string;
   readonly production: boolean;
-  /** The branch's slug; undefined without `-c branch`. */
+  /** The git branch name as given with `-c branch`. */
   readonly branch?: string;
-  /** The branch name as given with `-c branch`. */
-  readonly branchName?: string;
+  /** The branch's slug; undefined without `-c branch`. */
+  readonly branchSlug?: string;
   /** undefined without `-c branch`. */
   readonly backend?: string;
   /** undefined when the Auth stack isn't deployed. */
@@ -145,9 +145,9 @@ export function planApp(options: AppOptions): AppPlan {
 
   const prefix = `DlpAccessNext-${config.name}`;
   const provision = options.branch === undefined || backend === 'provision';
-  const branch = options.branch === undefined ? undefined : branchSlug(options.branch);
-  if (branch !== undefined) {
-    webResourceName(branch);
+  const slug = options.branch === undefined ? undefined : branchSlug(options.branch);
+  if (slug !== undefined) {
+    webResourceName(slug);
   }
 
   for (const option of ['userPool', 'identityProvider'] as const) {
@@ -176,7 +176,7 @@ export function planApp(options: AppOptions): AppPlan {
       throw new Error(`Invalid userPool "${options.userPool}": the pool must be in ${config.region}, the environment's region`);
     }
   }
-  if (options.certificate !== undefined && branch === undefined) {
+  if (options.certificate !== undefined && slug === undefined) {
     throw new Error('-c certificate only applies with -c branch=<git branch>');
   }
   if (options.certificate !== undefined) {
@@ -194,20 +194,20 @@ export function planApp(options: AppOptions): AppPlan {
     config,
     account: options.account,
     production,
-    branch,
-    branchName: options.branch,
-    backend: branch === undefined ? undefined : backend,
+    branch: options.branch,
+    branchSlug: slug,
+    backend: slug === undefined ? undefined : backend,
     userPool: options.userPool,
     identityProvider: options.identityProvider,
-    appUrl: branch === undefined ? undefined : `https://${webDomainName(branch)}`,
+    appUrl: slug === undefined ? undefined : `https://${webDomainName(slug)}`,
     certificate:
-      branch === undefined
+      slug === undefined
         ? undefined
         : (options.certificate ?? `arn:aws:acm:${config.region}:${options.account}:certificate/${CERTIFICATE_ID}`),
     dataStackName: provision ? `${prefix}-Data` : undefined,
     apiStackName: provision ? `${prefix}-Api` : undefined,
     authStackName: provision ? `${prefix}-Auth` : undefined,
-    webStackName: branch === undefined ? undefined : `DlpAccessNext-Web-${branch}`,
+    webStackName: slug === undefined ? undefined : `DlpAccessNext-Web-${slug}`,
   };
 }
 
@@ -240,12 +240,12 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
   }
 
   let web: WebStack | undefined;
-  if (plan.webStackName && plan.branch && plan.branchName && plan.certificate) {
+  if (plan.webStackName && plan.branch && plan.branchSlug && plan.certificate) {
     web = new WebStack(app, plan.webStackName, {
       env,
       config,
       branch: plan.branch,
-      branchName: plan.branchName,
+      branchSlug: plan.branchSlug,
       certificateArn: plan.certificate,
     });
     // The Web stack reads the API URL and the sign-in settings from the SSM

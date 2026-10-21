@@ -69,9 +69,9 @@ export interface WebStackProps extends StackProps {
   /** The environment whose API the app calls. */
   readonly config: EnvironmentConfig;
   /** Branch slug; names the Beanstalk application and environment. */
-  readonly branch: string;
+  readonly branchSlug: string;
   /** The git branch name the slug came from. */
-  readonly branchName: string;
+  readonly branch: string;
   /** ARN of the ACM certificate covering the branch's domain name. */
   readonly certificateArn: string;
 }
@@ -90,9 +90,9 @@ export class WebStack extends Stack {
 
   constructor(scope: Construct, id: string, props: WebStackProps) {
     super(scope, id, props);
-    const { config, branch, branchName, certificateArn } = props;
-    const name = webResourceName(branch);
-    const domainName = webDomainName(branch);
+    const { config, branchSlug: slug, branch, certificateArn } = props;
+    const name = webResourceName(slug);
+    const domainName = webDomainName(slug);
     const appUrl = `https://${domainName}`;
 
     // The files of the commit at HEAD, as `eb deploy` ships them, so
@@ -118,7 +118,7 @@ export class WebStack extends Stack {
 
     const application = new elasticbeanstalk.CfnApplication(this, 'Application', {
       applicationName: name,
-      description: `dlp-access-next branch ${branch}, using the ${config.name} environment`,
+      description: `dlp-access-next branch ${slug}, using the ${config.name} environment`,
     });
     const version = new elasticbeanstalk.CfnApplicationVersion(this, 'Version', {
       applicationName: name,
@@ -275,7 +275,7 @@ export class WebStack extends Stack {
 
     new CfnOutput(this, 'EnvironmentName', { value: name });
     // Lets the deploy script spot two branch names that share a slug.
-    new CfnOutput(this, 'Branch', { value: branchName });
+    new CfnOutput(this, 'Branch', { value: branch });
     new CfnOutput(this, 'AppUrl', { value: appUrl });
     new CfnOutput(this, 'EndpointUrl', { value: environment.attrEndpointUrl });
     // For running the branch locally. The client secret itself is not an
