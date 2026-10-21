@@ -1,5 +1,5 @@
 {
-  "app": "npx ts-node --prefer-ts-exts bin/appsync.ts",
+  "app": "npx ts-node --prefer-ts-exts bin/dlp-access-next.ts",
   "watch": {
     "include": [
       "**"
