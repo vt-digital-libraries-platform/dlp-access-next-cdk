@@ -1,0 +1,8 @@
+.git/
+node_modules/
+*.log
+dist/
+build/
+.next/
+.env*
+Dockerfile
