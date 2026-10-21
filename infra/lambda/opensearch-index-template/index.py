@@ -1,10 +1,7 @@
-"""CloudFormation custom resource that installs an index template on the domain.
-
+"""
 Each searchable model gets its own template, named after the resource's
-`TemplateName`, which sets the explicit field mappings for that model's index
-and `auto_expand_replicas` so a single-node domain runs with 0 replicas
-(green) and a multi-node domain gets 1 replica. Templates apply only when an
-index is created, so an index that already exists keeps its mappings.
+`TemplateName`, which sets the explicit field mappings for that model's index.
+Templates apply only when an index is created, so an index that already exists keeps its mappings.
 """
 import json
 import logging
@@ -21,7 +18,6 @@ logger.setLevel(logging.INFO)
 # Above the priority-0 `dlpnext-defaults` template this resource used to
 # install, so both can briefly coexist while CloudFormation replaces it.
 PRIORITY = 1
-
 
 def _request(method, path, body=None, allow_missing=False):
     endpoint = os.environ['OPENSEARCH_ENDPOINT']
