@@ -3,8 +3,6 @@
 The VT Digital Libraries access site: a Next.js 16 / React 19 app running on Elastic Beanstalk, backed by a read-only AppSync GraphQL API over DynamoDB and OpenSearch. All of the AWS infrastructure is defined with CDK in `infra/`.
 
 The repo holds two independent npm projects, each with its own `package.json`:
-
-
 - `/` - The Next.js app (App Router, Tailwind 4)
 - `infra/` - CDK v2 (TypeScript): the data layer, API and Elastic Beanstalk hosting
 
@@ -19,7 +17,7 @@ Each **backend environment** has its own data and API. Backend environments are 
 | `DlpAccessNext-<env>-Auth` | A pointer to the environment's existing Cognito user pool and identity provider (two SSM parameters). The pool itself is made outside CDK |
 | `DlpAccessNext-Web-<branch>` | One git branch of the dlp-access-next app: an Elastick Beanstalk application in a Node.js environment (`dlpnext-<branch>`, one instance behind an HTTPS load balancer) at `https://<branch>.dlp-access-dev.dlp.cloud.lib.vt.edu`, that calls one environment's API, and the branch's Cognito app client on the environment's user pool |
 
-Many branches can share one environment. Only feature environments delete their tables and opensearch domain when their stacks are destroyed. `dev`, `pre-production` and `production` keep their data and have deletion protection and point-in-time recovery turned on.
+Many branches can share one backend environment. Only feature environments delete their tables and opensearch domain when their stacks are destroyed. `dev`, `pre-production` and `production` keep their data and have deletion protection and point-in-time recovery turned on.
 
 ## Running locally
 
@@ -69,8 +67,10 @@ npm run deploy -- -c backend-env=f-search -c aws-account-id=$ACCOUNT -c frontend
 npm run deploy -- -c backend-env=production -c aws-account-id=<production account ID> -c production=true -c user-pool-id=<user pool ID>
 ```
 
-`npm run deploy` checks the options, lists them with the stacks they produce, and runs `cdk deploy --all`. With `-c backend-env=production` a red warning banner comes first, and it also points out when `-c production=true` is missing.
+`npm run deploy` checks the options, lists them with the stacks they produce, and runs `cdk deploy --all`. 
+With `-c backend-env=production` a red warning banner comes first, and it also points out when `-c production=true` is missing.
 
+### Options
 - `-c backend=attach` is the default. It deploys only the Web stack and needs the environment's Api and Auth stacks to exist already; otherwise the deploy fails with "Unable to fetch parameters".
 - `-c backend=provision` deploys a new backend environment's Data, Api and Auth stacks, before the Web stack.
 - `-c user-pool-id=<user pool ID>` is the existing Cognito user pool, in the environment's region, that the environment's users sign in to. It is required on every deploy of the backend environment's stacks. Passing a different ID repoints the backend environment, and each Web stack moves its app client to the new pool the next time it deploys.
