@@ -118,7 +118,7 @@ export class WebStack extends Stack {
 
     const application = new elasticbeanstalk.CfnApplication(this, 'Application', {
       applicationName: name,
-      description: `dlp-access-next branch ${slug}, using the ${config.name} environment`,
+      description: `dlp-access-next frontend ${slug}, using the ${config.name} environment`,
     });
     const version = new elasticbeanstalk.CfnApplicationVersion(this, 'Version', {
       applicationName: name,

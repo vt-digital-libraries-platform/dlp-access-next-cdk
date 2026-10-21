@@ -107,7 +107,7 @@ describe('checkDeploy', () => {
         Branch: 'whunter/Multi_Env',
       }),
       'elasticbeanstalk describe-applications dlpnext-whunter-multi-env': {
-        Applications: [{ Description: 'dlp-access-next branch whunter-multi-env, using the f-search environment' }],
+        Applications: [{ Description: 'dlp-access-next frontend whunter-multi-env, using the f-search environment' }],
       },
     });
     expect(stacks).toEqual(['DlpAccessNext-Web-whunter-multi-env: update (now UPDATE_COMPLETE)']);
@@ -120,7 +120,7 @@ describe('checkDeploy', () => {
         Branch: 'whunter-multi-env',
       }),
       'elasticbeanstalk describe-applications dlpnext-whunter-multi-env': {
-        Applications: [{ Description: 'dlp-access-next branch whunter-multi-env, using the dev environment' }],
+        Applications: [{ Description: 'dlp-access-next frontend whunter-multi-env, using the dev environment' }],
       },
     });
     expect(warnings).toEqual([expect.stringMatching(/deployed from the branch whunter-multi-env, not whunter\/Multi_Env/)]);
