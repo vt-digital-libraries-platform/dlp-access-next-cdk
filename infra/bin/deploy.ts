@@ -1,11 +1,8 @@
 #!/usr/bin/env node
-// Deploys with `cdk deploy --all`, after showing the parsed options and
-// asking for confirmation. Takes the same arguments as `cdk deploy`:
+// Deploys with `cdk deploy --all`
+// Takes the same arguments as `cdk deploy`:
 //   npm run deploy -- -c backend-env=dev -c aws-account-id=$ACCOUNT [-c frontend-branch=...] [other cdk flags]
-// In CI (CI=true), --yes skips the confirmation; see deployArgs. Before
-// confirming, it shows which stacks are created or updated and warns about
-// changes such as a repointed user pool (checkDeploy); --no-check skips that.
-// The check never blocks a deploy.
+// In CI (CI=true), --yes skips the confirmation;
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
