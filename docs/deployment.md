@@ -1,6 +1,6 @@
 # Deploying and destroying environments
 
-How to create, update and destroy backends and frontends with the CDK app in `infra/`. The settings themselves are described in `CLAUDE.md`; this page is the set of commands.
+How to create, update and destroy backends and frontends with the CDK app in `infra/`. The options themselves are described in `README.md`; this page is the set of commands.
 
 ## Terms
 
