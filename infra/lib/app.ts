@@ -6,11 +6,11 @@ import { EnvironmentConfig, resolveEnvironment } from './environments';
 import { CERTIFICATE_ID, WebStack, branchSlug, webDomainName, webResourceName } from './web-stack';
 
 /**
- * CDK context, as passed with `-c env=... -c account=... -c production=... -c branch=... -c backend=...
+ * CDK context, as passed with `-c backend-env=... -c account=... -c production=... -c frontend-branch=... -c backend=...
  * -c userPool=... -c identityProvider=... -c certificate=...`.
  */
 export interface AppOptions {
-  readonly env?: string;
+  readonly backendEnv?: string;
   /** AWS account ID to deploy the environment's stacks to. */
   readonly account?: string;
   /**
@@ -19,7 +19,7 @@ export interface AppOptions {
    */
   readonly production?: boolean;
   /** Git branch to deploy the Next.js app for. Omit to deploy only the environment. */
-  readonly branch?: string;
+  readonly frontendBranch?: string;
   /**
    * With a branch: `attach` (the default) deploys only the Web stack, onto
    * the environment's already-deployed stacks. `provision` also deploys the
@@ -52,19 +52,19 @@ export interface AppPlan {
   readonly config: EnvironmentConfig;
   readonly account: string;
   readonly production: boolean;
-  /** The git branch name as given with `-c branch`. */
+  /** The git branch name as given with `-c frontend-branch`. */
   readonly frontendBranch?: string;
-  /** The branch's slug; undefined without `-c branch`. */
+  /** The branch's slug; undefined without `-c frontend-branch`. */
   readonly frontendBranchSlug?: string;
-  /** undefined without `-c branch`. */
+  /** undefined without `-c frontend-branch`. */
   readonly backend?: string;
   /** undefined when the Auth stack isn't deployed. */
   readonly userPool?: string;
   /** undefined when the Auth stack isn't deployed, or users are the pool's own. */
   readonly identityProvider?: string;
-  /** The branch's public HTTPS origin; undefined without `-c branch`. */
+  /** The branch's public HTTPS origin; undefined without `-c frontend-branch`. */
   readonly appUrl?: string;
-  /** undefined without `-c branch`. */
+  /** undefined without `-c frontend-branch`. */
   readonly certificate?: string;
   readonly dataStackName?: string;
   readonly apiStackName?: string;
@@ -80,6 +80,11 @@ export interface AppStacks {
 }
 
 const BACKENDS = ['attach', 'provision'];
+// Context keys that were renamed, with their new names.
+const RENAMED_CONTEXT = [
+  ['env', 'backend-env'],
+  ['branch', 'frontend-branch'],
+];
 const ACCOUNT_PATTERN = /^\d{12}$/;
 // <region>_<id>, e.g. us-east-1_AbCd12345
 const USER_POOL_ID_PATTERN = /^([a-z0-9-]+)_[0-9a-zA-Z]+$/;
@@ -107,11 +112,16 @@ export function optionsFromContext(context: (key: string) => unknown): AppOption
     const value = context(key);
     return value === undefined ? undefined : String(value);
   };
+  for (const [old, renamed] of RENAMED_CONTEXT) {
+    if (context(old) !== undefined) {
+      throw new Error(`-c ${old} was renamed: use -c ${renamed}`);
+    }
+  }
   return {
-    env: str('env'),
+    backendEnv: str('backend-env'),
     account: str('account'),
     production: booleanContext('production', context('production')),
-    branch: str('branch'),
+    frontendBranch: str('frontend-branch'),
     backend: str('backend'),
     userPool: str('userPool'),
     identityProvider: str('identityProvider'),
@@ -127,7 +137,7 @@ export function optionsFromContext(context: (key: string) => unknown): AppOption
  */
 export function planApp(options: AppOptions): AppPlan {
   const production = options.production ?? false;
-  const config = resolveEnvironment(options.env, production);
+  const config = resolveEnvironment(options.backendEnv, production);
   if (options.account === undefined) {
     throw new Error('Missing CDK context: pass -c account=<AWS account ID>');
   }
@@ -135,8 +145,8 @@ export function planApp(options: AppOptions): AppPlan {
     throw new Error(`Invalid account "${options.account}": use a 12-digit AWS account ID`);
   }
 
-  if (options.branch === undefined && options.backend !== undefined) {
-    throw new Error('-c backend only applies with -c branch=<git branch>');
+  if (options.frontendBranch === undefined && options.backend !== undefined) {
+    throw new Error('-c backend only applies with -c frontend-branch=<git branch>');
   }
   const backend = options.backend ?? 'attach';
   if (!BACKENDS.includes(backend)) {
@@ -144,8 +154,8 @@ export function planApp(options: AppOptions): AppPlan {
   }
 
   const prefix = `DlpAccessNext-${config.name}`;
-  const provision = options.branch === undefined || backend === 'provision';
-  const slug = options.branch === undefined ? undefined : branchSlug(options.branch);
+  const provision = options.frontendBranch === undefined || backend === 'provision';
+  const slug = options.frontendBranch === undefined ? undefined : branchSlug(options.frontendBranch);
   if (slug !== undefined) {
     webResourceName(slug);
   }
@@ -153,7 +163,7 @@ export function planApp(options: AppOptions): AppPlan {
   for (const option of ['userPool', 'identityProvider'] as const) {
     if (options[option] !== undefined && !provision) {
       throw new Error(
-        `-c ${option} only applies when the environment's stacks are deployed: drop -c branch, or add -c backend=provision`,
+        `-c ${option} only applies when the environment's stacks are deployed: drop -c frontend-branch, or add -c backend=provision`,
       );
     }
   }
@@ -177,7 +187,7 @@ export function planApp(options: AppOptions): AppPlan {
     }
   }
   if (options.certificate !== undefined && slug === undefined) {
-    throw new Error('-c certificate only applies with -c branch=<git branch>');
+    throw new Error('-c certificate only applies with -c frontend-branch=<git branch>');
   }
   if (options.certificate !== undefined) {
     const [, region, certificateAccount] = CERTIFICATE_ARN_PATTERN.exec(options.certificate) ?? [];
@@ -194,7 +204,7 @@ export function planApp(options: AppOptions): AppPlan {
     config,
     account: options.account,
     production,
-    frontendBranch: options.branch,
+    frontendBranch: options.frontendBranch,
     frontendBranchSlug: slug,
     backend: slug === undefined ? undefined : backend,
     userPool: options.userPool,

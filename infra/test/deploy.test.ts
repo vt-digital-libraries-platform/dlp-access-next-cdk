@@ -9,23 +9,23 @@ describe('contextFromArgs', () => {
   test('reads -c, --context and --context= forms and ignores other flags', () => {
     expect(
       contextFromArgs([
-        '-c', 'env=dev',
+        '-c', 'backend-env=dev',
         '--context', 'account=123456789012',
-        '--context=branch=whunter/a=b',
+        '--context=frontend-branch=whunter/a=b',
         '--require-approval', 'never',
       ]),
-    ).toEqual({ env: 'dev', account: '123456789012', branch: 'whunter/a=b' });
+    ).toEqual({ 'backend-env': 'dev', account: '123456789012', 'frontend-branch': 'whunter/a=b' });
   });
 
-  test.each([[['-c']], [['-c', 'env']], [['-c', '=dev']]])('rejects %p', (args) => {
+  test.each([[['-c']], [['-c', 'backend-env']], [['-c', '=dev']]])('rejects %p', (args) => {
     expect(() => contextFromArgs(args)).toThrow(/Invalid context argument/);
   });
 });
 
 describe('profileFromArgs', () => {
   test.each([
-    [['-c', 'env=dev'], undefined],
-    [['--profile', 'prod', '-c', 'env=production'], 'prod'],
+    [['-c', 'backend-env=dev'], undefined],
+    [['--profile', 'prod', '-c', 'backend-env=production'], 'prod'],
     [['--profile=prod'], 'prod'],
   ])('reads %p', (args, profile) => {
     expect(profileFromArgs(args)).toBe(profile);
@@ -37,7 +37,7 @@ describe('profileFromArgs', () => {
 });
 
 describe('deployArgs', () => {
-  const context = ['-c', 'env=dev', '-c', `account=${account}`];
+  const context = ['-c', 'backend-env=dev', '-c', `account=${account}`];
 
   test('without --yes, passes every argument through', () => {
     expect(deployArgs([...context, '--require-approval', 'broadening'], undefined)).toEqual({
@@ -73,24 +73,31 @@ describe('deployArgs', () => {
 
 describe('optionsFromContext', () => {
   test('parses the production flag and leaves missing keys undefined', () => {
-    const context: Record<string, unknown> = { env: 'dev', account, production: 'true' };
+    const context: Record<string, unknown> = { 'backend-env': 'dev', account, production: 'true' };
     expect(optionsFromContext((key) => context[key])).toEqual({
-      env: 'dev',
+      backendEnv: 'dev',
       account,
       production: true,
-      branch: undefined,
+      frontendBranch: undefined,
       backend: undefined,
       userPool: undefined,
       identityProvider: undefined,
       certificate: undefined,
     });
   });
+
+  test.each([
+    ['env', /-c env was renamed: use -c backend-env/],
+    ['branch', /-c branch was renamed: use -c frontend-branch/],
+  ])('rejects the old key %p', (key, message) => {
+    expect(() => optionsFromContext((k) => (k === key ? 'dev' : undefined))).toThrow(message);
+  });
 });
 
 describe('describePlan', () => {
   test('lists every option, with defaults applied, and the stacks', () => {
     const text = describePlan(
-      planApp({ env: 'f-search', account, userPool, branch: 'whunter/Multi_Env', backend: 'provision', certificate }),
+      planApp({ backendEnv: 'f-search', account, userPool, frontendBranch: 'whunter/Multi_Env', backend: 'provision', certificate }),
     );
     expect(text).toMatch(/Environment\s+f-search/);
     expect(text).toMatch(/Account\s+123456789012/);
@@ -109,7 +116,7 @@ describe('describePlan', () => {
   });
 
   test('shows production sizing, and no branch or backend for an environment deploy', () => {
-    const text = describePlan(planApp({ env: 'production', account, userPool, production: true }));
+    const text = describePlan(planApp({ backendEnv: 'production', account, userPool, production: true }));
     expect(text).toMatch(/Production\s+true \(search: 3 x m7g\.medium\.search across 3 AZ; web: t3\.medium\)/);
     expect(text).toMatch(/Branch\s+\(none\)/);
     expect(text).toMatch(/Backend\s+\(none\)/);
@@ -122,7 +129,7 @@ describe('describePlan', () => {
   });
 
   test('attach deploys only the Web stack', () => {
-    const text = describePlan(planApp({ env: 'dev', account, branch: 'main', certificate }));
+    const text = describePlan(planApp({ backendEnv: 'dev', account, frontendBranch: 'main', certificate }));
     expect(text).toMatch(/Backend\s+attach/);
     expect(text).toMatch(/User pool\s+\(the environment's\)/);
     expect(text).toMatch(/Identity provider\s+\(the environment's\)/);
@@ -132,9 +139,9 @@ describe('describePlan', () => {
   test('shows the user pool and its identity provider', () => {
     const text = describePlan(
       planApp({
-        env: 'dev',
+        backendEnv: 'dev',
         account,
-        branch: 'main',
+        frontendBranch: 'main',
         backend: 'provision',
         userPool,
         identityProvider: 'VT-SSO-OIDC',
@@ -148,18 +155,18 @@ describe('describePlan', () => {
 
 describe('productionWarning', () => {
   test('warns for the production environment, naming the account', () => {
-    const warning = productionWarning(planApp({ env: 'production', account, userPool, production: true }));
+    const warning = productionWarning(planApp({ backendEnv: 'production', account, userPool, production: true }));
     expect(warning).toMatch(/WARNING: THIS DEPLOYS TO THE PRODUCTION ENVIRONMENT/);
     expect(warning).toMatch(/Account 123456789012/);
     expect(warning).not.toMatch(/production=true is not set/);
   });
 
   test('also warns when production sizing is off', () => {
-    expect(productionWarning(planApp({ env: 'production', account, userPool }))).toMatch(/production=true is not set/);
+    expect(productionWarning(planApp({ backendEnv: 'production', account, userPool }))).toMatch(/production=true is not set/);
   });
 
   test.each(['dev', 'pre-production', 'f-production'])('says nothing for %p', (env) => {
-    expect(productionWarning(planApp({ env, account, userPool, production: true }))).toBeUndefined();
+    expect(productionWarning(planApp({ backendEnv: env, account, userPool, production: true }))).toBeUndefined();
   });
 });
 

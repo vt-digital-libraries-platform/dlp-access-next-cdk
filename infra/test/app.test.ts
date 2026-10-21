@@ -12,7 +12,7 @@ const userPool = 'us-east-1_AbCd12345';
 const certificate = `arn:aws:acm:us-east-1:${account}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
 
 function synth(envName: string) {
-  const { data, api } = buildApp(new App(), { env: envName, account, userPool });
+  const { data, api } = buildApp(new App(), { backendEnv: envName, account, userPool });
   return { data: Template.fromStack(data!), api: Template.fromStack(api!) };
 }
 
@@ -25,7 +25,7 @@ const feature = synth('f-search');
 
 describe('environment selection', () => {
   test('stacks are named after the environment', () => {
-    const { data, api, auth, web } = buildApp(new App(), { env: 'f-search', account, userPool });
+    const { data, api, auth, web } = buildApp(new App(), { backendEnv: 'f-search', account, userPool });
     expect(web).toBeUndefined();
     expect(data!.stackName).toBe('DlpAccessNext-f-search-Data');
     expect(api!.stackName).toBe('DlpAccessNext-f-search-Api');
@@ -38,7 +38,7 @@ describe('environment selection', () => {
     ['f-this-name-is-far-too-long', /Invalid environment name/],
     ['Dev', /Invalid environment name/],
   ])('rejects env %p', (envName, message) => {
-    expect(() => buildApp(new App(), { env: envName, account })).toThrow(message);
+    expect(() => buildApp(new App(), { backendEnv: envName, account })).toThrow(message);
   });
 
   test.each([
@@ -56,7 +56,7 @@ describe('environment selection', () => {
   });
 
   test('production uses the account passed in', () => {
-    const { data } = buildApp(new App(), { env: 'production', account, userPool });
+    const { data } = buildApp(new App(), { backendEnv: 'production', account, userPool });
     expect(data!.account).toBe(account);
   });
 
@@ -65,7 +65,7 @@ describe('environment selection', () => {
     ['12345', /Invalid account "12345"/],
     ['12345678901x', /Invalid account/],
   ])('rejects account %p', (badAccount, message) => {
-    expect(() => buildApp(new App(), { env: 'dev', account: badAccount })).toThrow(message);
+    expect(() => buildApp(new App(), { backendEnv: 'dev', account: badAccount })).toThrow(message);
   });
 });
 
@@ -158,7 +158,7 @@ describe('search domain', () => {
   });
 
   test('the production flag makes the domain three nodes across three AZs', () => {
-    const { data } = buildApp(new App(), { env: 'production', account, userPool, production: true });
+    const { data } = buildApp(new App(), { backendEnv: 'production', account, userPool, production: true });
     Template.fromStack(data!).hasResourceProperties('AWS::OpenSearchService::Domain', {
       ClusterConfig: Match.objectLike({
         InstanceType: 'm7g.medium.search',
@@ -407,7 +407,7 @@ describe('API and Elastic Beanstalk access', () => {
 
 describe('Auth stack', () => {
   const authTemplate = (identityProvider?: string) =>
-    Template.fromStack(buildApp(new App(), { env: 'dev', account, userPool, identityProvider }).auth!);
+    Template.fromStack(buildApp(new App(), { backendEnv: 'dev', account, userPool, identityProvider }).auth!);
 
   test('the user pool is only recorded in SSM, not created or changed', () => {
     const auth = authTemplate();
@@ -430,7 +430,7 @@ describe('Auth stack', () => {
   });
 
   test.each(['VT SSO', 'VT_SSO', '', 'a'.repeat(33)])('rejects identity provider %p', (identityProvider) => {
-    expect(() => buildApp(new App(), { env: 'dev', account, userPool, identityProvider })).toThrow(
+    expect(() => buildApp(new App(), { backendEnv: 'dev', account, userPool, identityProvider })).toThrow(
       /Invalid identityProvider/,
     );
   });
@@ -439,11 +439,11 @@ describe('Auth stack', () => {
     ['AbCd12345', /Invalid userPool "AbCd12345": use a Cognito user pool ID/],
     ['us-west-2_AbCd12345', /the pool must be in us-east-1/],
   ])('rejects user pool %p', (badUserPool, message) => {
-    expect(() => buildApp(new App(), { env: 'dev', account, userPool: badUserPool })).toThrow(message);
+    expect(() => buildApp(new App(), { backendEnv: 'dev', account, userPool: badUserPool })).toThrow(message);
   });
 
-  test.each([{}, { branch: 'x', backend: 'provision' }])('requires a user pool with %p', (options) => {
-    expect(() => buildApp(new App(), { env: 'dev', account, ...options })).toThrow(/pass -c userPool=<user pool ID>/);
+  test.each([{}, { frontendBranch: 'x', backend: 'provision' }])('requires a user pool with %p', (options) => {
+    expect(() => buildApp(new App(), { backendEnv: 'dev', account, ...options })).toThrow(/pass -c userPool=<user pool ID>/);
   });
 });
 
@@ -458,7 +458,7 @@ describe('Web stack', () => {
 
   test('attach deploys only the Web stack, named after the slugified branch', () => {
     const app = new App();
-    const { data, api, auth, web } = buildApp(app, { env: 'dev', account, branch: 'whunter/Multi_Env', certificate });
+    const { data, api, auth, web } = buildApp(app, { backendEnv: 'dev', account, frontendBranch: 'whunter/Multi_Env', certificate });
     expect(data).toBeUndefined();
     expect(api).toBeUndefined();
     expect(auth).toBeUndefined();
@@ -469,10 +469,10 @@ describe('Web stack', () => {
   test('provision deploys Data, Api and Auth first', () => {
     const app = new App();
     const { api, auth, web } = buildApp(app, {
-      env: 'f-search',
+      backendEnv: 'f-search',
       account,
       userPool,
-      branch: 'search',
+      frontendBranch: 'search',
       backend: 'provision',
       certificate,
     });
@@ -487,29 +487,29 @@ describe('Web stack', () => {
   });
 
   test.each([
-    [{ env: 'dev', backend: 'attach' }, /only applies with -c branch/],
-    [{ env: 'dev', branch: 'x', backend: 'create' }, /Invalid backend "create"/],
-    [{ env: 'dev', branch: '///' }, /Invalid branch/],
-    [{ env: 'dev', branch: 'a'.repeat(33) }, /Invalid branch/],
-    [{ env: 'dev', branch: 'x', userPool }, /-c userPool only applies/],
-    [{ env: 'dev', branch: 'x', identityProvider: 'VT-SSO-OIDC' }, /-c identityProvider only applies/],
-    [{ env: 'dev', userPool, certificate }, /-c certificate only applies with -c branch/],
-    [{ env: 'dev', branch: 'x', certificate: 'not-an-arn' }, /Invalid certificate/],
-    [{ env: 'dev', branch: 'x', certificate: certificate.replace('us-east-1', 'us-west-2') }, /must be in account .* and us-east-1/],
-    [{ env: 'dev', branch: 'x', certificate: certificate.replace(account, '210987654321') }, /must be in account 123456789012/],
+    [{ backendEnv: 'dev', backend: 'attach' }, /only applies with -c frontend-branch/],
+    [{ backendEnv: 'dev', frontendBranch: 'x', backend: 'create' }, /Invalid backend "create"/],
+    [{ backendEnv: 'dev', frontendBranch: '///' }, /Invalid branch/],
+    [{ backendEnv: 'dev', frontendBranch: 'a'.repeat(33) }, /Invalid branch/],
+    [{ backendEnv: 'dev', frontendBranch: 'x', userPool }, /-c userPool only applies/],
+    [{ backendEnv: 'dev', frontendBranch: 'x', identityProvider: 'VT-SSO-OIDC' }, /-c identityProvider only applies/],
+    [{ backendEnv: 'dev', userPool, certificate }, /-c certificate only applies with -c frontend-branch/],
+    [{ backendEnv: 'dev', frontendBranch: 'x', certificate: 'not-an-arn' }, /Invalid certificate/],
+    [{ backendEnv: 'dev', frontendBranch: 'x', certificate: certificate.replace('us-east-1', 'us-west-2') }, /must be in account .* and us-east-1/],
+    [{ backendEnv: 'dev', frontendBranch: 'x', certificate: certificate.replace(account, '210987654321') }, /must be in account 123456789012/],
   ])('rejects %p', (options, message) => {
     expect(() => buildApp(new App(), { account, certificate, ...options })).toThrow(message);
   });
 
   test('defaults the certificate to CERTIFICATE_ID in the deploy account and environment region', () => {
-    expect(planApp({ env: 'dev', account, branch: 'x' }).certificate).toBe(
+    expect(planApp({ backendEnv: 'dev', account, frontendBranch: 'x' }).certificate).toBe(
       `arn:aws:acm:us-east-1:${account}:certificate/${CERTIFICATE_ID}`,
     );
-    expect(planApp({ env: 'dev', account, branch: 'x', certificate }).certificate).toBe(certificate);
-    expect(planApp({ env: 'dev', account, userPool }).certificate).toBeUndefined();
+    expect(planApp({ backendEnv: 'dev', account, frontendBranch: 'x', certificate }).certificate).toBe(certificate);
+    expect(planApp({ backendEnv: 'dev', account, userPool }).certificate).toBeUndefined();
   });
 
-  const attached = buildApp(new App(), { env: 'pre-production', account, branch: 'feature/search', certificate }).web!;
+  const attached = buildApp(new App(), { backendEnv: 'pre-production', account, frontendBranch: 'feature/search', certificate }).web!;
   const web = Template.fromStack(attached);
   const option = (namespace: string, optionName: string, value: unknown) =>
     Match.objectLike({ Namespace: namespace, OptionName: optionName, Value: value });
@@ -652,7 +652,7 @@ describe('Web stack', () => {
   });
 
   test('the production flag uses a larger instance', () => {
-    const { web: prod } = buildApp(new App(), { env: 'production', account, production: true, branch: 'main', certificate });
+    const { web: prod } = buildApp(new App(), { backendEnv: 'production', account, production: true, frontendBranch: 'main', certificate });
     Template.fromStack(prod!).hasResourceProperties('AWS::ElasticBeanstalk::Environment', {
       OptionSettings: Match.arrayWith([option('aws:ec2:instances', 'InstanceTypes', 't3.medium')]),
     });
@@ -685,7 +685,7 @@ describe('Web stack', () => {
     fs.writeFileSync(untracked, 'export {};\n');
     fs.writeFileSync(packageJson, `${local}\n`);
     try {
-      const stack = buildApp(new App(), { env: 'dev', account, branch: 'main', certificate }).web!;
+      const stack = buildApp(new App(), { backendEnv: 'dev', account, frontendBranch: 'main', certificate }).web!;
       const staged = path.join((stack.node.root as App).outdir, stack.sourceBundle.assetPath);
       expect(fs.existsSync(path.join(staged, 'src', 'uncommitted-test-file.ts'))).toBe(false);
       expect(fs.readFileSync(path.join(staged, 'package.json'), 'utf8')).toBe(committed);

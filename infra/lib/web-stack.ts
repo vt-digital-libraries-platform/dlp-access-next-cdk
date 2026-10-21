@@ -303,7 +303,7 @@ const MAX_SLUG_LENGTH = 40 - WEB_PREFIX.length;
 export function webResourceName(slug: string): string {
   if (!slug || slug.length > MAX_SLUG_LENGTH) {
     throw new Error(
-      `Invalid branch "${slug}": after slugifying it must be 1 to ${MAX_SLUG_LENGTH} characters; pass a shorter -c branch=<name>`,
+      `Invalid branch "${slug}": after slugifying it must be 1 to ${MAX_SLUG_LENGTH} characters; pass a shorter -c frontend-branch=<name>`,
     );
   }
   return `${WEB_PREFIX}${slug}`;

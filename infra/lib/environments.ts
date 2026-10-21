@@ -7,7 +7,7 @@ import { RemovalPolicy } from 'aws-cdk-lib';
  * environment name.
  */
 export interface EnvironmentConfig {
-  /** Environment name as passed with `-c env=<name>`. */
+  /** Environment name as passed with `-c backend-env=<name>`. */
   readonly name: string;
   readonly region: string;
   readonly search: {
@@ -87,7 +87,7 @@ const ENV_NAME_PATTERN = /^[a-z][a-z0-9-]{0,19}$/;
 export function resolveEnvironment(name: string | undefined, production = false): EnvironmentConfig {
   if (!name) {
     throw new Error(
-      `Missing CDK context: pass -c env=<name>, one of ${Object.keys(ENVIRONMENTS).join(', ')} or ${FEATURE_PREFIX}<slug>`,
+      `Missing CDK context: pass -c backend-env=<name>, one of ${Object.keys(ENVIRONMENTS).join(', ')} or ${FEATURE_PREFIX}<slug>`,
     );
   }
   if (!ENV_NAME_PATTERN.test(name)) {

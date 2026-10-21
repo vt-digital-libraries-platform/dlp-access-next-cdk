@@ -21,4 +21,4 @@ Implemented: the Web stack stores the secret in a Secrets Manager secret whose v
 
 Caveats: the instance role is shared by every branch of the environment, so those branches can read each other's secrets. The secret has no resource policy, so account principals with broad Secrets Manager access can read it as before. Beanstalk reads the secret when an instance starts or a deploy runs. Replacing the app client also changes `COGNITO_CLIENT_ID`, which should update the environment, but that hasn't been tested.
 
-Still open: sign-in on a deployed Web stack has to be checked after a user-run deploy (`npm run deploy -- -c env=dev -c account=$ACCOUNT -c branch=$(git branch --show-current)`). Close this ticket once that works.
+Still open: sign-in on a deployed Web stack has to be checked after a user-run deploy (`npm run deploy -- -c backend-env=dev -c account=$ACCOUNT -c frontend-branch=$(git branch --show-current)`). Close this ticket once that works.

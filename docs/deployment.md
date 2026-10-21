@@ -40,7 +40,7 @@ Notes that apply to every command:
 - **In CI, add `--yes`** to deploy without the prompt. See [Running in CI](#running-in-ci).
 - **CDK never creates, changes or deletes a user pool.** The pool needs its own managed login domain and an `admin` group, set up outside CDK. `-c userPool` only records which pool to use.
 - **Pass `-c identityProvider=VT-SSO-OIDC` on every backend deploy** if users sign in through VT SSO. If you leave it out, the environment falls back to the pool's own accounts (`COGNITO`).
-- **`-c production=true` picks the large sizing:** three `m7g.medium.search` nodes and a `t3.medium` Beanstalk instance. It is independent of `env`. Pass it on every `production` deploy, or the next deploy shrinks the environment to the small sizing (one `t3.small.search` node, `t3.small` instance). When `env` is `production`, the deploy script prints a red warning, and adds a line if this flag is missing.
+- **`-c production=true` picks the large sizing:** three `m7g.medium.search` nodes and a `t3.medium` Beanstalk instance. It is independent of `backend-env`. Pass it on every `production` deploy, or the next deploy shrinks the environment to the small sizing (one `t3.small.search` node, `t3.small` instance). When `backend-env` is `production`, the deploy script prints a red warning, and adds a line if this flag is missing.
 - **Destroying uses `npx cdk destroy`**, which asks for its own confirmation. There is no destroy script and no production warning, so check the account before destroying.
 
 ---
@@ -50,27 +50,27 @@ Notes that apply to every command:
 ### New tier backend, no frontend (`dev`, `pre-production`, `production`)
 
 ```bash
-npm run deploy -- -c env=<env> -c account=$ACCOUNT \
+npm run deploy -- -c backend-env=<env> -c account=$ACCOUNT \
   -c userPool=<user pool ID> -c identityProvider=VT-SSO-OIDC
 ```
 
 For production, run it in the production account and add `-c production=true`:
 
 ```bash
-npm run deploy -- -c env=production -c account=$ACCOUNT -c production=true \
+npm run deploy -- -c backend-env=production -c account=$ACCOUNT -c production=true \
   -c userPool=<user pool ID> -c identityProvider=VT-SSO-OIDC
 ```
 
 Notes:
 
-- Leaving out `-c branch` means the app contains only the three backend stacks.
+- Leaving out `-c frontend-branch` means the app contains only the three backend stacks.
 - Tier tables have deletion protection and point-in-time recovery turned on, and are kept if the stacks are destroyed. **If the tier was destroyed before, its `<Model>-dlpnext-<env>` tables still exist and this deploy fails** because the names are taken. Either delete the old tables first (turn off deletion protection, then delete), or import them into the Data stack.
 - The OpenSearch domain starts empty. Only rows written after the Api stack deploys are streamed to it; nothing reindexes rows that already exist.
 
 ### New feature backend, no frontend
 
 ```bash
-npm run deploy -- -c env=f-<slug> -c account=$ACCOUNT \
+npm run deploy -- -c backend-env=f-<slug> -c account=$ACCOUNT \
   -c userPool=<user pool ID> -c identityProvider=VT-SSO-OIDC
 ```
 
@@ -85,7 +85,7 @@ Notes:
 Check out the branch, then:
 
 ```bash
-npm run deploy -- -c env=<env> -c account=$ACCOUNT -c branch=$(git branch --show-current)
+npm run deploy -- -c backend-env=<env> -c account=$ACCOUNT -c frontend-branch=$(git branch --show-current)
 ```
 
 Notes:
@@ -95,13 +95,13 @@ Notes:
 - **The deploy ships the commit at HEAD, not your working tree.** Commit what you want deployed first. Uncommitted and untracked changes are left out, and `npm run deploy` lists them before it asks to continue. The bundle leaves out `infra`, docs, Markdown files, `.scratch` and `.env*` files. Beanstalk builds it on the instance. The application version's description records the commit.
 - The certificate defaults to the stored wildcard certificate for `*.dlp-access-dev.dlp.cloud.lib.vt.edu`. Pass `-c certificate=<ACM certificate ARN>` only to use a different one, which must be in the same account and region.
 - The frontend creates its own Cognito app client on the environment's pool. The provider named by the backend's `identityProvider` must exist on the pool, or creating the client fails.
-- The slug can be at most 32 characters. If the branch name is longer, pass a shorter `-c branch=<name>`.
+- The slug can be at most 32 characters. If the branch name is longer, pass a shorter `-c frontend-branch=<name>`.
 
 ### New backend and new frontend together
 
 ```bash
-npm run deploy -- -c env=<env> -c account=$ACCOUNT \
-  -c branch=$(git branch --show-current) -c backend=provision \
+npm run deploy -- -c backend-env=<env> -c account=$ACCOUNT \
+  -c frontend-branch=$(git branch --show-current) -c backend=provision \
   -c userPool=<user pool ID> -c identityProvider=VT-SSO-OIDC
 ```
 
@@ -120,7 +120,7 @@ A redeploy uses the same command as the create. CloudFormation applies only what
 ### Backend
 
 ```bash
-npm run deploy -- -c env=<env> -c account=$ACCOUNT \
+npm run deploy -- -c backend-env=<env> -c account=$ACCOUNT \
   -c userPool=<user pool ID> -c identityProvider=VT-SSO-OIDC
 ```
 
@@ -136,19 +136,19 @@ Notes:
 Check out the branch, then:
 
 ```bash
-npm run deploy -- -c env=<env> -c account=$ACCOUNT -c branch=$(git branch --show-current)
+npm run deploy -- -c backend-env=<env> -c account=$ACCOUNT -c frontend-branch=$(git branch --show-current)
 ```
 
 Notes:
 
 - This uploads the commit at HEAD as a new application version. Commit first: uncommitted changes aren't deployed. If HEAD's files haven't changed since the last deploy, the bundle is the same and the app isn't redeployed.
-- Deploying the same branch with a different `env` repoints its existing frontend to that backend.
+- Deploying the same branch with a different `backend-env` repoints its existing frontend to that backend.
 
 ### Both
 
 ```bash
-npm run deploy -- -c env=<env> -c account=$ACCOUNT \
-  -c branch=$(git branch --show-current) -c backend=provision \
+npm run deploy -- -c backend-env=<env> -c account=$ACCOUNT \
+  -c frontend-branch=$(git branch --show-current) -c backend=provision \
   -c userPool=<user pool ID> -c identityProvider=VT-SSO-OIDC
 ```
 
@@ -161,12 +161,12 @@ This is the same command as creating both. Its backend stacks are the environmen
 ### A specific frontend
 
 ```bash
-npx cdk destroy --all -c env=<env> -c account=$ACCOUNT -c branch=<branch>
+npx cdk destroy --all -c backend-env=<env> -c account=$ACCOUNT -c frontend-branch=<branch>
 ```
 
 Notes:
 
-- With `-c branch` and no `-c backend`, the app contains only that branch's Web stack, so `--all` destroys only it. `<env>` should be the backend the frontend is attached to.
+- With `-c frontend-branch` and no `-c backend`, the app contains only that branch's Web stack, so `--all` destroys only it. `<env>` should be the backend the frontend is attached to.
 - `<branch>` can be the branch name or its slug, so you don't need the branch checked out.
 - This deletes the Beanstalk application and environment, the DNS record, the Cognito app client, the client secret and the secret's policy on the instance role. The backend and the user pool are not affected.
 
@@ -186,7 +186,7 @@ Then destroy each one by its slug (the application name without `dlpnext-`):
 for app in $(aws elasticbeanstalk describe-applications --region us-east-1 \
     --query "Applications[?Description && ends_with(Description, 'using the <env> environment')].ApplicationName" \
     --output text); do
-  npx cdk destroy --all -c env=<env> -c account=$ACCOUNT -c branch="${app#dlpnext-}"
+  npx cdk destroy --all -c backend-env=<env> -c account=$ACCOUNT -c frontend-branch="${app#dlpnext-}"
 done
 ```
 
@@ -200,13 +200,13 @@ Notes:
 **Destroy the backend's frontends first** (see above). Frontends find their backend by name, not through cross-stack references, so CloudFormation won't stop you from deleting a backend that frontends still use. Those frontends would lose their instance role, the API and the SSM parameters they read.
 
 ```bash
-npx cdk destroy --all -c env=<env> -c account=$ACCOUNT -c userPool=<user pool ID>
+npx cdk destroy --all -c backend-env=<env> -c account=$ACCOUNT -c userPool=<user pool ID>
 ```
 
 Notes:
 
 - `-c userPool` is needed only because the app checks it whenever the backend stacks are in the app. It must be a well-formed pool ID in the environment's region. **The pool is not deleted.** Destroying the Auth stack deletes only its two SSM parameters.
-- Without `-c branch`, the app contains only the three backend stacks, so `--all` destroys only them.
+- Without `-c frontend-branch`, the app contains only the three backend stacks, so `--all` destroys only them.
 - **Tables:** tier tables (`dev`, `pre-production`, `production`) are kept, with deletion protection still on. Recreating the tier fails until you delete or import them. Feature environment tables are deleted.
 - **OpenSearch:** the domain is deleted in every environment, along with its indexes.
 - To skip CDK and the `-c userPool` check, delete the stacks with CloudFormation instead, Api first because it uses the Data stack's resources:
@@ -225,8 +225,8 @@ Notes:
 Every deploy command above works in CI with `--yes` added. Every destroy command works with `--force` added.
 
 ```bash
-npm run deploy -- --yes -c env=<env> -c account=$ACCOUNT …
-npx cdk destroy --all --force -c env=<env> -c account=$ACCOUNT …
+npm run deploy -- --yes -c backend-env=<env> -c account=$ACCOUNT …
+npx cdk destroy --all --force -c backend-env=<env> -c account=$ACCOUNT …
 ```
 
 ### What `--yes` does
@@ -241,9 +241,9 @@ npx cdk destroy --all --force -c env=<env> -c account=$ACCOUNT …
 ### Notes for pipelines
 
 - **The deployed commit is the one the job checked out.** A frontend deploy bundles HEAD with `git archive`, so the job needs a git checkout, not just the files. On a `pull_request` event, `actions/checkout` checks out a merge commit by default. To deploy the branch's own commit, check out `${{ github.event.pull_request.head.sha }}`. A shallow clone is fine.
-- **The branch name can't come from `git branch --show-current`.** Checkouts in CI are on a detached HEAD, so that command prints nothing. On GitHub Actions, use `-c branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}`: the source branch for pull requests, and the pushed branch otherwise.
+- **The branch name can't come from `git branch --show-current`.** Checkouts in CI are on a detached HEAD, so that command prints nothing. On GitHub Actions, use `-c frontend-branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}`: the source branch for pull requests, and the pushed branch otherwise.
 - **The job's role needs to look up the hosted zone.** At synth time, the frontend finds `dlp.cloud.lib.vt.edu` in Route 53. The lookup is cached in `infra/cdk.context.json`, which isn't committed, so every CI run does it.
-- **Keep the context values in pipeline config.** Store `env`, `userPool`, `identityProvider` and, for production, `production=true` as each GitHub Environment's variables, not in the workflow's command line. The redeploy rules still apply: leaving one out changes the environment.
+- **Keep the context values in pipeline config.** Store `backend-env`, `userPool`, `identityProvider` and, for production, `production=true` as each GitHub Environment's variables, not in the workflow's command line. The redeploy rules still apply: leaving one out changes the environment.
 - **Run one deploy per environment at a time,** for example with `concurrency: deploy-<env>`.
 - **Use short-lived credentials,** such as a role the job assumes through GitHub OIDC, with production's role trusting only the `production` Environment.
 
@@ -270,8 +270,8 @@ jobs:
       - working-directory: infra
         run: |
           npm ci
-          npm run deploy -- --yes -c env=dev -c account=${{ vars.AWS_ACCOUNT_ID }} \
-            -c branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}
+          npm run deploy -- --yes -c backend-env=dev -c account=${{ vars.AWS_ACCOUNT_ID }} \
+            -c frontend-branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}
 ```
 
-For a backend deploy, replace `-c branch=…` with `-c userPool=${{ vars.USER_POOL_ID }} -c identityProvider=VT-SSO-OIDC`. Add `-c production=true` in the production job.
+For a backend deploy, replace `-c frontend-branch=…` with `-c userPool=${{ vars.USER_POOL_ID }} -c identityProvider=VT-SSO-OIDC`. Add `-c production=true` in the production job.

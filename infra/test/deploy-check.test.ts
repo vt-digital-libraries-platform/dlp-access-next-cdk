@@ -5,8 +5,8 @@ const account = '123456789012';
 const userPool = 'us-east-1_AbCd12345';
 const certificate = `arn:aws:acm:us-east-1:${account}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
 
-const provision = planApp({ env: 'dev', account, userPool, identityProvider: 'VT-SSO-OIDC' });
-const attach = planApp({ env: 'dev', account, branch: 'whunter/Multi_Env', certificate });
+const provision = planApp({ backendEnv: 'dev', account, userPool, identityProvider: 'VT-SSO-OIDC' });
+const attach = planApp({ backendEnv: 'dev', account, frontendBranch: 'whunter/Multi_Env', certificate });
 
 /**
  * A fake AWS CLI: `resources` maps "service command name" to the parsed
@@ -82,7 +82,7 @@ describe('checkDeploy', () => {
   });
 
   test('warns when the user pool or identity provider changes', () => {
-    const plan = planApp({ env: 'dev', account, userPool: 'us-east-1_Other1234' });
+    const plan = planApp({ backendEnv: 'dev', account, userPool: 'us-east-1_Other1234' });
     expect(check(plan, deployedBackend).warnings).toEqual([
       `Repoints the dev environment's user pool from ${userPool} to us-east-1_Other1234.`,
       'Changes sign-in from VT-SSO-OIDC to COGNITO (was -c identityProvider left out?).',
@@ -91,7 +91,7 @@ describe('checkDeploy', () => {
   });
 
   test('warns when production is redeployed without -c production=true', () => {
-    const plan = planApp({ env: 'production', account, userPool, identityProvider: 'VT-SSO-OIDC' });
+    const plan = planApp({ backendEnv: 'production', account, userPool, identityProvider: 'VT-SSO-OIDC' });
     const { warnings } = check(plan, {
       'cloudformation describe-stacks DlpAccessNext-production-Data': stack('UPDATE_COMPLETE'),
       'opensearch describe-domain dlpnext-production': domain('m7g.medium.search', 3),

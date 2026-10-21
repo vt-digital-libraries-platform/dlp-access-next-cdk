@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Deploys with `cdk deploy --all`, after showing the parsed options and
 // asking for confirmation. Takes the same arguments as `cdk deploy`:
-//   npm run deploy -- -c env=dev -c account=$ACCOUNT [-c branch=...] [other cdk flags]
+//   npm run deploy -- -c backend-env=dev -c account=$ACCOUNT [-c frontend-branch=...] [other cdk flags]
 // In CI (CI=true), --yes skips the confirmation; see deployArgs. Before
 // confirming, it shows which stacks are created or updated and warns about
 // changes such as a repointed user pool (checkDeploy); --no-check skips that.
