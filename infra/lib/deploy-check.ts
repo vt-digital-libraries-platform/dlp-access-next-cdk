@@ -174,7 +174,7 @@ export function checkDeploy(plan: AppPlan, state: DeployedState): DeployCheck {
     if (provider !== undefined && provider !== plannedProvider) {
       warnings.push(
         `Changes sign-in from ${provider} to ${plannedProvider}` +
-          (plan.identityProvider === undefined ? ' (was -c identityProvider left out?)' : '') +
+          (plan.identityProvider === undefined ? ' (was -c identity-provider left out?)' : '') +
           '.',
       );
     }

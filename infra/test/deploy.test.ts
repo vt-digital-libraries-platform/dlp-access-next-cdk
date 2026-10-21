@@ -89,6 +89,8 @@ describe('optionsFromContext', () => {
   test.each([
     ['env', /-c env was renamed: use -c backend-env/],
     ['branch', /-c branch was renamed: use -c frontend-branch/],
+    ['userPool', /-c userPool was renamed: use -c user-pool/],
+    ['identityProvider', /-c identityProvider was renamed: use -c identity-provider/],
   ])('rejects the old key %p', (key, message) => {
     expect(() => optionsFromContext((k) => (k === key ? 'dev' : undefined))).toThrow(message);
   });

@@ -7,7 +7,7 @@ import { CERTIFICATE_ID, WebStack, branchSlug, webDomainName, webResourceName } 
 
 /**
  * CDK context, as passed with `-c backend-env=... -c account=... -c production=... -c frontend-branch=... -c backend=...
- * -c userPool=... -c identityProvider=... -c certificate=...`.
+ * -c user-pool=... -c identity-provider=... -c certificate=...`.
  */
 export interface AppOptions {
   readonly backendEnv?: string;
@@ -84,6 +84,8 @@ const BACKENDS = ['attach', 'provision'];
 const RENAMED_CONTEXT = [
   ['env', 'backend-env'],
   ['branch', 'frontend-branch'],
+  ['userPool', 'user-pool'],
+  ['identityProvider', 'identity-provider'],
 ];
 const ACCOUNT_PATTERN = /^\d{12}$/;
 // <region>_<id>, e.g. us-east-1_AbCd12345
@@ -123,8 +125,8 @@ export function optionsFromContext(context: (key: string) => unknown): AppOption
     production: booleanContext('production', context('production')),
     frontendBranch: str('frontend-branch'),
     backend: str('backend'),
-    userPool: str('userPool'),
-    identityProvider: str('identityProvider'),
+    userPool: str('user-pool'),
+    identityProvider: str('identity-provider'),
     certificate: str('certificate'),
   };
 }
@@ -160,8 +162,8 @@ export function planApp(options: AppOptions): AppPlan {
     webResourceName(slug);
   }
 
-  for (const option of ['userPool', 'identityProvider'] as const) {
-    if (options[option] !== undefined && !provision) {
+  for (const [field, option] of [['userPool', 'user-pool'], ['identityProvider', 'identity-provider']] as const) {
+    if (options[field] !== undefined && !provision) {
       throw new Error(
         `-c ${option} only applies when the environment's stacks are deployed: drop -c frontend-branch, or add -c backend=provision`,
       );
@@ -169,21 +171,21 @@ export function planApp(options: AppOptions): AppPlan {
   }
   if (options.identityProvider !== undefined && !IDENTITY_PROVIDER_PATTERN.test(options.identityProvider)) {
     throw new Error(
-      `Invalid identityProvider "${options.identityProvider}": use the name of an identity provider on the user pool, such as VT-SSO-OIDC`,
+      `Invalid identity-provider "${options.identityProvider}": use the name of an identity provider on the user pool, such as VT-SSO-OIDC`,
     );
   }
   if (provision && options.userPool === undefined) {
     throw new Error(
-      "Missing CDK context: pass -c userPool=<user pool ID>, the existing Cognito user pool for the environment's users",
+      "Missing CDK context: pass -c user-pool=<user pool ID>, the existing Cognito user pool for the environment's users",
     );
   }
   if (options.userPool !== undefined) {
     const region = USER_POOL_ID_PATTERN.exec(options.userPool)?.[1];
     if (region === undefined) {
-      throw new Error(`Invalid userPool "${options.userPool}": use a Cognito user pool ID, such as us-east-1_AbCd12345`);
+      throw new Error(`Invalid user-pool "${options.userPool}": use a Cognito user pool ID, such as us-east-1_AbCd12345`);
     }
     if (region !== config.region) {
-      throw new Error(`Invalid userPool "${options.userPool}": the pool must be in ${config.region}, the environment's region`);
+      throw new Error(`Invalid user-pool "${options.userPool}": the pool must be in ${config.region}, the environment's region`);
     }
   }
   if (options.certificate !== undefined && slug === undefined) {

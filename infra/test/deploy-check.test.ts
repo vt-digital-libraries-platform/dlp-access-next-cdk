@@ -85,7 +85,7 @@ describe('checkDeploy', () => {
     const plan = planApp({ backendEnv: 'dev', account, userPool: 'us-east-1_Other1234' });
     expect(check(plan, deployedBackend).warnings).toEqual([
       `Repoints the dev environment's user pool from ${userPool} to us-east-1_Other1234.`,
-      'Changes sign-in from VT-SSO-OIDC to COGNITO (was -c identityProvider left out?).',
+      'Changes sign-in from VT-SSO-OIDC to COGNITO (was -c identity-provider left out?).',
       expect.stringMatching(/frontends pick up a sign-in change only when each is redeployed/),
     ]);
   });
