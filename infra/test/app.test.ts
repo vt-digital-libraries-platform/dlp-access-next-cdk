@@ -61,9 +61,9 @@ describe('environment selection', () => {
   });
 
   test.each([
-    [undefined, /Missing CDK context: pass -c account/],
-    ['12345', /Invalid account "12345"/],
-    ['12345678901x', /Invalid account/],
+    [undefined, /Missing CDK context: pass -c aws-account-id/],
+    ['12345', /Invalid aws-account-id "12345"/],
+    ['12345678901x', /Invalid aws-account-id/],
   ])('rejects account %p', (badAccount, message) => {
     expect(() => buildApp(new App(), { backendEnv: 'dev', account: badAccount })).toThrow(message);
   });
@@ -436,14 +436,14 @@ describe('Auth stack', () => {
   });
 
   test.each([
-    ['AbCd12345', /Invalid user-pool "AbCd12345": use a Cognito user pool ID/],
+    ['AbCd12345', /Invalid user-pool-id "AbCd12345": use a Cognito user pool ID/],
     ['us-west-2_AbCd12345', /the pool must be in us-east-1/],
   ])('rejects user pool %p', (badUserPool, message) => {
     expect(() => buildApp(new App(), { backendEnv: 'dev', account, userPool: badUserPool })).toThrow(message);
   });
 
   test.each([{}, { frontendBranch: 'x', backend: 'provision' }])('requires a user pool with %p', (options) => {
-    expect(() => buildApp(new App(), { backendEnv: 'dev', account, ...options })).toThrow(/pass -c user-pool=<user pool ID>/);
+    expect(() => buildApp(new App(), { backendEnv: 'dev', account, ...options })).toThrow(/pass -c user-pool-id=<user pool ID>/);
   });
 });
 
@@ -492,7 +492,7 @@ describe('Web stack', () => {
     [{ backendEnv: 'dev', frontendBranch: '///' }, /Invalid branch/],
     [{ backendEnv: 'dev', frontendBranch: 'a'.repeat(33) }, /Invalid branch/],
     [{ backendEnv: 'dev', frontendBranch: 'main\x1b[2K' }, /Invalid frontend-branch "main\\u001b\[2K": a git branch name has no control characters/],
-    [{ backendEnv: 'dev', frontendBranch: 'x', userPool }, /-c user-pool only applies/],
+    [{ backendEnv: 'dev', frontendBranch: 'x', userPool }, /-c user-pool-id only applies/],
     [{ backendEnv: 'dev', frontendBranch: 'x', identityProvider: 'VT-SSO-OIDC' }, /-c identity-provider only applies/],
     [{ backendEnv: 'dev', userPool, certificate }, /-c certificate only applies with -c frontend-branch/],
     [{ backendEnv: 'dev', frontendBranch: 'x', certificate: 'not-an-arn' }, /Invalid certificate/],

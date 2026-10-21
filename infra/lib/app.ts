@@ -6,8 +6,8 @@ import { EnvironmentConfig, resolveEnvironment } from './environments';
 import { CERTIFICATE_ID, WebStack, branchSlug, webDomainName, webResourceName } from './web-stack';
 
 /**
- * CDK context, as passed with `-c backend-env=... -c account=... -c production=... -c frontend-branch=... -c backend=...
- * -c user-pool=... -c identity-provider=... -c certificate=...`.
+ * CDK context, as passed with `-c backend-env=... -c aws-account-id=... -c production=... -c frontend-branch=... -c backend=...
+ * -c user-pool-id=... -c identity-provider=... -c certificate=...`.
  */
 export interface AppOptions {
   readonly backendEnv?: string;
@@ -86,7 +86,8 @@ const BACKENDS = ['attach', 'provision'];
 const RENAMED_CONTEXT = [
   ['env', 'backend-env'],
   ['branch', 'frontend-branch'],
-  ['userPool', 'user-pool'],
+  ['account', 'aws-account-id'],
+  ['userPool', 'user-pool-id'],
   ['identityProvider', 'identity-provider'],
 ];
 const ACCOUNT_PATTERN = /^\d{12}$/;
@@ -126,11 +127,11 @@ export function optionsFromContext(context: (key: string) => unknown): AppOption
   }
   return {
     backendEnv: str('backend-env'),
-    account: str('account'),
+    account: str('aws-account-id'),
     production: booleanContext('production', context('production')),
     frontendBranch: str('frontend-branch'),
     backend: str('backend'),
-    userPool: str('user-pool'),
+    userPool: str('user-pool-id'),
     identityProvider: str('identity-provider'),
     certificate: str('certificate'),
   };
@@ -146,10 +147,10 @@ export function planApp(options: AppOptions): AppPlan {
   const production = options.production ?? false;
   const config = resolveEnvironment(options.backendEnv, production);
   if (options.account === undefined) {
-    throw new Error('Missing CDK context: pass -c account=<AWS account ID>');
+    throw new Error('Missing CDK context: pass -c aws-account-id=<AWS account ID>');
   }
   if (!ACCOUNT_PATTERN.test(options.account)) {
-    throw new Error(`Invalid account "${options.account}": use a 12-digit AWS account ID`);
+    throw new Error(`Invalid aws-account-id "${options.account}": use a 12-digit AWS account ID`);
   }
 
   if (options.frontendBranch === undefined && options.backend !== undefined) {
@@ -173,7 +174,7 @@ export function planApp(options: AppOptions): AppPlan {
     webResourceName(branch.slug);
   }
 
-  for (const [field, option] of [['userPool', 'user-pool'], ['identityProvider', 'identity-provider']] as const) {
+  for (const [field, option] of [['userPool', 'user-pool-id'], ['identityProvider', 'identity-provider']] as const) {
     if (options[field] !== undefined && !provision) {
       throw new Error(
         `-c ${option} only applies when the environment's stacks are deployed: drop -c frontend-branch, or add -c backend=provision`,
@@ -187,16 +188,16 @@ export function planApp(options: AppOptions): AppPlan {
   }
   if (provision && options.userPool === undefined) {
     throw new Error(
-      "Missing CDK context: pass -c user-pool=<user pool ID>, the existing Cognito user pool for the environment's users",
+      "Missing CDK context: pass -c user-pool-id=<user pool ID>, the existing Cognito user pool for the environment's users",
     );
   }
   if (options.userPool !== undefined) {
     const region = USER_POOL_ID_PATTERN.exec(options.userPool)?.[1];
     if (region === undefined) {
-      throw new Error(`Invalid user-pool "${options.userPool}": use a Cognito user pool ID, such as us-east-1_AbCd12345`);
+      throw new Error(`Invalid user-pool-id "${options.userPool}": use a Cognito user pool ID, such as us-east-1_AbCd12345`);
     }
     if (region !== config.region) {
-      throw new Error(`Invalid user-pool "${options.userPool}": the pool must be in ${config.region}, the environment's region`);
+      throw new Error(`Invalid user-pool-id "${options.userPool}": the pool must be in ${config.region}, the environment's region`);
     }
   }
   if (options.certificate !== undefined && !branch) {

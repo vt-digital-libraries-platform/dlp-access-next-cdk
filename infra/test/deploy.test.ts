@@ -10,11 +10,11 @@ describe('contextFromArgs', () => {
     expect(
       contextFromArgs([
         '-c', 'backend-env=dev',
-        '--context', 'account=123456789012',
+        '--context', 'aws-account-id=123456789012',
         '--context=frontend-branch=whunter/a=b',
         '--require-approval', 'never',
       ]),
-    ).toEqual({ 'backend-env': 'dev', account: '123456789012', 'frontend-branch': 'whunter/a=b' });
+    ).toEqual({ 'backend-env': 'dev', 'aws-account-id': '123456789012', 'frontend-branch': 'whunter/a=b' });
   });
 
   test.each([[['-c']], [['-c', 'backend-env']], [['-c', '=dev']]])('rejects %p', (args) => {
@@ -37,7 +37,7 @@ describe('profileFromArgs', () => {
 });
 
 describe('deployArgs', () => {
-  const context = ['-c', 'backend-env=dev', '-c', `account=${account}`];
+  const context = ['-c', 'backend-env=dev', '-c', `aws-account-id=${account}`];
 
   test('without --yes, passes every argument through', () => {
     expect(deployArgs([...context, '--require-approval', 'broadening'], undefined)).toEqual({
@@ -73,7 +73,7 @@ describe('deployArgs', () => {
 
 describe('optionsFromContext', () => {
   test('parses the production flag and leaves missing keys undefined', () => {
-    const context: Record<string, unknown> = { 'backend-env': 'dev', account, production: 'true' };
+    const context: Record<string, unknown> = { 'backend-env': 'dev', 'aws-account-id': account, production: 'true' };
     expect(optionsFromContext((key) => context[key])).toEqual({
       backendEnv: 'dev',
       account,
@@ -89,7 +89,8 @@ describe('optionsFromContext', () => {
   test.each([
     ['env', /-c env was renamed: use -c backend-env/],
     ['branch', /-c branch was renamed: use -c frontend-branch/],
-    ['userPool', /-c userPool was renamed: use -c user-pool/],
+    ['userPool', /-c userPool was renamed: use -c user-pool-id/],
+    ['account', /-c account was renamed: use -c aws-account-id/],
     ['identityProvider', /-c identityProvider was renamed: use -c identity-provider/],
   ])('rejects the old key %p', (key, message) => {
     expect(() => optionsFromContext((k) => (k === key ? 'dev' : undefined))).toThrow(message);
