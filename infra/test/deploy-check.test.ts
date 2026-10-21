@@ -1,19 +1,19 @@
 import { planApp } from '../lib/app';
 import { AwsCli, AwsError, checkDeploy, lookupDeployedState } from '../lib/deploy-check';
 
-const account = '123456789012';
-const userPool = 'us-east-1_AbCd12345';
-const certificate = `arn:aws:acm:us-east-1:${account}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
+const awsAccountId = '123456789012';
+const userPoolId = 'us-east-1_AbCd12345';
+const certificate = `arn:aws:acm:us-east-1:${awsAccountId}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
 
-const provision = planApp({ backendEnv: 'dev', account, userPool, identityProvider: 'VT-SSO-OIDC' });
-const attach = planApp({ backendEnv: 'dev', account, frontendBranch: 'whunter/Multi_Env', certificate });
+const provision = planApp({ backendEnv: 'dev', awsAccountId, userPoolId, identityProvider: 'VT-SSO-OIDC' });
+const attach = planApp({ backendEnv: 'dev', awsAccountId, frontendBranch: 'whunter/Multi_Env', certificate });
 
 /**
  * A fake AWS CLI: `resources` maps "service command name" to the parsed
  * output, or to an Error to throw (a command without a name argument is just
  * "service command"). Anything missing is "not found".
  */
-function fakeAws(resources: Record<string, unknown>, caller = account): AwsCli {
+function fakeAws(resources: Record<string, unknown>, caller = awsAccountId): AwsCli {
   return (args) => {
     const [service, command] = args;
     if (service === 'sts') {
@@ -41,7 +41,7 @@ const deployedBackend = {
   'cloudformation describe-stacks DlpAccessNext-dev-Data': stack('UPDATE_COMPLETE'),
   'cloudformation describe-stacks DlpAccessNext-dev-Api': stack('UPDATE_COMPLETE'),
   'cloudformation describe-stacks DlpAccessNext-dev-Auth': stack('CREATE_COMPLETE', {
-    UserPoolId: userPool,
+    UserPoolId: userPoolId,
     IdentityProvider: 'VT-SSO-OIDC',
   }),
   'opensearch describe-domain dlpnext-dev': domain('t3.small.search', 1),
@@ -82,16 +82,16 @@ describe('checkDeploy', () => {
   });
 
   test('warns when the user pool or identity provider changes', () => {
-    const plan = planApp({ backendEnv: 'dev', account, userPool: 'us-east-1_Other1234' });
+    const plan = planApp({ backendEnv: 'dev', awsAccountId, userPoolId: 'us-east-1_Other1234' });
     expect(check(plan, deployedBackend).warnings).toEqual([
-      `Repoints the dev environment's user pool from ${userPool} to us-east-1_Other1234.`,
+      `Repoints the dev environment's user pool from ${userPoolId} to us-east-1_Other1234.`,
       'Changes sign-in from VT-SSO-OIDC to COGNITO (was -c identity-provider left out?).',
       expect.stringMatching(/frontends pick up a sign-in change only when each is redeployed/),
     ]);
   });
 
   test('warns when production is redeployed without -c production=true', () => {
-    const plan = planApp({ backendEnv: 'production', account, userPool, identityProvider: 'VT-SSO-OIDC' });
+    const plan = planApp({ backendEnv: 'production', awsAccountId, userPoolId, identityProvider: 'VT-SSO-OIDC' });
     const { warnings } = check(plan, {
       'cloudformation describe-stacks DlpAccessNext-production-Data': stack('UPDATE_COMPLETE'),
       'opensearch describe-domain dlpnext-production': domain('m7g.medium.search', 3),

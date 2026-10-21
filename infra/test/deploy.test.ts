@@ -1,9 +1,9 @@
 import { optionsFromContext, planApp } from '../lib/app';
 import { contextFromArgs, deployArgs, describePlan, isConfirmed, productionWarning, profileFromArgs } from '../lib/deploy';
 
-const account = '123456789012';
-const userPool = 'us-east-1_AbCd12345';
-const certificate = `arn:aws:acm:us-east-1:${account}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
+const awsAccountId = '123456789012';
+const userPoolId = 'us-east-1_AbCd12345';
+const certificate = `arn:aws:acm:us-east-1:${awsAccountId}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
 
 describe('contextFromArgs', () => {
   test('reads -c, --context and --context= forms and ignores other flags', () => {
@@ -37,7 +37,7 @@ describe('profileFromArgs', () => {
 });
 
 describe('deployArgs', () => {
-  const context = ['-c', 'backend-env=dev', '-c', `aws-account-id=${account}`];
+  const context = ['-c', 'backend-env=dev', '-c', `aws-account-id=${awsAccountId}`];
 
   test('without --yes, passes every argument through', () => {
     expect(deployArgs([...context, '--require-approval', 'broadening'], undefined)).toEqual({
@@ -73,14 +73,14 @@ describe('deployArgs', () => {
 
 describe('optionsFromContext', () => {
   test('parses the production flag and leaves missing keys undefined', () => {
-    const context: Record<string, unknown> = { 'backend-env': 'dev', 'aws-account-id': account, production: 'true' };
+    const context: Record<string, unknown> = { 'backend-env': 'dev', 'aws-account-id': awsAccountId, production: 'true' };
     expect(optionsFromContext((key) => context[key])).toEqual({
       backendEnv: 'dev',
-      account,
+      awsAccountId,
       production: true,
       frontendBranch: undefined,
       backend: undefined,
-      userPool: undefined,
+      userPoolId: undefined,
       identityProvider: undefined,
       certificate: undefined,
     });
@@ -100,7 +100,7 @@ describe('optionsFromContext', () => {
 describe('describePlan', () => {
   test('lists every option, with defaults applied, and the stacks', () => {
     const text = describePlan(
-      planApp({ backendEnv: 'f-search', account, userPool, frontendBranch: 'whunter/Multi_Env', backend: 'provision', certificate }),
+      planApp({ backendEnv: 'f-search', awsAccountId, userPoolId, frontendBranch: 'whunter/Multi_Env', backend: 'provision', certificate }),
     );
     expect(text).toMatch(/Environment\s+f-search/);
     expect(text).toMatch(/Account\s+123456789012/);
@@ -119,7 +119,7 @@ describe('describePlan', () => {
   });
 
   test('shows production sizing, and no branch or backend for an environment deploy', () => {
-    const text = describePlan(planApp({ backendEnv: 'production', account, userPool, production: true }));
+    const text = describePlan(planApp({ backendEnv: 'production', awsAccountId, userPoolId, production: true }));
     expect(text).toMatch(/Production\s+true \(search: 3 x m7g\.medium\.search across 3 AZ; web: t3\.medium\)/);
     expect(text).toMatch(/Branch\s+\(none\)/);
     expect(text).toMatch(/Backend\s+\(none\)/);
@@ -132,7 +132,7 @@ describe('describePlan', () => {
   });
 
   test('attach deploys only the Web stack', () => {
-    const text = describePlan(planApp({ backendEnv: 'dev', account, frontendBranch: 'main', certificate }));
+    const text = describePlan(planApp({ backendEnv: 'dev', awsAccountId, frontendBranch: 'main', certificate }));
     expect(text).toMatch(/Backend\s+attach/);
     expect(text).toMatch(/User pool\s+\(the environment's\)/);
     expect(text).toMatch(/Identity provider\s+\(the environment's\)/);
@@ -143,10 +143,10 @@ describe('describePlan', () => {
     const text = describePlan(
       planApp({
         backendEnv: 'dev',
-        account,
+        awsAccountId,
         frontendBranch: 'main',
         backend: 'provision',
-        userPool,
+        userPoolId,
         identityProvider: 'VT-SSO-OIDC',
         certificate,
       }),
@@ -158,18 +158,18 @@ describe('describePlan', () => {
 
 describe('productionWarning', () => {
   test('warns for the production environment, naming the account', () => {
-    const warning = productionWarning(planApp({ backendEnv: 'production', account, userPool, production: true }));
+    const warning = productionWarning(planApp({ backendEnv: 'production', awsAccountId, userPoolId, production: true }));
     expect(warning).toMatch(/WARNING: THIS DEPLOYS TO THE PRODUCTION ENVIRONMENT/);
     expect(warning).toMatch(/Account 123456789012/);
     expect(warning).not.toMatch(/production=true is not set/);
   });
 
   test('also warns when production sizing is off', () => {
-    expect(productionWarning(planApp({ backendEnv: 'production', account, userPool }))).toMatch(/production=true is not set/);
+    expect(productionWarning(planApp({ backendEnv: 'production', awsAccountId, userPoolId }))).toMatch(/production=true is not set/);
   });
 
   test.each(['dev', 'pre-production', 'f-production'])('says nothing for %p', (env) => {
-    expect(productionWarning(planApp({ backendEnv: env, account, userPool, production: true }))).toBeUndefined();
+    expect(productionWarning(planApp({ backendEnv: env, awsAccountId, userPoolId, production: true }))).toBeUndefined();
   });
 });
 

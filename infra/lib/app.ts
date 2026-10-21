@@ -12,7 +12,7 @@ import { CERTIFICATE_ID, WebStack, branchSlug, webDomainName, webResourceName } 
 export interface AppOptions {
   readonly backendEnv?: string;
   /** AWS account ID to deploy the environment's stacks to. */
-  readonly account?: string;
+  readonly awsAccountId?: string;
   /**
    * Production sizing: three OpenSearch nodes instead of one, and a larger
    * Beanstalk instance. Defaults to false.
@@ -31,7 +31,7 @@ export interface AppOptions {
    * Required when the environment's stacks are being deployed, and only
    * applies then.
    */
-  readonly userPool?: string;
+  readonly userPoolId?: string;
   /**
    * Name of the federated identity provider on the user pool that users sign
    * in through, such as `VT-SSO-OIDC`. Omit for the pool's own users. Applies
@@ -50,12 +50,12 @@ export interface AppOptions {
 /** The validated options, with defaults applied, and the stacks they produce. */
 export interface AppPlan {
   readonly config: EnvironmentConfig;
-  readonly account: string;
+  readonly awsAccountId: string;
   readonly production: boolean;
   /** The branch's Web stack; undefined without `-c frontend-branch`. */
   readonly frontend?: FrontendPlan;
   /** undefined when the Auth stack isn't deployed. */
-  readonly userPool?: string;
+  readonly userPoolId?: string;
   /** undefined when the Auth stack isn't deployed, or users are the pool's own. */
   readonly identityProvider?: string;
   readonly dataStackName?: string;
@@ -127,11 +127,11 @@ export function optionsFromContext(context: (key: string) => unknown): AppOption
   }
   return {
     backendEnv: str('backend-env'),
-    account: str('aws-account-id'),
+    awsAccountId: str('aws-account-id'),
     production: booleanContext('production', context('production')),
     frontendBranch: str('frontend-branch'),
     backend: str('backend'),
-    userPool: str('user-pool-id'),
+    userPoolId: str('user-pool-id'),
     identityProvider: str('identity-provider'),
     certificate: str('certificate'),
   };
@@ -146,11 +146,11 @@ export function optionsFromContext(context: (key: string) => unknown): AppOption
 export function planApp(options: AppOptions): AppPlan {
   const production = options.production ?? false;
   const config = resolveEnvironment(options.backendEnv, production);
-  if (options.account === undefined) {
+  if (options.awsAccountId === undefined) {
     throw new Error('Missing CDK context: pass -c aws-account-id=<AWS account ID>');
   }
-  if (!ACCOUNT_PATTERN.test(options.account)) {
-    throw new Error(`Invalid aws-account-id "${options.account}": use a 12-digit AWS account ID`);
+  if (!ACCOUNT_PATTERN.test(options.awsAccountId)) {
+    throw new Error(`Invalid aws-account-id "${options.awsAccountId}": use a 12-digit AWS account ID`);
   }
 
   if (options.frontendBranch === undefined && options.backend !== undefined) {
@@ -174,7 +174,7 @@ export function planApp(options: AppOptions): AppPlan {
     webResourceName(branch.slug);
   }
 
-  for (const [field, option] of [['userPool', 'user-pool-id'], ['identityProvider', 'identity-provider']] as const) {
+  for (const [field, option] of [['userPoolId', 'user-pool-id'], ['identityProvider', 'identity-provider']] as const) {
     if (options[field] !== undefined && !provision) {
       throw new Error(
         `-c ${option} only applies when the environment's stacks are deployed: drop -c frontend-branch, or add -c backend=provision`,
@@ -186,18 +186,18 @@ export function planApp(options: AppOptions): AppPlan {
       `Invalid identity-provider "${options.identityProvider}": use the name of an identity provider on the user pool, such as VT-SSO-OIDC`,
     );
   }
-  if (provision && options.userPool === undefined) {
+  if (provision && options.userPoolId === undefined) {
     throw new Error(
       "Missing CDK context: pass -c user-pool-id=<user pool ID>, the existing Cognito user pool for the environment's users",
     );
   }
-  if (options.userPool !== undefined) {
-    const region = USER_POOL_ID_PATTERN.exec(options.userPool)?.[1];
+  if (options.userPoolId !== undefined) {
+    const region = USER_POOL_ID_PATTERN.exec(options.userPoolId)?.[1];
     if (region === undefined) {
-      throw new Error(`Invalid user-pool-id "${options.userPool}": use a Cognito user pool ID, such as us-east-1_AbCd12345`);
+      throw new Error(`Invalid user-pool-id "${options.userPoolId}": use a Cognito user pool ID, such as us-east-1_AbCd12345`);
     }
     if (region !== config.region) {
-      throw new Error(`Invalid user-pool-id "${options.userPool}": the pool must be in ${config.region}, the environment's region`);
+      throw new Error(`Invalid user-pool-id "${options.userPoolId}": the pool must be in ${config.region}, the environment's region`);
     }
   }
   if (options.certificate !== undefined && !branch) {
@@ -208,24 +208,24 @@ export function planApp(options: AppOptions): AppPlan {
     if (region === undefined) {
       throw new Error(`Invalid certificate "${options.certificate}": use an ACM certificate ARN`);
     }
-    if (region !== config.region || certificateAccount !== options.account) {
+    if (region !== config.region || certificateAccount !== options.awsAccountId) {
       throw new Error(
-        `Invalid certificate "${options.certificate}": the certificate must be in account ${options.account} and ${config.region}, the environment's region`,
+        `Invalid certificate "${options.certificate}": the certificate must be in account ${options.awsAccountId} and ${config.region}, the environment's region`,
       );
     }
   }
   return {
     config,
-    account: options.account,
+    awsAccountId: options.awsAccountId,
     production,
     frontend: branch && {
       ...branch,
       backend,
       appUrl: `https://${webDomainName(branch.slug)}`,
-      certificate: options.certificate ?? `arn:aws:acm:${config.region}:${options.account}:certificate/${CERTIFICATE_ID}`,
+      certificate: options.certificate ?? `arn:aws:acm:${config.region}:${options.awsAccountId}:certificate/${CERTIFICATE_ID}`,
       stackName: `DlpAccessNext-Web-${branch.slug}`,
     },
-    userPool: options.userPool,
+    userPoolId: options.userPoolId,
     identityProvider: options.identityProvider,
     dataStackName: provision ? `${prefix}-Data` : undefined,
     apiStackName: provision ? `${prefix}-Api` : undefined,
@@ -237,7 +237,7 @@ export function planApp(options: AppOptions): AppPlan {
 export function buildApp(app: App, options: AppOptions): AppStacks {
   const plan = planApp(options);
   const { config } = plan;
-  const env = { account: plan.account, region: config.region };
+  const env = { account: plan.awsAccountId, region: config.region };
 
   let data: DataStack | undefined;
   let api: ApiStack | undefined;
@@ -252,11 +252,11 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
   }
 
   let auth: AuthStack | undefined;
-  if (plan.authStackName && plan.userPool) {
+  if (plan.authStackName && plan.userPoolId) {
     auth = new AuthStack(app, plan.authStackName, {
       env,
       config,
-      userPoolId: plan.userPool,
+      userPoolId: plan.userPoolId,
       identityProvider: plan.identityProvider,
     });
   }

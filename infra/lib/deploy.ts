@@ -79,7 +79,7 @@ export function describePlan(plan: AppPlan): string {
   const stacks = [plan.dataStackName, plan.apiStackName, plan.authStackName, plan.frontend?.stackName].filter(Boolean);
   // Without an Auth stack, the Web stack uses whichever pool and provider the environment already has.
   const attached = "(the environment's)";
-  const userPool = plan.userPool ?? attached;
+  const userPool = plan.userPoolId ?? attached;
   const identityProvider = !plan.authStackName
     ? attached
     : plan.identityProvider
@@ -87,7 +87,7 @@ export function describePlan(plan: AppPlan): string {
       : "(none: the pool's own users)";
   const rows: [string, string][] = [
     ['Environment', config.name],
-    ['Account', plan.account],
+    ['Account', plan.awsAccountId],
     ['Region', config.region],
     [
       'Production',
@@ -115,7 +115,7 @@ export function productionWarning(plan: AppPlan): string | undefined {
   const lines = [
     rule,
     '!!  WARNING: THIS DEPLOYS TO THE PRODUCTION ENVIRONMENT',
-    `!!  Account ${plan.account}. Check it is the production account.`,
+    `!!  Account ${plan.awsAccountId}. Check it is the production account.`,
   ];
   if (!plan.production) {
     lines.push('!!  -c production=true is not set: this uses the small, non-production sizing.');

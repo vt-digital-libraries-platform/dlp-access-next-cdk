@@ -49,7 +49,7 @@ export function lookupDeployedState(plan: AppPlan, aws: AwsCli): DeployedState {
   };
 
   const callerAccount = find('credentials', () => aws(['sts', 'get-caller-identity']).Account as string);
-  if (callerAccount !== plan.account) {
+  if (callerAccount !== plan.awsAccountId) {
     return { callerAccount, stacks: {}, existingTables: [], errors };
   }
 
@@ -110,9 +110,9 @@ export interface DeployCheck {
 /** Compares the plan with what is deployed. */
 export function checkDeploy(plan: AppPlan, state: DeployedState): DeployCheck {
   const warnings = [...state.errors.map((error) => `Couldn't check ${error}`)];
-  if (state.callerAccount !== undefined && state.callerAccount !== plan.account) {
+  if (state.callerAccount !== undefined && state.callerAccount !== plan.awsAccountId) {
     warnings.push(
-      `The credentials are for account ${state.callerAccount}, not ${plan.account}: the deploy will fail. Nothing else was checked.`,
+      `The credentials are for account ${state.callerAccount}, not ${plan.awsAccountId}: the deploy will fail. Nothing else was checked.`,
     );
     return { stacks: [], warnings };
   }
@@ -162,8 +162,8 @@ export function checkDeploy(plan: AppPlan, state: DeployedState): DeployCheck {
   const auth = plan.authStackName ? state.stacks[plan.authStackName] : undefined;
   if (auth && !willCreate(auth)) {
     const pool = auth.outputs.UserPoolId;
-    if (pool !== undefined && pool !== plan.userPool) {
-      warnings.push(`Repoints the ${plan.config.name} environment's user pool from ${pool} to ${plan.userPool}.`);
+    if (pool !== undefined && pool !== plan.userPoolId) {
+      warnings.push(`Repoints the ${plan.config.name} environment's user pool from ${pool} to ${plan.userPoolId}.`);
     }
     const provider = auth.outputs.IdentityProvider;
     const plannedProvider = plan.identityProvider ?? COGNITO_DIRECTORY;
@@ -174,7 +174,7 @@ export function checkDeploy(plan: AppPlan, state: DeployedState): DeployCheck {
           '.',
       );
     }
-    if ((pool !== undefined && pool !== plan.userPool) || (provider !== undefined && provider !== plannedProvider)) {
+    if ((pool !== undefined && pool !== plan.userPoolId) || (provider !== undefined && provider !== plannedProvider)) {
       warnings.push("The environment's frontends pick up a sign-in change only when each is redeployed.");
     }
   }
