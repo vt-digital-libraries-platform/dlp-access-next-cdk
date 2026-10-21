@@ -85,16 +85,6 @@ describe('optionsFromContext', () => {
       certificate: undefined,
     });
   });
-
-  test.each([
-    ['env', /-c env was renamed: use -c backend-env/],
-    ['branch', /-c branch was renamed: use -c frontend-branch/],
-    ['userPool', /-c userPool was renamed: use -c user-pool-id/],
-    ['account', /-c account was renamed: use -c aws-account-id/],
-    ['identityProvider', /-c identityProvider was renamed: use -c identity-provider/],
-  ])('rejects the old key %p', (key, message) => {
-    expect(() => optionsFromContext((k) => (k === key ? 'dev' : undefined))).toThrow(message);
-  });
 });
 
 describe('describePlan', () => {

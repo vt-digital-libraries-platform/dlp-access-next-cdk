@@ -5,44 +5,30 @@ import { DataStack } from './data-stack';
 import { EnvironmentConfig, resolveEnvironment } from './environments';
 import { CERTIFICATE_ID, WebStack, branchSlug, webDomainName, webResourceName } from './web-stack';
 
-/**
- * CDK context, as passed with `-c backend-env=... -c aws-account-id=... -c production=... -c frontend-branch=... -c backend=...
- * -c user-pool-id=... -c identity-provider=... -c certificate=...`.
- */
+
 export interface AppOptions {
   readonly backendEnv?: string;
-  /** AWS account ID to deploy the environment's stacks to. */
   readonly awsAccountId?: string;
   /**
    * Production sizing: three OpenSearch nodes instead of one, and a larger
    * Beanstalk instance. Defaults to false.
    */
   readonly production?: boolean;
-  /** Git branch to deploy the Next.js app for. Omit to deploy only the environment. */
+  /** dlp-access-next Git branch to deploy. Omit to deploy only the environment. */
   readonly frontendBranch?: string;
   /**
-   * With a branch: `attach` (the default) deploys only the Web stack, onto
-   * the environment's already-deployed stacks. `provision` also deploys the
-   * environment's Data and Api stacks, before the Web stack.
+   * `attach` | `provision`
+   * Specifies whether a new backend should be created OR frontend should be attached to existing backend 
    */
   readonly backend?: string;
-  /**
-   * ID of the existing Cognito user pool for the environment to use.
-   * Required when the environment's stacks are being deployed, and only
-   * applies then.
-   */
   readonly userPoolId?: string;
   /**
-   * Name of the federated identity provider on the user pool that users sign
-   * in through, such as `VT-SSO-OIDC`. Omit for the pool's own users. Applies
-   * only when the environment's stacks are being deployed.
+   * Name of the federated identity provider in the Cognito user pool that users sign
+   * in through, eg: `VT-SSO-OIDC`.
    */
   readonly identityProvider?: string;
   /**
-   * With a branch: ARN of the existing ACM certificate, in the
-   * environment's account and region, that covers the branch's domain name
-   * (`*.dlp-access-dev.dlp.cloud.lib.vt.edu`). Defaults to the certificate
-   * `CERTIFICATE_ID` in that account and region.
+   * ARN of the existing ACM certificate
    */
   readonly certificate?: string;
 }
@@ -52,11 +38,8 @@ export interface AppPlan {
   readonly config: EnvironmentConfig;
   readonly awsAccountId: string;
   readonly production: boolean;
-  /** The branch's Web stack; undefined without `-c frontend-branch`. */
   readonly frontend?: FrontendPlan;
-  /** undefined when the Auth stack isn't deployed. */
   readonly userPoolId?: string;
-  /** undefined when the Auth stack isn't deployed, or users are the pool's own. */
   readonly identityProvider?: string;
   readonly dataStackName?: string;
   readonly apiStackName?: string;
@@ -64,11 +47,9 @@ export interface AppPlan {
 }
 
 export interface FrontendPlan {
-  /** The git branch name as given with `-c frontend-branch`. */
   readonly branch: string;
   readonly slug: string;
   readonly backend: string;
-  /** The branch's public HTTPS origin. */
   readonly appUrl: string;
   readonly certificate: string;
   readonly stackName: string;
@@ -82,14 +63,6 @@ export interface AppStacks {
 }
 
 const BACKENDS = ['attach', 'provision'];
-// Context keys that were renamed, with their new names.
-const RENAMED_CONTEXT = [
-  ['env', 'backend-env'],
-  ['branch', 'frontend-branch'],
-  ['account', 'aws-account-id'],
-  ['userPool', 'user-pool-id'],
-  ['identityProvider', 'identity-provider'],
-];
 const ACCOUNT_PATTERN = /^\d{12}$/;
 // <region>_<id>, e.g. us-east-1_AbCd12345
 const USER_POOL_ID_PATTERN = /^([a-z0-9-]+)_[0-9a-zA-Z]+$/;
@@ -120,11 +93,6 @@ export function optionsFromContext(context: (key: string) => unknown): AppOption
     const value = context(key);
     return value === undefined ? undefined : String(value);
   };
-  for (const [old, renamed] of RENAMED_CONTEXT) {
-    if (context(old) !== undefined) {
-      throw new Error(`-c ${old} was renamed: use -c ${renamed}`);
-    }
-  }
   return {
     backendEnv: str('backend-env'),
     awsAccountId: str('aws-account-id'),
