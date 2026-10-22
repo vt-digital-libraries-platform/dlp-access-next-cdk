@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // AWS Lambda code, deployed separately (see src/app/_lambda/README.md)
     "src/app/_lambda/**",
+    // CDK synth output, including bundled Lambda assets.
+    "infra/cdk.out/**",
   ]),
 ]);
 

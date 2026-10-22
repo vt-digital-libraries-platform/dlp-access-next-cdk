@@ -7,6 +7,7 @@ import { webResourceName } from './web-stack';
  * Runs an AWS CLI command and returns its parsed JSON output. Throws an
  * `AwsError` carrying the CLI's message when the command fails.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped JSON from the CLI
 export type AwsCli = (args: string[]) => any;
 
 export class AwsError extends Error {}
