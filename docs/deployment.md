@@ -5,18 +5,13 @@ How to create, update and destroy backends and frontends with the CDK app in `in
 ## Terms
 
 - **Backend**: one environment's three stacks. `DlpAccessNext-<env>-Data` holds the DynamoDB tables and the OpenSearch domain. `DlpAccessNext-<env>-Api` holds the AppSync API, the streaming Lambda and the environment's Beanstalk instance role. `DlpAccessNext-<env>-Auth` records which existing Cognito user pool and identity provider the environment uses.
+- **Backend environment tiers**: `dev`, `pre-production` or `production`. These keep their tables when destroyed.
+- **Backend feature environments**: `f-<slug>`, such as `f-search`. It uses dev's settings, but its tables are deleted with its stacks.
 - **Frontend**: one git branch's `DlpAccessNext-Web-<slug>` stack, an Elastic Beanstalk application and environment running the Next.js app against one backend. The slug is the branch name in lowercase, with every run of other characters replaced by `-` (`whunter/Multi_Env` becomes `whunter-multi-env`). The branch is served at `https://<slug>.dlp-access-dev.dlp.cloud.lib.vt.edu`.
-- **Tier**: `dev`, `pre-production` or `production`. These keep their tables when destroyed.
-- **Feature environment**: `f-<slug>`, such as `f-search`. It uses dev's settings, but its tables are deleted with its stacks.
 
 ## Before you start
 
 Run every command from `infra/` with credentials for the target account. `production` lives in a separate account from the others.
-
-```bash
-cd infra
-ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-```
 
 Placeholders used below:
 
@@ -46,7 +41,19 @@ Notes that apply to every command:
 
 ---
 
+## First get the logged in account number 
+```bash
+cd infra
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+```
 ## Create
+
+### New feature backend, no frontend
+
+```bash
+npm run deploy -- -c backend-env=f-<slug> -c aws-account-id=$ACCOUNT \
+  -c user-pool-id=<user pool ID> -c identity-provider=VT-SSO-OIDC
+```
 
 ### New tier backend, no frontend (`dev`, `pre-production`, `production`)
 
@@ -62,25 +69,6 @@ npm run deploy -- -c backend-env=production -c aws-account-id=$ACCOUNT -c produc
   -c user-pool-id=<user pool ID> -c identity-provider=VT-SSO-OIDC
 ```
 
-Notes:
-
-- Leaving out `-c frontend-branch` means the app contains only the three backend stacks.
-- Tier tables have deletion protection and point-in-time recovery turned on, and are kept if the stacks are destroyed. **If the tier was destroyed before, its `<Model>-dlpnext-<env>` tables still exist and this deploy fails** because the names are taken. Either delete the old tables first (turn off deletion protection, then delete), or import them into the Data stack.
-- The OpenSearch domain starts empty. Only rows written after the Api stack deploys are streamed to it; nothing reindexes rows that already exist.
-
-### New feature backend, no frontend
-
-```bash
-npm run deploy -- -c backend-env=f-<slug> -c aws-account-id=$ACCOUNT \
-  -c user-pool-id=<user pool ID> -c identity-provider=VT-SSO-OIDC
-```
-
-Notes:
-
-- Its tables are created empty and deleted when the stacks are destroyed.
-- Names are lowercase and at most 20 characters including `f-`, because the OpenSearch domain is `dlpnext-<env>`.
-- A feature backend can use the same user pool as dev.
-
 ### New frontend attached to an existing backend
 
 Check out the branch, then:
@@ -93,10 +81,9 @@ Notes:
 
 - The backend's Api and Auth stacks must already be deployed. If they aren't, the deploy fails with "Unable to fetch parameters".
 - Don't pass `-c user-pool-id` or `-c identity-provider`: they are rejected here. The frontend reads them from the backend's SSM parameters.
-- **The deploy ships the commit at HEAD, not your working tree.** Commit what you want deployed first. Uncommitted and untracked changes are left out, and `npm run deploy` lists them before it asks to continue. The bundle leaves out `infra`, docs, Markdown files, `.scratch` and `.env*` files. Beanstalk builds it on the instance. The application version's description records the commit.
+- **The deploy ships the commit at HEAD, not your working tree.** Commit what you want deployed first. Uncommitted and untracked changes are left out.
 - The certificate defaults to the stored wildcard certificate for `*.dlp-access-dev.dlp.cloud.lib.vt.edu`. Pass `-c certificate=<ACM certificate ARN>` only to use a different one, which must be in the same account and region.
-- The frontend creates its own Cognito app client on the environment's pool. The provider named by the backend's `identity-provider` must exist on the pool, or creating the client fails.
-- The slug can be at most 32 characters. If the branch name is longer, pass a shorter `-c frontend-branch=<name>`.
+- The frontend creates its own Cognito app-client on the environment's pool. The provider named by the backend's `identity-provider` must exist on the pool, or creating the client fails.
 
 ### New backend and new frontend together
 
@@ -109,51 +96,9 @@ npm run deploy -- -c backend-env=<env> -c aws-account-id=$ACCOUNT \
 Notes:
 
 - `-c backend=provision` adds the environment's Data, Api and Auth stacks to the app. They deploy first and the Web stack follows.
-- The notes for each half apply: retained tier tables block a re-create, and only the commit at HEAD is deployed.
+- `-c backend=attach` provisions the Web stack and attaches it to the existing backend, named in `-c backend-env=`
 - Add `-c production=true` for production.
 
----
-
-## Update / redeploy
-
-A redeploy uses the same command as the create. CloudFormation applies only what changed.
-
-### Backend
-
-```bash
-npm run deploy -- -c backend-env=<env> -c aws-account-id=$ACCOUNT \
-  -c user-pool-id=<user pool ID> -c identity-provider=VT-SSO-OIDC
-```
-
-Notes:
-
-- Pass the same `-c user-pool-id`, `-c identity-provider` and (for production) `-c production=true` as before. A different pool ID repoints the environment. A missing `identity-provider` falls back to `COGNITO`. A missing `production=true` shrinks the domain and instance type.
-- Frontends attached to the backend read the user pool and identity provider when they deploy. After changing either, redeploy each frontend so it picks up the change.
-- Resolver, schema and Lambda changes take effect when the Api stack updates. No frontend redeploy is needed unless the Next.js code changed too.
-- OpenSearch index templates apply only when an index is created. Changed mappings don't reach an existing index until it is deleted and reindexed.
-
-### Frontend
-
-Check out the branch, then:
-
-```bash
-npm run deploy -- -c backend-env=<env> -c aws-account-id=$ACCOUNT -c frontend-branch=$(git branch --show-current)
-```
-
-Notes:
-
-- This uploads the commit at HEAD as a new application version. Commit first: uncommitted changes aren't deployed. If HEAD's files haven't changed since the last deploy, the bundle is the same and the app isn't redeployed.
-- Deploying the same branch with a different `backend-env` repoints its existing frontend to that backend.
-
-### Both
-
-```bash
-npm run deploy -- -c backend-env=<env> -c aws-account-id=$ACCOUNT \
-  -c frontend-branch=$(git branch --show-current) -c backend=provision \
-  -c user-pool-id=<user pool ID> -c identity-provider=VT-SSO-OIDC
-```
-
-This is the same command as creating both. Its backend stacks are the environment's own stacks, so it updates them in place. Pass the same flags as before.
 
 ---
 
@@ -239,40 +184,3 @@ npx cdk destroy --all --force -c backend-env=<env> -c aws-account-id=$ACCOUNT â€
 - **It only works in CI.** The `CI` environment variable must be `true` or `1`; GitHub Actions sets it. Otherwise the script stops with `--yes only applies in CI (CI=true); run without it to confirm the deploy`. On your own machine, answer the prompt.
 - **Production isn't treated differently.** `--yes` skips the production prompt too. The approval for production belongs to the pipeline, such as required reviewers on a GitHub Environment named `production`.
 
-### Notes for pipelines
-
-- **The deployed commit is the one the job checked out.** A frontend deploy bundles HEAD with `git archive`, so the job needs a git checkout, not just the files. On a `pull_request` event, `actions/checkout` checks out a merge commit by default. To deploy the branch's own commit, check out `${{ github.event.pull_request.head.sha }}`. A shallow clone is fine.
-- **The branch name can't come from `git branch --show-current`.** Checkouts in CI are on a detached HEAD, so that command prints nothing. On GitHub Actions, use `-c frontend-branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}`: the source branch for pull requests, and the pushed branch otherwise.
-- **The job's role needs to look up the hosted zone.** At synth time, the frontend finds `dlp.cloud.lib.vt.edu` in Route 53. The lookup is cached in `infra/cdk.context.json`, which isn't committed, so every CI run does it.
-- **Keep the context values in pipeline config.** Store `backend-env`, `user-pool-id`, `identity-provider` and, for production, `production=true` as each GitHub Environment's variables, not in the workflow's command line. The redeploy rules still apply: leaving one out changes the environment.
-- **Run one deploy per environment at a time,** for example with `concurrency: deploy-<env>`.
-- **Use short-lived credentials,** such as a role the job assumes through GitHub OIDC, with production's role trusting only the `production` Environment.
-
-### Example: deploy a branch's frontend on push
-
-```yaml
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    environment: dev # add required reviewers for production
-    concurrency: deploy-dev
-    permissions:
-      id-token: write # for OIDC
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
-          aws-region: us-east-1
-      - working-directory: infra
-        run: |
-          npm ci
-          npm run deploy -- --yes -c backend-env=dev -c aws-account-id=${{ vars.AWS_ACCOUNT_ID }} \
-            -c frontend-branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}
-```
-
-For a backend deploy, replace `-c frontend-branch=â€¦` with `-c user-pool-id=${{ vars.USER_POOL_ID }} -c identity-provider=VT-SSO-OIDC`. Add `-c production=true` in the production job.
