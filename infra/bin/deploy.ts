@@ -25,6 +25,7 @@ import { sourceCommit, uncommittedChanges } from "../lib/web-stack";
 
 const INFRA_DIR = path.join(__dirname, "..");
 
+// prompts user for approval
 function ask(question: string): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -55,6 +56,7 @@ async function main(): Promise<number> {
     ...contextFromArgs(args),
   };
 
+  // generate app plan. warn user if targeting production
   const plan = planApp(optionsFromContext((key) => context[key]));
   const warning = productionWarning(plan);
   // Bold red on a terminal.
@@ -75,6 +77,7 @@ async function main(): Promise<number> {
     }
   }
 
+  // inspect plan, raise warnings
   let warned = false;
   if (check) {
     const region = plan.config.region;
@@ -112,6 +115,7 @@ async function main(): Promise<number> {
     }
   }
 
+  // user prompt implementation
   if (yes) {
     console.log("Confirmed by --yes (CI).");
   } else {
@@ -125,6 +129,8 @@ async function main(): Promise<number> {
       return 1;
     }
   }
+
+  // do it
   const result = spawnSync("npx", ["cdk", "deploy", "--all", ...args], {
     cwd: INFRA_DIR,
     stdio: "inherit",
