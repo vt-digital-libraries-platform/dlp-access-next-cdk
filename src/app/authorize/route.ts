@@ -1,5 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { LOGIN_COOKIE, SESSION_COOKIE, baseUrl, getClient, redirectUri, safeReturnTo } from "@/lib/auth";
+import {
+  LOGIN_COOKIE,
+  SESSION_COOKIE,
+  baseUrl,
+  getClient,
+  redirectUri,
+  safeReturnTo,
+} from "@/lib/auth";
 
 function failure(message: string) {
   return new NextResponse(`Sign-in failed: ${message}`, { status: 400 });
@@ -37,7 +44,9 @@ export async function GET(request: NextRequest) {
   if (!idToken || !expiresAt) return failure("Cognito returned no ID token.");
 
   const base = baseUrl(request);
-  const response = NextResponse.redirect(`${base}${safeReturnTo(login.returnTo)}`);
+  const response = NextResponse.redirect(
+    `${base}${safeReturnTo(login.returnTo)}`,
+  );
   response.cookies.set(SESSION_COOKIE, idToken, {
     httpOnly: true,
     sameSite: "lax",

@@ -11,8 +11,8 @@ export default function AppSyncQueriesError({ reset }: { reset: () => void }) {
           Something went wrong
         </h1>
         <p className="text-zinc-600 dark:text-zinc-400">
-          The page couldn&apos;t load, possibly because your sign-in couldn&apos;t be verified. Try again in a
-          moment.
+          The page couldn&apos;t load, possibly because your sign-in
+          couldn&apos;t be verified. Try again in a moment.
         </p>
         <button
           type="button"

@@ -1,12 +1,12 @@
-import { CfnOutput, Stack, StackProps } from 'aws-cdk-lib';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
-import { Construct } from 'constructs';
+import { CfnOutput, Stack, StackProps } from "aws-cdk-lib";
+import * as ssm from "aws-cdk-lib/aws-ssm";
+import { Construct } from "constructs";
 import {
   COGNITO_DIRECTORY,
   EnvironmentConfig,
   identityProviderParameterName,
   userPoolIdParameterName,
-} from './environments';
+} from "./environments";
 
 export interface AuthStackProps extends StackProps {
   readonly config: EnvironmentConfig;
@@ -30,17 +30,17 @@ export class AuthStack extends Stack {
     super(scope, id, props);
     const { config, userPoolId, identityProvider = COGNITO_DIRECTORY } = props;
 
-    new ssm.StringParameter(this, 'UserPoolIdParameter', {
+    new ssm.StringParameter(this, "UserPoolIdParameter", {
       parameterName: userPoolIdParameterName(config.name),
       stringValue: userPoolId,
     });
 
-    new ssm.StringParameter(this, 'IdentityProviderParameter', {
+    new ssm.StringParameter(this, "IdentityProviderParameter", {
       parameterName: identityProviderParameterName(config.name),
       stringValue: identityProvider,
     });
 
-    new CfnOutput(this, 'UserPoolId', { value: userPoolId });
-    new CfnOutput(this, 'IdentityProvider', { value: identityProvider });
+    new CfnOutput(this, "UserPoolId", { value: userPoolId });
+    new CfnOutput(this, "IdentityProvider", { value: identityProvider });
   }
 }

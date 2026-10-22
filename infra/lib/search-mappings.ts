@@ -1,7 +1,7 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { parse, type TypeNode } from 'graphql';
-import { SEARCHABLE_MODELS } from './models';
+import * as fs from "fs";
+import * as path from "path";
+import { parse, type TypeNode } from "graphql";
+import { SEARCHABLE_MODELS } from "./models";
 
 /**
  * Explicit OpenSearch mappings for the searchable models, derived from the
@@ -32,24 +32,24 @@ import { SEARCHABLE_MODELS } from './models';
 // of the whole document being rejected. The resolvers sort on these fields
 // directly rather than on a .keyword subfield (see numericSortFields).
 export const DATE_FIELDS = [
-  'date',
-  'start_date',
-  'end_date',
-  'embargo_start_date',
-  'embargo_end_date',
+  "date",
+  "start_date",
+  "end_date",
+  "embargo_start_date",
+  "embargo_end_date",
 ];
 
 const DATE_FORMATS = [
-  'yyyy/MM/dd HH:mm:ss',
-  'yyyy/MM/dd',
-  'yyyy/MM',
-  'yyyy-MM-dd HH:mm:ss',
-  'yyyy-MM-dd',
-  'yyyy-MM',
-  'yyyy',
-  'M/d/yyyy',
-  'strict_date_optional_time',
-].join('||');
+  "yyyy/MM/dd HH:mm:ss",
+  "yyyy/MM/dd",
+  "yyyy/MM",
+  "yyyy-MM-dd HH:mm:ss",
+  "yyyy-MM-dd",
+  "yyyy-MM",
+  "yyyy",
+  "M/d/yyyy",
+  "strict_date_optional_time",
+].join("||");
 
 type FieldMapping = Record<string, unknown>;
 export interface IndexMapping {
@@ -59,11 +59,11 @@ export interface IndexMapping {
 }
 
 const TEXT_WITH_KEYWORD: FieldMapping = {
-  type: 'text',
-  fields: { keyword: { type: 'keyword', ignore_above: 256 } },
+  type: "text",
+  fields: { keyword: { type: "keyword", ignore_above: 256 } },
 };
 const DATE_FIELD: FieldMapping = {
-  type: 'date',
+  type: "date",
   format: DATE_FORMATS,
   ignore_malformed: true,
 };
@@ -76,13 +76,16 @@ const DATE_FIELD: FieldMapping = {
  * documents whose interval overlaps the filter's. Range fields can't be
  * sorted on; sort on start_date.
  */
-export const DATE_RANGE_FIELD = 'date_range';
-const DATE_RANGE: FieldMapping = { type: 'date_range', format: 'strict_date_optional_time' };
+export const DATE_RANGE_FIELD = "date_range";
+const DATE_RANGE: FieldMapping = {
+  type: "date_range",
+  format: "strict_date_optional_time",
+};
 
 const SCALAR_MAPPINGS: Record<string, FieldMapping> = {
-  Boolean: { type: 'boolean' },
-  Int: { type: 'long' },
-  Float: { type: 'double' },
+  Boolean: { type: "boolean" },
+  Int: { type: "long" },
+  Float: { type: "double" },
   AWSDateTime: DATE_FIELD,
   AWSDate: DATE_FIELD,
 };
@@ -92,7 +95,7 @@ const SCALAR_MAPPINGS: Record<string, FieldMapping> = {
 // the type of its first value, so a later document with a different type for
 // it is rejected, and so is a document whose value for the field itself is not
 // an object. Strings are never detected as dates (date_detection is off).
-const DYNAMIC_OBJECT: FieldMapping = { type: 'object', dynamic: true };
+const DYNAMIC_OBJECT: FieldMapping = { type: "object", dynamic: true };
 
 // archiveOptions holds per-format settings: the viewer settings of a 3D
 // record (the glTF keys or the X3DOM keys of `assets`, depending on its
@@ -100,10 +103,10 @@ const DYNAMIC_OBJECT: FieldMapping = { type: 'object', dynamic: true };
 // listed here are kept in _source but not indexed. Apart from page_count, the
 // numbers are stored as strings ("3.14") and are indexed as strings.
 const ARCHIVE_OPTIONS: FieldMapping = {
-  type: 'object',
+  type: "object",
   properties: {
     assets: {
-      type: 'object',
+      type: "object",
       properties: {
         media_type: TEXT_WITH_KEYWORD,
         iiif_manifest: TEXT_WITH_KEYWORD,
@@ -118,14 +121,17 @@ const ARCHIVE_OPTIONS: FieldMapping = {
       },
     },
     config: {
-      type: 'object',
+      type: "object",
       properties: {
         _3d: {
-          type: 'object',
+          type: "object",
           properties: {
             rotation: {
-              type: 'object',
-              properties: { horizontal: TEXT_WITH_KEYWORD, vertical: TEXT_WITH_KEYWORD },
+              type: "object",
+              properties: {
+                horizontal: TEXT_WITH_KEYWORD,
+                vertical: TEXT_WITH_KEYWORD,
+              },
             },
             scale_factor: TEXT_WITH_KEYWORD,
           },
@@ -133,15 +139,19 @@ const ARCHIVE_OPTIONS: FieldMapping = {
       },
     },
     derivatives: {
-      type: 'object',
+      type: "object",
       properties: {
         downloads: {
-          type: 'object',
-          properties: { lg: TEXT_WITH_KEYWORD, md: TEXT_WITH_KEYWORD, sm: TEXT_WITH_KEYWORD },
+          type: "object",
+          properties: {
+            lg: TEXT_WITH_KEYWORD,
+            md: TEXT_WITH_KEYWORD,
+            sm: TEXT_WITH_KEYWORD,
+          },
         },
       },
     },
-    page_count: { type: 'long' },
+    page_count: { type: "long" },
     // Podcast episodes
     audioTranscript: TEXT_WITH_KEYWORD,
     episodeNumber: TEXT_WITH_KEYWORD,
@@ -152,43 +162,50 @@ const ARCHIVE_OPTIONS: FieldMapping = {
 };
 
 // The AWSJSON fields with explicit subfield mappings, in any model
-const JSON_FIELD_MAPPINGS: Record<string, FieldMapping> = { archiveOptions: ARCHIVE_OPTIONS };
+const JSON_FIELD_MAPPINGS: Record<string, FieldMapping> = {
+  archiveOptions: ARCHIVE_OPTIONS,
+};
 
 const STRING_SCALARS = new Set([
-  'String',
-  'ID',
-  'AWSEmail',
-  'AWSURL',
-  'AWSPhone',
-  'AWSIPAddress',
-  'AWSTime',
+  "String",
+  "ID",
+  "AWSEmail",
+  "AWSURL",
+  "AWSPhone",
+  "AWSIPAddress",
+  "AWSTime",
 ]);
 
 function namedType(type: TypeNode): string {
-  return type.kind === 'NamedType' ? type.name.value : namedType(type.type);
+  return type.kind === "NamedType" ? type.name.value : namedType(type.type);
 }
 
 /** Mappings keyed by index name (the lowercased model name). */
-export function buildSearchMappings(schema: string): Record<string, IndexMapping> {
+export function buildSearchMappings(
+  schema: string,
+): Record<string, IndexMapping> {
   const definitions = parse(schema).definitions;
   const typeNames = new Set(
     definitions.flatMap((d) =>
-      d.kind === 'ObjectTypeDefinition' || d.kind === 'InterfaceTypeDefinition' ? [d.name.value] : [],
+      d.kind === "ObjectTypeDefinition" || d.kind === "InterfaceTypeDefinition"
+        ? [d.name.value]
+        : [],
     ),
   );
 
   const mappings: Record<string, IndexMapping> = {};
   for (const def of definitions) {
-    if (def.kind !== 'ObjectTypeDefinition') continue;
-    if (!(SEARCHABLE_MODELS as readonly string[]).includes(def.name.value)) continue;
+    if (def.kind !== "ObjectTypeDefinition") continue;
+    if (!(SEARCHABLE_MODELS as readonly string[]).includes(def.name.value))
+      continue;
     const properties: Record<string, FieldMapping> = {};
     for (const field of def.fields ?? []) {
       const name = field.name.value;
       const type = namedType(field.type);
       if (typeNames.has(type)) continue; // relationship, not a stored attribute
-      if (DATE_FIELDS.includes(name) && type === 'String') {
+      if (DATE_FIELDS.includes(name) && type === "String") {
         properties[name] = DATE_FIELD;
-      } else if (type === 'AWSJSON') {
+      } else if (type === "AWSJSON") {
         properties[name] = JSON_FIELD_MAPPINGS[name] ?? DYNAMIC_OBJECT;
       } else if (SCALAR_MAPPINGS[type]) {
         properties[name] = SCALAR_MAPPINGS[type];
@@ -199,17 +216,21 @@ export function buildSearchMappings(schema: string): Record<string, IndexMapping
       }
     }
     properties[DATE_RANGE_FIELD] = DATE_RANGE;
-    mappings[def.name.value.toLowerCase()] = { dynamic: false, date_detection: false, properties };
+    mappings[def.name.value.toLowerCase()] = {
+      dynamic: false,
+      date_detection: false,
+      properties,
+    };
   }
   return mappings;
 }
 
-const SCHEMA_FILE = path.join(__dirname, '..', 'schema', 'schema.graphql');
+const SCHEMA_FILE = path.join(__dirname, "..", "schema", "schema.graphql");
 let cached: Record<string, IndexMapping> | undefined;
 
 /** The mappings of one index, generated from `schema/schema.graphql`. */
 export function searchMappings(index: string): IndexMapping {
-  cached ??= buildSearchMappings(fs.readFileSync(SCHEMA_FILE, 'utf8'));
+  cached ??= buildSearchMappings(fs.readFileSync(SCHEMA_FILE, "utf8"));
   const mapping = cached[index];
   if (!mapping) throw new Error(`No searchable model for index "${index}"`);
   return mapping;
@@ -223,7 +244,9 @@ export function searchMappings(index: string): IndexMapping {
 export function numericSortFields(indices: readonly string[]): string[] {
   const fields = indices.flatMap((index) =>
     Object.entries(searchMappings(index).properties)
-      .filter(([, mapping]) => mapping.type === 'date' || mapping.type === 'boolean')
+      .filter(
+        ([, mapping]) => mapping.type === "date" || mapping.type === "boolean",
+      )
       .map(([field]) => field),
   );
   return [...new Set(fields)].sort();

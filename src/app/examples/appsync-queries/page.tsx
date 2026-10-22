@@ -13,7 +13,8 @@ const PAGE_PATH = "/examples/appsync-queries";
 export default async function AppSyncQueriesExamplePage() {
   // Only signed-in members of the admin group may see this page.
   const session = await getSession();
-  if (!session) redirect(`/auth/login?returnTo=${encodeURIComponent(PAGE_PATH)}`);
+  if (!session)
+    redirect(`/auth/login?returnTo=${encodeURIComponent(PAGE_PATH)}`);
   if (!isAdmin(session)) {
     return (
       <div className="min-h-screen bg-zinc-50 px-6 py-16 font-sans dark:bg-black sm:px-16">
@@ -30,7 +31,10 @@ export default async function AppSyncQueriesExamplePage() {
             group.
           </p>
           {/* A plain link: /auth/logout is a route handler that redirects to Cognito. */}
-          <a href="/auth/logout" className="text-sm text-zinc-600 underline dark:text-zinc-400">
+          <a
+            href="/auth/logout"
+            className="text-sm text-zinc-600 underline dark:text-zinc-400"
+          >
             Sign out
           </a>
         </main>

@@ -1,10 +1,15 @@
-import { App } from 'aws-cdk-lib';
-import { ApiStack } from './api-stack';
-import { AuthStack } from './auth-stack';
-import { DataStack } from './data-stack';
-import { EnvironmentConfig, resolveEnvironment } from './environments';
-import { CERTIFICATE_ID, WebStack, branchSlug, webDomainName, webResourceName } from './web-stack';
-
+import { App } from "aws-cdk-lib";
+import { ApiStack } from "./api-stack";
+import { AuthStack } from "./auth-stack";
+import { DataStack } from "./data-stack";
+import { EnvironmentConfig, resolveEnvironment } from "./environments";
+import {
+  CERTIFICATE_ID,
+  WebStack,
+  branchSlug,
+  webDomainName,
+  webResourceName,
+} from "./web-stack";
 
 export interface AppOptions {
   readonly backendEnv?: string;
@@ -18,7 +23,7 @@ export interface AppOptions {
   readonly frontendBranch?: string;
   /**
    * `attach` | `provision`
-   * Specifies whether a new backend should be created OR frontend should be attached to existing backend 
+   * Specifies whether a new backend should be created OR frontend should be attached to existing backend
    */
   readonly backend?: string;
   readonly userPoolId?: string;
@@ -62,11 +67,12 @@ export interface AppStacks {
   readonly web?: WebStack;
 }
 
-const BACKENDS = ['attach', 'provision'];
+const BACKENDS = ["attach", "provision"];
 const ACCOUNT_PATTERN = /^\d{12}$/;
 // <region>_<id>, e.g. us-east-1_AbCd12345
 const USER_POOL_ID_PATTERN = /^([a-z0-9-]+)_[0-9a-zA-Z]+$/;
-const CERTIFICATE_ARN_PATTERN = /^arn:aws:acm:([a-z0-9-]+):(\d{12}):certificate\/[0-9a-f-]+$/;
+const CERTIFICATE_ARN_PATTERN =
+  /^arn:aws:acm:([a-z0-9-]+):(\d{12}):certificate\/[0-9a-f-]+$/;
 // Cognito provider names are at most 32 characters, without spaces or underscores.
 const IDENTITY_PROVIDER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9.-]{0,31}$/;
 // Git never allows these in a branch name, and the deploy script prints the
@@ -77,31 +83,36 @@ const CONTROL_CHARACTERS = /[\x00-\x1f\x7f]/;
  * Reads a boolean context value. `-c name=true` arrives as the string
  * "true", while cdk.json can hold a real boolean, so both are accepted.
  */
-export function booleanContext(name: string, value: unknown): boolean | undefined {
+export function booleanContext(
+  name: string,
+  value: unknown,
+): boolean | undefined {
   if (value === undefined || value === true || value === false) {
     return value;
   }
-  if (value === 'true' || value === 'false') {
-    return value === 'true';
+  if (value === "true" || value === "false") {
+    return value === "true";
   }
   throw new Error(`Invalid ${name} "${value}": use true or false`);
 }
 
 /** Reads the options from CDK context, given a lookup such as `tryGetContext`. */
-export function optionsFromContext(context: (key: string) => unknown): AppOptions {
+export function optionsFromContext(
+  context: (key: string) => unknown,
+): AppOptions {
   const str = (key: string) => {
     const value = context(key);
     return value === undefined ? undefined : String(value);
   };
   return {
-    backendEnv: str('backend-env'),
-    awsAccountId: str('aws-account-id'),
-    production: booleanContext('production', context('production')),
-    frontendBranch: str('frontend-branch'),
-    backend: str('backend'),
-    userPoolId: str('user-pool-id'),
-    identityProvider: str('identity-provider'),
-    certificate: str('certificate'),
+    backendEnv: str("backend-env"),
+    awsAccountId: str("aws-account-id"),
+    production: booleanContext("production", context("production")),
+    frontendBranch: str("frontend-branch"),
+    backend: str("backend"),
+    userPoolId: str("user-pool-id"),
+    identityProvider: str("identity-provider"),
+    certificate: str("certificate"),
   };
 }
 
@@ -115,41 +126,64 @@ export function planApp(options: AppOptions): AppPlan {
   const production = options.production ?? false;
   const config = resolveEnvironment(options.backendEnv, production);
   if (options.awsAccountId === undefined) {
-    throw new Error('Missing CDK context: pass -c aws-account-id=<AWS account ID>');
+    throw new Error(
+      "Missing CDK context: pass -c aws-account-id=<AWS account ID>",
+    );
   }
   if (!ACCOUNT_PATTERN.test(options.awsAccountId)) {
-    throw new Error(`Invalid aws-account-id "${options.awsAccountId}": use a 12-digit AWS account ID`);
+    throw new Error(
+      `Invalid aws-account-id "${options.awsAccountId}": use a 12-digit AWS account ID`,
+    );
   }
 
   if (options.frontendBranch === undefined && options.backend !== undefined) {
-    throw new Error('-c backend only applies with -c frontend-branch=<git branch>');
+    throw new Error(
+      "-c backend only applies with -c frontend-branch=<git branch>",
+    );
   }
-  const backend = options.backend ?? 'attach';
+  const backend = options.backend ?? "attach";
   if (!BACKENDS.includes(backend)) {
-    throw new Error(`Invalid backend "${backend}": use ${BACKENDS.join(' or ')}`);
+    throw new Error(
+      `Invalid backend "${backend}": use ${BACKENDS.join(" or ")}`,
+    );
   }
 
   const prefix = `DlpAccessNext-${config.name}`;
-  const provision = options.frontendBranch === undefined || backend === 'provision';
-  if (options.frontendBranch !== undefined && CONTROL_CHARACTERS.test(options.frontendBranch)) {
-    throw new Error(`Invalid frontend-branch ${JSON.stringify(options.frontendBranch)}: a git branch name has no control characters`);
+  const provision =
+    options.frontendBranch === undefined || backend === "provision";
+  if (
+    options.frontendBranch !== undefined &&
+    CONTROL_CHARACTERS.test(options.frontendBranch)
+  ) {
+    throw new Error(
+      `Invalid frontend-branch ${JSON.stringify(options.frontendBranch)}: a git branch name has no control characters`,
+    );
   }
   const branch =
     options.frontendBranch === undefined
       ? undefined
-      : { branch: options.frontendBranch, slug: branchSlug(options.frontendBranch) };
+      : {
+          branch: options.frontendBranch,
+          slug: branchSlug(options.frontendBranch),
+        };
   if (branch) {
     webResourceName(branch.slug);
   }
 
-  for (const [field, option] of [['userPoolId', 'user-pool-id'], ['identityProvider', 'identity-provider']] as const) {
+  for (const [field, option] of [
+    ["userPoolId", "user-pool-id"],
+    ["identityProvider", "identity-provider"],
+  ] as const) {
     if (options[field] !== undefined && !provision) {
       throw new Error(
         `-c ${option} only applies when the environment's stacks are deployed: drop -c frontend-branch, or add -c backend=provision`,
       );
     }
   }
-  if (options.identityProvider !== undefined && !IDENTITY_PROVIDER_PATTERN.test(options.identityProvider)) {
+  if (
+    options.identityProvider !== undefined &&
+    !IDENTITY_PROVIDER_PATTERN.test(options.identityProvider)
+  ) {
     throw new Error(
       `Invalid identity-provider "${options.identityProvider}": use the name of an identity provider on the user pool, such as VT-SSO-OIDC`,
     );
@@ -162,21 +196,33 @@ export function planApp(options: AppOptions): AppPlan {
   if (options.userPoolId !== undefined) {
     const region = USER_POOL_ID_PATTERN.exec(options.userPoolId)?.[1];
     if (region === undefined) {
-      throw new Error(`Invalid user-pool-id "${options.userPoolId}": use a Cognito user pool ID, such as us-east-1_AbCd12345`);
+      throw new Error(
+        `Invalid user-pool-id "${options.userPoolId}": use a Cognito user pool ID, such as us-east-1_AbCd12345`,
+      );
     }
     if (region !== config.region) {
-      throw new Error(`Invalid user-pool-id "${options.userPoolId}": the pool must be in ${config.region}, the environment's region`);
+      throw new Error(
+        `Invalid user-pool-id "${options.userPoolId}": the pool must be in ${config.region}, the environment's region`,
+      );
     }
   }
   if (options.certificate !== undefined && !branch) {
-    throw new Error('-c certificate only applies with -c frontend-branch=<git branch>');
+    throw new Error(
+      "-c certificate only applies with -c frontend-branch=<git branch>",
+    );
   }
   if (options.certificate !== undefined) {
-    const [, region, certificateAccount] = CERTIFICATE_ARN_PATTERN.exec(options.certificate) ?? [];
+    const [, region, certificateAccount] =
+      CERTIFICATE_ARN_PATTERN.exec(options.certificate) ?? [];
     if (region === undefined) {
-      throw new Error(`Invalid certificate "${options.certificate}": use an ACM certificate ARN`);
+      throw new Error(
+        `Invalid certificate "${options.certificate}": use an ACM certificate ARN`,
+      );
     }
-    if (region !== config.region || certificateAccount !== options.awsAccountId) {
+    if (
+      region !== config.region ||
+      certificateAccount !== options.awsAccountId
+    ) {
       throw new Error(
         `Invalid certificate "${options.certificate}": the certificate must be in account ${options.awsAccountId} and ${config.region}, the environment's region`,
       );
@@ -190,7 +236,9 @@ export function planApp(options: AppOptions): AppPlan {
       ...branch,
       backend,
       appUrl: `https://${webDomainName(branch.slug)}`,
-      certificate: options.certificate ?? `arn:aws:acm:${config.region}:${options.awsAccountId}:certificate/${CERTIFICATE_ID}`,
+      certificate:
+        options.certificate ??
+        `arn:aws:acm:${config.region}:${options.awsAccountId}:certificate/${CERTIFICATE_ID}`,
       stackName: `DlpAccessNext-Web-${branch.slug}`,
     },
     userPoolId: options.userPoolId,

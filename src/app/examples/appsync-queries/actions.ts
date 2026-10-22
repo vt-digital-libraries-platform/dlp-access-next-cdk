@@ -2,7 +2,11 @@
 
 import { graphqlRequest } from "@/lib/appsync";
 import { getSession, isAdmin, type Session } from "@/lib/auth";
-import { SEARCH_ARCHIVE_FIELDS, SEARCH_COLLECTION_FIELDS, SEARCH_OBJECT_FIELDS } from "./queries";
+import {
+  SEARCH_ARCHIVE_FIELDS,
+  SEARCH_COLLECTION_FIELDS,
+  SEARCH_OBJECT_FIELDS,
+} from "./queries";
 
 export type SearchScope = "archives" | "collections" | "both";
 
@@ -46,7 +50,10 @@ interface RawItem {
   collection_category?: string | null;
 }
 
-export async function searchCatalog(term: string, scope: SearchScope): Promise<SearchResponse> {
+export async function searchCatalog(
+  term: string,
+  scope: SearchScope,
+): Promise<SearchResponse> {
   // Server actions are callable directly, so the page's check is repeated here.
   let session: Session | null;
   try {
@@ -55,32 +62,51 @@ export async function searchCatalog(term: string, scope: SearchScope): Promise<S
     // Already logged by getSession.
     return { items: [], total: 0, error: "Couldn't verify your sign-in." };
   }
-  if (!isAdmin(session)) return { items: [], total: 0, error: "Not authorized. Sign in as an admin." };
+  if (!isAdmin(session))
+    return {
+      items: [],
+      total: 0,
+      error: "Not authorized. Sign in as an admin.",
+    };
 
   const allFields = term.trim();
   if (!allFields) return { items: [], total: 0, error: "Enter a search term." };
-  if (!Object.hasOwn(QUERIES, scope)) return { items: [], total: 0, error: "Invalid search scope." };
+  if (!Object.hasOwn(QUERIES, scope))
+    return { items: [], total: 0, error: "Invalid search scope." };
 
   const { field, query } = QUERIES[scope];
   try {
-    const data = await graphqlRequest<Record<string, { items: (RawItem | null)[] | null; total: number | null }>>(
-      query,
-      { allFields, limit: LIMIT },
-    );
+    const data = await graphqlRequest<
+      Record<string, { items: (RawItem | null)[] | null; total: number | null }>
+    >(query, { allFields, limit: LIMIT });
     const conn = data[field];
-    const items = (conn?.items ?? []).filter((i): i is RawItem => Boolean(i)).map((i): SearchResultItem => {
-      const type =
-        scope === "archives" ? "Archive" : scope === "collections" ? "Collection" : i.__typename === "Collection" ? "Collection" : "Archive";
-      return {
-        id: i.id,
-        identifier: i.identifier,
-        title: i.title,
-        type,
-        category: (type === "Collection" ? i.collection_category : i.item_category) ?? null,
-      };
-    });
+    const items = (conn?.items ?? [])
+      .filter((i): i is RawItem => Boolean(i))
+      .map((i): SearchResultItem => {
+        const type =
+          scope === "archives"
+            ? "Archive"
+            : scope === "collections"
+              ? "Collection"
+              : i.__typename === "Collection"
+                ? "Collection"
+                : "Archive";
+        return {
+          id: i.id,
+          identifier: i.identifier,
+          title: i.title,
+          type,
+          category:
+            (type === "Collection" ? i.collection_category : i.item_category) ??
+            null,
+        };
+      });
     return { items, total: conn?.total ?? items.length };
   } catch (err) {
-    return { items: [], total: 0, error: err instanceof Error ? err.message : String(err) };
+    return {
+      items: [],
+      total: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }

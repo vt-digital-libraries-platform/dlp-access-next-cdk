@@ -3,18 +3,19 @@
 The VT Digital Libraries access site: a Next.js 16 / React 19 app running on Elastic Beanstalk, backed by a read-only AppSync GraphQL API over DynamoDB and OpenSearch. All of the AWS infrastructure is defined with CDK in `infra/`.
 
 The repo holds two independent npm projects, each with its own `package.json`:
+
 - `/` - The Next.js app (App Router, Tailwind 4)
 - `infra/` - CDK v2 (TypeScript): the data layer, API and Elastic Beanstalk hosting
 
 ## Backend Environments and stacks
 
-Each **backend environment** has its own data and API. Backend environments are `dev`, `pre-production`, and  `production` (which belongs in a separate AWS account), or short-lived feature environments named as: `f-<slug>`.
+Each **backend environment** has its own data and API. Backend environments are `dev`, `pre-production`, and `production` (which belongs in a separate AWS account), or short-lived feature environments named as: `f-<slug>`.
 
-| Stack | Contents |
-| --- | --- |
-| `DlpAccessNext-<env>-Data` | Seven DynamoDB tables (`<Model>-dlpnext-<env>`) and an OpenSearch 2.19 domain (`dlpnext-<env>`) |
-| `DlpAccessNext-<env>-Api` | The AppSync API (IAM auth), the Lambda that streams Archive and Collection changes into OpenSearch, and the environment's Beanstalk instance role (`dlp-access-next-<env>-eb`) |
-| `DlpAccessNext-<env>-Auth` | A pointer to the environment's existing Cognito user pool and identity provider (two SSM parameters). The pool itself is made outside CDK |
+| Stack                        | Contents                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DlpAccessNext-<env>-Data`   | Seven DynamoDB tables (`<Model>-dlpnext-<env>`) and an OpenSearch 2.19 domain (`dlpnext-<env>`)                                                                                                                                                                                                                                       |
+| `DlpAccessNext-<env>-Api`    | The AppSync API (IAM auth), the Lambda that streams Archive and Collection changes into OpenSearch, and the environment's Beanstalk instance role (`dlp-access-next-<env>-eb`)                                                                                                                                                        |
+| `DlpAccessNext-<env>-Auth`   | A pointer to the environment's existing Cognito user pool and identity provider (two SSM parameters). The pool itself is made outside CDK                                                                                                                                                                                             |
 | `DlpAccessNext-Web-<branch>` | One git branch of the dlp-access-next app: an Elastic Beanstalk application in a Node.js environment (`dlpnext-<branch>`, one instance behind an HTTPS load balancer) at `https://<branch>.dlp-access-dev.dlp.cloud.lib.vt.edu`, that calls one environment's API, and the branch's Cognito app client on the environment's user pool |
 
 Many branches can share one backend environment. Only feature environments delete their tables and opensearch domain when their stacks are destroyed. `dev`, `pre-production` and `production` keep their data and have deletion protection and point-in-time recovery turned on.
@@ -30,13 +31,13 @@ When run locally, the app signs AppSync requests with your local AWS credentials
 
 Locally, put Cognito config in `.env.local` (git-ignored)
 
-| Variable | Value |
-| --- | --- |
-| `COGNITO_ISSUER` | `https://cognito-idp.<region>.amazonaws.com/<user pool ID>` |
-| `COGNITO_CLIENT_ID` | The app client's ID |
-| `COGNITO_CLIENT_SECRET` | The app client's secret |
+| Variable                    | Value                                                                                                                                                                                    |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `COGNITO_ISSUER`            | `https://cognito-idp.<region>.amazonaws.com/<user pool ID>`                                                                                                                              |
+| `COGNITO_CLIENT_ID`         | The app client's ID                                                                                                                                                                      |
+| `COGNITO_CLIENT_SECRET`     | The app client's secret                                                                                                                                                                  |
 | `COGNITO_IDENTITY_PROVIDER` | Optional. The identity provider on the user pool to sign in through, such as `VT-SSO-OIDC`; sign-in goes straight to it. Without it, managed login shows whatever the app client allows. |
-| `APP_BASE_URL` | Optional. The app's public origin, when it differs from the one the server sees (behind a proxy). Defaults to the request's origin. |
+| `APP_BASE_URL`              | Optional. The app's public origin, when it differs from the one the server sees (behind a proxy). Defaults to the request's origin.                                                      |
 
 A Web stack's app client already allows `http://localhost:3000`. Any other app client needs `<origin>/authorize` as an allowed callback URL, `<origin>/` as an allowed sign-out URL, and the `openid` and `email` scopes. Cognito only accepts `http` callback URLs for `localhost`.
 
@@ -67,10 +68,11 @@ npm run deploy -- -c backend-env=f-search -c aws-account-id=$ACCOUNT -c frontend
 npm run deploy -- -c backend-env=production -c aws-account-id=<production account ID> -c production=true -c user-pool-id=<user pool ID>
 ```
 
-`npm run deploy` checks the options, lists them with the stacks they produce, and runs `cdk deploy --all`. 
+`npm run deploy` checks the options, lists them with the stacks they produce, and runs `cdk deploy --all`.
 With `-c backend-env=production` a red warning banner comes first, and it also points out when `-c production=true` is missing.
 
 ### Options
+
 - `-c backend=attach` is the default. It deploys only the Web stack and needs the environment's Api and Auth stacks to exist already; otherwise the deploy fails with "Unable to fetch parameters".
 - `-c backend=provision` deploys a new backend environment's Data, Api and Auth stacks, before the Web stack.
 - `-c user-pool-id=<user pool ID>` is the existing Cognito user pool, in the environment's region, that the environment's users sign in to. It is required on every deploy of the backend environment's stacks. Passing a different ID repoints the backend environment, and each Web stack moves its app client to the new pool the next time it deploys.
@@ -89,12 +91,12 @@ npx cdk destroy DlpAccessNext-Web-<branch> -c backend-env=<env> -c aws-account-i
 ```
 
 Destroy a backend env (must delete attached frontends first):
+
 ```bash
 # destroy's current branch frontend
 npx cdk destroy --all -c backend-env=dev -c aws-account-id=$ACCOUNT -c frontend-branch=$(git branch --show-current) && \
 npx cdk destroy --all -c backend-env=dev -c aws-account-id=$ACCOUNT -c user-pool-id=<user pool ID>
 ```
-
 
 ## Tests
 
@@ -107,4 +109,5 @@ npm run test:lambda   # pytest: the OpenSearch streaming handler
 `test:lambda` needs a one-time setup: `python3 -m venv .venv && .venv/bin/pip install -r lambda/requirements-dev.txt`.
 
 ## More
+
 - `infra/schema/schema.graphql`: the GraphQL schema, which is the source of truth for the API.

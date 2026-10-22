@@ -105,7 +105,10 @@ export function hasOneCode(foreignKeyField: string): string {
  * parent's id (e.g. Collection.archives -> "gsi-Collection.archives" index
  * on Archive.collectionArchivesId, matched against the Collection's own id).
  */
-export function hasManyCode(opts: { indexName: string; foreignKeyField: string }): string {
+export function hasManyCode(opts: {
+  indexName: string;
+  foreignKeyField: string;
+}): string {
   const { indexName, foreignKeyField } = opts;
   return (
     HEADER +
@@ -163,7 +166,12 @@ export function openSearchQueryCode(opts: {
   /** Tag each hit with __typename (Collection if it has collection_category, else Archive) for interface results. */
   resolveTypename?: boolean;
 }): string {
-  const { index, searchFields, numericSortFields, resolveTypename = false } = opts;
+  const {
+    index,
+    searchFields,
+    numericSortFields,
+    resolveTypename = false,
+  } = opts;
   const typenameStep = resolveTypename
     ? `
     if (source.collection_category) {
@@ -171,7 +179,7 @@ export function openSearchQueryCode(opts: {
     } else {
       source.__typename = 'Archive';
     }`
-    : '';
+    : "";
   return (
     HEADER +
     `export function request(ctx) {

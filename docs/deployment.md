@@ -20,11 +20,11 @@ ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 
 Placeholders used below:
 
-| Placeholder | Meaning |
-| --- | --- |
-| `<env>` | `dev`, `pre-production`, `production`, or `f-<slug>` (lowercase, at most 20 characters) |
+| Placeholder      | Meaning                                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `<env>`          | `dev`, `pre-production`, `production`, or `f-<slug>` (lowercase, at most 20 characters)                                |
 | `<user pool ID>` | The environment's existing Cognito user pool, in the environment's region (`us-east-1`), such as `us-east-1_AbCd12345` |
-| `<branch>` | A git branch name, or its slug. Usually `$(git branch --show-current)` |
+| `<branch>`       | A git branch name, or its slug. Usually `$(git branch --show-current)`                                                 |
 
 Notes that apply to every command:
 
@@ -37,6 +37,7 @@ Notes that apply to every command:
   - a stack is mid-operation, or the credentials are for a different account
 
   With warnings, the prompt asks "Deploy anyway?". The check never blocks a deploy: a lookup that fails, for example for lack of permissions, is listed as a warning and the deploy can go ahead. `--no-check` skips the check.
+
 - **In CI, add `--yes`** to deploy without the prompt. See [Running in CI](#running-in-ci).
 - **CDK never creates, changes or deletes a user pool.** The pool needs its own managed login domain and an `admin` group, set up outside CDK. `-c user-pool-id` only records which pool to use.
 - **Pass `-c identity-provider=VT-SSO-OIDC` on every backend deploy** if users sign in through VT SSO. If you leave it out, the environment falls back to the pool's own accounts (`COGNITO`).
@@ -253,10 +254,10 @@ npx cdk destroy --all --force -c backend-env=<env> -c aws-account-id=$ACCOUNT â€
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: dev                      # add required reviewers for production
+    environment: dev # add required reviewers for production
     concurrency: deploy-dev
     permissions:
-      id-token: write                     # for OIDC
+      id-token: write # for OIDC
       contents: read
     steps:
       - uses: actions/checkout@v4

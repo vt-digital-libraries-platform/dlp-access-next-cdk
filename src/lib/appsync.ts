@@ -21,7 +21,10 @@ interface GraphQLResponse<T> {
   errors?: { message: string }[];
 }
 
-export async function graphqlRequest<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+export async function graphqlRequest<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
   if (!API_URL) {
     throw new Error(
       "APPSYNC_API_URL is not set. Set it to the GraphQLApiUrl output from the environment's Api stack.",
@@ -57,11 +60,15 @@ export async function graphqlRequest<T>(query: string, variables?: Record<string
   try {
     result = JSON.parse(body) as GraphQLResponse<T>;
   } catch {
-    throw new Error(`AppSync request failed: HTTP ${response.status} response is not JSON: ${snippet(body)}`);
+    throw new Error(
+      `AppSync request failed: HTTP ${response.status} response is not JSON: ${snippet(body)}`,
+    );
   }
 
   if (result.errors?.length) {
-    throw new Error(`AppSync request failed: ${result.errors.map((e) => e.message).join("; ")}`);
+    throw new Error(
+      `AppSync request failed: ${result.errors.map((e) => e.message).join("; ")}`,
+    );
   }
 
   return result.data as T;
@@ -72,5 +79,7 @@ const SNIPPET_LENGTH = 200;
 function snippet(body: string): string {
   const text = body.replace(/\s+/g, " ").trim();
   if (!text) return "(empty body)";
-  return text.length > SNIPPET_LENGTH ? `${text.slice(0, SNIPPET_LENGTH)}…` : text;
+  return text.length > SNIPPET_LENGTH
+    ? `${text.slice(0, SNIPPET_LENGTH)}…`
+    : text;
 }

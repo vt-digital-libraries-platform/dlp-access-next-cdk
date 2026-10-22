@@ -6,7 +6,10 @@ import { SESSION_COOKIE, authConfig, baseUrl, getClient } from "@/lib/auth";
 export async function GET(request: Request) {
   const client = await getClient();
   const endSessionEndpoint = client.issuer.metadata.end_session_endpoint;
-  if (!endSessionEndpoint) throw new Error("The user pool's OIDC metadata has no end_session_endpoint.");
+  if (!endSessionEndpoint)
+    throw new Error(
+      "The user pool's OIDC metadata has no end_session_endpoint.",
+    );
 
   // Cognito's logout endpoint takes client_id and logout_uri rather than the
   // standard OIDC parameters.

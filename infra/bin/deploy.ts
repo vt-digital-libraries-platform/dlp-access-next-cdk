@@ -3,22 +3,36 @@
 // Takes the same arguments as `cdk deploy`:
 //   npm run deploy -- -c backend-env=dev -c aws-account-id=$ACCOUNT [-c frontend-branch=...] [other cdk flags]
 // In CI (CI=true), --yes skips the confirmation;
-import { spawnSync } from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as readline from 'readline';
-import { optionsFromContext, planApp } from '../lib/app';
-import { contextFromArgs, deployArgs, describePlan, isConfirmed, productionWarning, profileFromArgs } from '../lib/deploy';
-import { AwsError, checkDeploy, lookupDeployedState } from '../lib/deploy-check';
-import { sourceCommit, uncommittedChanges } from '../lib/web-stack';
+import { spawnSync } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
+import * as readline from "readline";
+import { optionsFromContext, planApp } from "../lib/app";
+import {
+  contextFromArgs,
+  deployArgs,
+  describePlan,
+  isConfirmed,
+  productionWarning,
+  profileFromArgs,
+} from "../lib/deploy";
+import {
+  AwsError,
+  checkDeploy,
+  lookupDeployedState,
+} from "../lib/deploy-check";
+import { sourceCommit, uncommittedChanges } from "../lib/web-stack";
 
-const INFRA_DIR = path.join(__dirname, '..');
+const INFRA_DIR = path.join(__dirname, "..");
 
 function ask(question: string): Promise<string> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
   return new Promise((resolve) => {
     // Closed stdin (Ctrl-D, or no terminal) counts as no answer.
-    rl.once('close', () => resolve(''));
+    rl.once("close", () => resolve(""));
     rl.question(question, (answer) => {
       resolve(answer);
       rl.close();
@@ -27,15 +41,25 @@ function ask(question: string): Promise<string> {
 }
 
 async function main(): Promise<number> {
-  const { yes, check, cdkArgs: args } = deployArgs(process.argv.slice(2), process.env.CI);
+  const {
+    yes,
+    check,
+    cdkArgs: args,
+  } = deployArgs(process.argv.slice(2), process.env.CI);
   // The app also sees cdk.json's context, with -c values taking precedence.
-  const cdkJson = JSON.parse(fs.readFileSync(path.join(INFRA_DIR, 'cdk.json'), 'utf8'));
-  const context: Record<string, unknown> = { ...cdkJson.context, ...contextFromArgs(args) };
+  const cdkJson = JSON.parse(
+    fs.readFileSync(path.join(INFRA_DIR, "cdk.json"), "utf8"),
+  );
+  const context: Record<string, unknown> = {
+    ...cdkJson.context,
+    ...contextFromArgs(args),
+  };
 
   const plan = planApp(optionsFromContext((key) => context[key]));
   const warning = productionWarning(plan);
   // Bold red on a terminal.
-  const alert = (text: string) => (process.stdout.isTTY ? `\x1b[1;31m${text}\x1b[0m` : text);
+  const alert = (text: string) =>
+    process.stdout.isTTY ? `\x1b[1;31m${text}\x1b[0m` : text;
   if (warning) {
     console.log(`${alert(warning)}\n`);
   }
@@ -45,7 +69,9 @@ async function main(): Promise<number> {
     console.log(`App source: commit ${sourceCommit()}\n`);
     const changes = uncommittedChanges();
     if (changes.length > 0) {
-      console.log(`${alert('Uncommitted changes are not deployed:')}\n${changes.map((line) => `  ${line}`).join('\n')}\n`);
+      console.log(
+        `${alert("Uncommitted changes are not deployed:")}\n${changes.map((line) => `  ${line}`).join("\n")}\n`,
+      );
     }
   }
 
@@ -54,11 +80,15 @@ async function main(): Promise<number> {
     const region = plan.config.region;
     // The same credentials as cdk deploy, which gets every argument.
     const profile = profileFromArgs(args);
-    const profileArgs = profile ? ['--profile', profile] : [];
+    const profileArgs = profile ? ["--profile", profile] : [];
     const aws = (awsArgs: string[]) => {
-      const result = spawnSync('aws', [...awsArgs, '--region', region, ...profileArgs, '--output', 'json'], {
-        encoding: 'utf8',
-      });
+      const result = spawnSync(
+        "aws",
+        [...awsArgs, "--region", region, ...profileArgs, "--output", "json"],
+        {
+          encoding: "utf8",
+        },
+      );
       if (result.error) {
         throw result.error;
       }
@@ -67,18 +97,23 @@ async function main(): Promise<number> {
       }
       return JSON.parse(result.stdout);
     };
-    const { stacks, warnings } = checkDeploy(plan, lookupDeployedState(plan, aws));
+    const { stacks, warnings } = checkDeploy(
+      plan,
+      lookupDeployedState(plan, aws),
+    );
     if (stacks.length > 0) {
-      console.log(`Stacks:\n${stacks.map((line) => `  ${line}`).join('\n')}\n`);
+      console.log(`Stacks:\n${stacks.map((line) => `  ${line}`).join("\n")}\n`);
     }
     if (warnings.length > 0) {
       warned = true;
-      console.log(`${alert('Check before deploying:')}\n${warnings.map((line) => `  - ${line}`).join('\n')}\n`);
+      console.log(
+        `${alert("Check before deploying:")}\n${warnings.map((line) => `  - ${line}`).join("\n")}\n`,
+      );
     }
   }
 
   if (yes) {
-    console.log('Confirmed by --yes (CI).');
+    console.log("Confirmed by --yes (CI).");
   } else {
     const question = warning
       ? alert('Deploy to PRODUCTION? Type "yes" or "y" to continue: ')
@@ -86,11 +121,14 @@ async function main(): Promise<number> {
         ? alert('Deploy anyway? Type "yes" or "y" to continue: ')
         : 'Deploy? Type "yes" or "y" to continue: ';
     if (!isConfirmed(await ask(question))) {
-      console.log('Not deployed.');
+      console.log("Not deployed.");
       return 1;
     }
   }
-  const result = spawnSync('npx', ['cdk', 'deploy', '--all', ...args], { cwd: INFRA_DIR, stdio: 'inherit' });
+  const result = spawnSync("npx", ["cdk", "deploy", "--all", ...args], {
+    cwd: INFRA_DIR,
+    stdio: "inherit",
+  });
   return result.status ?? 1;
 }
 

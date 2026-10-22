@@ -1,4 +1,4 @@
-import { RemovalPolicy } from 'aws-cdk-lib';
+import { RemovalPolicy } from "aws-cdk-lib";
 
 /**
  * Per-environment settings. Everything that differs between environments
@@ -29,43 +29,43 @@ export interface EnvironmentConfig {
   readonly removalPolicy: RemovalPolicy;
 }
 
-type Sizing = Pick<EnvironmentConfig, 'search' | 'web'>;
+type Sizing = Pick<EnvironmentConfig, "search" | "web">;
 
 /** Sizing with `-c production=false` (the default): one small search node. */
 const STANDARD_SIZING: Sizing = {
   search: {
-    instanceType: 't3.small.search',
+    instanceType: "t3.small.search",
     dataNodes: 1,
     availabilityZones: 1,
     volumeSizeGiB: 10,
   },
-  web: { instanceType: 't3.small' },
+  web: { instanceType: "t3.small" },
 };
 
 /** Sizing with `-c production=true`: three search nodes, one per AZ. */
 const PRODUCTION_SIZING: Sizing = {
   search: {
-    instanceType: 'm7g.medium.search',
+    instanceType: "m7g.medium.search",
     dataNodes: 3,
     availabilityZones: 3,
     volumeSizeGiB: 10,
   },
-  web: { instanceType: 't3.medium' },
+  web: { instanceType: "t3.medium" },
 };
 
-type Settings = Omit<EnvironmentConfig, 'name' | keyof Sizing>;
+type Settings = Omit<EnvironmentConfig, "name" | keyof Sizing>;
 
 const ENVIRONMENTS: Record<string, Settings> = {
   dev: {
-    region: 'us-east-1',
+    region: "us-east-1",
     removalPolicy: RemovalPolicy.RETAIN,
   },
-  'pre-production': {
-    region: 'us-east-1',
+  "pre-production": {
+    region: "us-east-1",
     removalPolicy: RemovalPolicy.RETAIN,
   },
   production: {
-    region: 'us-east-1',
+    region: "us-east-1",
     removalPolicy: RemovalPolicy.RETAIN,
   },
 };
@@ -74,7 +74,7 @@ const ENVIRONMENTS: Record<string, Settings> = {
  * Feature environments are short-lived and prefixed `f-`. They are the only
  * environments whose tables are destroyed with their stacks.
  */
-const FEATURE_PREFIX = 'f-';
+const FEATURE_PREFIX = "f-";
 const FEATURE: Settings = {
   ...ENVIRONMENTS.dev,
   removalPolicy: RemovalPolicy.DESTROY,
@@ -84,10 +84,13 @@ const FEATURE: Settings = {
 // `dlpnext-<env>`, which leaves 20 for the environment name.
 const ENV_NAME_PATTERN = /^[a-z][a-z0-9-]{0,19}$/;
 
-export function resolveEnvironment(name: string | undefined, production = false): EnvironmentConfig {
+export function resolveEnvironment(
+  name: string | undefined,
+  production = false,
+): EnvironmentConfig {
   if (!name) {
     throw new Error(
-      `Missing CDK context: pass -c backend-env=<name>, one of ${Object.keys(ENVIRONMENTS).join(', ')} or ${FEATURE_PREFIX}<slug>`,
+      `Missing CDK context: pass -c backend-env=<name>, one of ${Object.keys(ENVIRONMENTS).join(", ")} or ${FEATURE_PREFIX}<slug>`,
     );
   }
   if (!ENV_NAME_PATTERN.test(name)) {
@@ -95,13 +98,19 @@ export function resolveEnvironment(name: string | undefined, production = false)
       `Invalid environment name "${name}": use lowercase letters, digits and hyphens, starting with a letter, at most 20 characters`,
     );
   }
-  const settings = ENVIRONMENTS[name] ?? (name.startsWith(FEATURE_PREFIX) ? FEATURE : undefined);
+  const settings =
+    ENVIRONMENTS[name] ??
+    (name.startsWith(FEATURE_PREFIX) ? FEATURE : undefined);
   if (!settings) {
     throw new Error(
-      `Unknown environment "${name}": use one of ${Object.keys(ENVIRONMENTS).join(', ')} or ${FEATURE_PREFIX}<slug> for a feature environment`,
+      `Unknown environment "${name}": use one of ${Object.keys(ENVIRONMENTS).join(", ")} or ${FEATURE_PREFIX}<slug> for a feature environment`,
     );
   }
-  return { name, ...settings, ...(production ? PRODUCTION_SIZING : STANDARD_SIZING) };
+  return {
+    name,
+    ...settings,
+    ...(production ? PRODUCTION_SIZING : STANDARD_SIZING),
+  };
 }
 
 // Names that stacks deployed separately use to find each other. A Web stack
@@ -128,7 +137,7 @@ export function identityProviderParameterName(envName: string): string {
 }
 
 /** Cognito's name for a user pool's own directory of users. */
-export const COGNITO_DIRECTORY = 'COGNITO';
+export const COGNITO_DIRECTORY = "COGNITO";
 
 /** SSM parameter holding the environment's GraphQL API URL. */
 export function graphqlApiUrlParameterName(envName: string): string {

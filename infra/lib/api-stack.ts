@@ -1,16 +1,28 @@
-import * as path from 'path';
-import { Stack, StackProps, CfnOutput, Duration } from 'aws-cdk-lib';
-import * as appsync from 'aws-cdk-lib/aws-appsync';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import { DynamoEventSource, SqsDlq } from 'aws-cdk-lib/aws-lambda-event-sources';
-import * as opensearch from 'aws-cdk-lib/aws-opensearchservice';
-import * as sqs from 'aws-cdk-lib/aws-sqs';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
-import { Construct } from 'constructs';
-import { EnvironmentConfig, ebInstanceProfileName, graphqlApiUrlParameterName } from './environments';
-import { LIST_QUERY_FIELD, MODELS, ModelName, SEARCHABLE_MODELS } from './models';
+import * as path from "path";
+import { Stack, StackProps, CfnOutput, Duration } from "aws-cdk-lib";
+import * as appsync from "aws-cdk-lib/aws-appsync";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import {
+  DynamoEventSource,
+  SqsDlq,
+} from "aws-cdk-lib/aws-lambda-event-sources";
+import * as opensearch from "aws-cdk-lib/aws-opensearchservice";
+import * as sqs from "aws-cdk-lib/aws-sqs";
+import * as ssm from "aws-cdk-lib/aws-ssm";
+import { Construct } from "constructs";
+import {
+  EnvironmentConfig,
+  ebInstanceProfileName,
+  graphqlApiUrlParameterName,
+} from "./environments";
+import {
+  LIST_QUERY_FIELD,
+  MODELS,
+  ModelName,
+  SEARCHABLE_MODELS,
+} from "./models";
 import {
   getByIdCode,
   listScanCode,
@@ -18,17 +30,39 @@ import {
   hasOneCode,
   hasManyCode,
   openSearchQueryCode,
-} from './resolvers';
-import { numericSortFields } from './search-mappings';
+} from "./resolvers";
+import { numericSortFields } from "./search-mappings";
 
 /** The fields an `allFields` search matches, per index; searchObjects uses both. */
 const ARCHIVE_SEARCH_FIELDS = [
-  'title', 'description', 'creator', 'medium', 'type', 'tags', 'identifier', 'is_part_of',
-  'format', 'spatial', 'source', 'subject', 'bibliographic_citation', 'rights', 'rights_holder',
+  "title",
+  "description",
+  "creator",
+  "medium",
+  "type",
+  "tags",
+  "identifier",
+  "is_part_of",
+  "format",
+  "spatial",
+  "source",
+  "subject",
+  "bibliographic_citation",
+  "rights",
+  "rights_holder",
 ];
 const COLLECTION_SEARCH_FIELDS = [
-  'title', 'description', 'creator', 'identifier', 'spatial', 'subject', 'source', 'is_part_of',
-  'bibliographic_citation', 'rights', 'rights_holder',
+  "title",
+  "description",
+  "creator",
+  "identifier",
+  "spatial",
+  "subject",
+  "source",
+  "is_part_of",
+  "bibliographic_citation",
+  "rights",
+  "rights_holder",
 ];
 
 export interface ApiStackProps extends StackProps {
@@ -50,9 +84,11 @@ export class ApiStack extends Stack {
     super(scope, id, props);
     const { config, tables, searchDomain } = props;
 
-    const api = new appsync.GraphqlApi(this, 'VtdlpApi', {
+    const api = new appsync.GraphqlApi(this, "VtdlpApi", {
       name: `dlp-access-next-${config.name}`,
-      definition: appsync.Definition.fromFile(path.join(__dirname, '..', 'schema', 'schema.graphql')),
+      definition: appsync.Definition.fromFile(
+        path.join(__dirname, "..", "schema", "schema.graphql"),
+      ),
       authorizationConfig: {
         defaultAuthorization: {
           authorizationType: appsync.AuthorizationType.IAM,
@@ -64,13 +100,17 @@ export class ApiStack extends Stack {
       xrayEnabled: true,
     });
 
-    const dataSources: Record<ModelName, appsync.DynamoDbDataSource> = MODELS.reduce(
-      (acc, model) => {
-        acc[model] = api.addDynamoDbDataSource(`${model}DataSource`, tables[model]);
-        return acc;
-      },
-      {} as Record<ModelName, appsync.DynamoDbDataSource>,
-    );
+    const dataSources: Record<ModelName, appsync.DynamoDbDataSource> =
+      MODELS.reduce(
+        (acc, model) => {
+          acc[model] = api.addDynamoDbDataSource(
+            `${model}DataSource`,
+            tables[model],
+          );
+          return acc;
+        },
+        {} as Record<ModelName, appsync.DynamoDbDataSource>,
+      );
 
     const jsResolver = (
       typeName: string,
@@ -89,73 +129,115 @@ export class ApiStack extends Stack {
 
     // --- Query: getX / listX --------------------------------------------
     for (const model of MODELS) {
-      jsResolver('Query', `get${model}`, dataSources[model], getByIdCode());
-      jsResolver('Query', LIST_QUERY_FIELD[model], dataSources[model], listScanCode());
+      jsResolver("Query", `get${model}`, dataSources[model], getByIdCode());
+      jsResolver(
+        "Query",
+        LIST_QUERY_FIELD[model],
+        dataSources[model],
+        listScanCode(),
+      );
     }
 
     // --- Query: indexed lookups (xByY) ------------------------------------
     jsResolver(
-      'Query',
-      'archiveByIdentifier',
+      "Query",
+      "archiveByIdentifier",
       dataSources.Archive,
-      queryByIndexCode({ indexName: 'Identifier', keyField: 'identifier', argName: 'identifier' }),
+      queryByIndexCode({
+        indexName: "Identifier",
+        keyField: "identifier",
+        argName: "identifier",
+      }),
     );
     jsResolver(
-      'Query',
-      'collectionByIdentifier',
+      "Query",
+      "collectionByIdentifier",
       dataSources.Collection,
-      queryByIndexCode({ indexName: 'Identifier', keyField: 'identifier', argName: 'identifier' }),
+      queryByIndexCode({
+        indexName: "Identifier",
+        keyField: "identifier",
+        argName: "identifier",
+      }),
     );
     jsResolver(
-      'Query',
-      'siteBySiteId',
+      "Query",
+      "siteBySiteId",
       dataSources.Site,
-      queryByIndexCode({ indexName: 'SiteId', keyField: 'siteId', argName: 'siteId' }),
+      queryByIndexCode({
+        indexName: "SiteId",
+        keyField: "siteId",
+        argName: "siteId",
+      }),
     );
     jsResolver(
-      'Query',
-      'partnerByIdentifier',
+      "Query",
+      "partnerByIdentifier",
       dataSources.Partner,
-      queryByIndexCode({ indexName: 'Identifier', keyField: 'identifier', argName: 'identifier' }),
+      queryByIndexCode({
+        indexName: "Identifier",
+        keyField: "identifier",
+        argName: "identifier",
+      }),
     );
 
     // --- Relation fields ---------------------------------------------------
-    jsResolver('Archive', 'collection', dataSources.Collection, hasOneCode('archiveCollectionId'));
-    jsResolver('Archive', 'partner', dataSources.Partner, hasOneCode('archivePartnerId'));
     jsResolver(
-      'Collection',
-      'archives',
-      dataSources.Archive,
-      hasManyCode({ indexName: 'gsi-Collection.archives', foreignKeyField: 'collectionArchivesId' }),
+      "Archive",
+      "collection",
+      dataSources.Collection,
+      hasOneCode("archiveCollectionId"),
     );
-    jsResolver('Collection', 'partner', dataSources.Partner, hasOneCode('collectionPartnerId'));
     jsResolver(
-      'PageContent',
-      'pageContentSiteId',
+      "Archive",
+      "partner",
+      dataSources.Partner,
+      hasOneCode("archivePartnerId"),
+    );
+    jsResolver(
+      "Collection",
+      "archives",
+      dataSources.Archive,
+      hasManyCode({
+        indexName: "gsi-Collection.archives",
+        foreignKeyField: "collectionArchivesId",
+      }),
+    );
+    jsResolver(
+      "Collection",
+      "partner",
+      dataSources.Partner,
+      hasOneCode("collectionPartnerId"),
+    );
+    jsResolver(
+      "PageContent",
+      "pageContentSiteId",
       dataSources.Site,
-      hasOneCode('pageContentPageContentSiteIdId'),
+      hasOneCode("pageContentPageContentSiteIdId"),
     );
 
     // --- Full-text search ------------------------------------------------
-    const searchDataSource = api.addOpenSearchDataSource('OpenSearchDataSource', searchDomain);
+    const searchDataSource = api.addOpenSearchDataSource(
+      "OpenSearchDataSource",
+      searchDomain,
+    );
 
     jsResolver(
-      'Query',
-      'fulltextArchives',
+      "Query",
+      "fulltextArchives",
       searchDataSource,
       openSearchQueryCode({
-        index: 'archive',
-        numericSortFields: numericSortFields(['archive']),
+        index: "archive",
+        numericSortFields: numericSortFields(["archive"]),
         searchFields: ARCHIVE_SEARCH_FIELDS,
       }),
     );
     jsResolver(
-      'Query',
-      'fulltextCollections',
+      "Query",
+      "fulltextCollections",
       searchDataSource,
       openSearchQueryCode({
-        index: 'collection',
-        numericSortFields: numericSortFields(['collection']),
+        index: "collection",
+        numericSortFields: numericSortFields(["collection"]),
         searchFields: COLLECTION_SEARCH_FIELDS,
       }),
     );
@@ -163,40 +245,53 @@ export class ApiStack extends Stack {
     // Searches both indices at once; hits are tagged with __typename so they
     // resolve to Archive or Collection through the CatalogItem interface.
     jsResolver(
-      'Query',
-      'searchObjects',
+      "Query",
+      "searchObjects",
       searchDataSource,
       openSearchQueryCode({
-        index: 'archive,collection',
-        numericSortFields: numericSortFields(['archive', 'collection']),
+        index: "archive,collection",
+        numericSortFields: numericSortFields(["archive", "collection"]),
         resolveTypename: true,
-        searchFields: [...new Set([...ARCHIVE_SEARCH_FIELDS, ...COLLECTION_SEARCH_FIELDS])],
+        searchFields: [
+          ...new Set([...ARCHIVE_SEARCH_FIELDS, ...COLLECTION_SEARCH_FIELDS]),
+        ],
       }),
     );
 
     // --- OpenSearch streaming ----------------------------------------------
     // Amplify's streaming function, moved to a supported runtime. It indexes
     // each Archive/Collection change into the index named after the table.
-    const streamingFailures = new sqs.Queue(this, 'OpenSearchStreamingFailures', {
-      retentionPeriod: Duration.days(14),
-      encryption: sqs.QueueEncryption.SQS_MANAGED,
-    });
-    const streamingFn = new lambda.Function(this, 'OpenSearchStreamingFunction', {
-      runtime: lambda.Runtime.PYTHON_3_12,
-      handler: 'python_streaming_function.lambda_handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '..', 'lambda', 'opensearch-streaming'), {
-        exclude: ['tests', '__pycache__', '.pytest_cache'],
-      }),
-      timeout: Duration.seconds(30),
-      memorySize: 128,
-      environment: {
-        OPENSEARCH_ENDPOINT: `https://${searchDomain.domainEndpoint}`,
-        OPENSEARCH_REGION: this.region,
-        DEBUG: '0',
-        OPENSEARCH_USE_EXTERNAL_VERSIONING: 'false',
+    const streamingFailures = new sqs.Queue(
+      this,
+      "OpenSearchStreamingFailures",
+      {
+        retentionPeriod: Duration.days(14),
+        encryption: sqs.QueueEncryption.SQS_MANAGED,
       },
-    });
-    searchDomain.grantPathReadWrite('_bulk', streamingFn);
+    );
+    const streamingFn = new lambda.Function(
+      this,
+      "OpenSearchStreamingFunction",
+      {
+        runtime: lambda.Runtime.PYTHON_3_12,
+        handler: "python_streaming_function.lambda_handler",
+        code: lambda.Code.fromAsset(
+          path.join(__dirname, "..", "lambda", "opensearch-streaming"),
+          {
+            exclude: ["tests", "__pycache__", ".pytest_cache"],
+          },
+        ),
+        timeout: Duration.seconds(30),
+        memorySize: 128,
+        environment: {
+          OPENSEARCH_ENDPOINT: `https://${searchDomain.domainEndpoint}`,
+          OPENSEARCH_REGION: this.region,
+          DEBUG: "0",
+          OPENSEARCH_USE_EXTERNAL_VERSIONING: "false",
+        },
+      },
+    );
+    searchDomain.grantPathReadWrite("_bulk", streamingFn);
     for (const model of SEARCHABLE_MODELS) {
       searchDomain.grantIndexReadWrite(model.toLowerCase(), streamingFn);
       streamingFn.addEventSource(
@@ -217,33 +312,41 @@ export class ApiStack extends Stack {
     // policies as the default aws-elasticbeanstalk-ec2-role, plus ECR read
     // for the Docker platform.
     const ebRoleName = ebInstanceProfileName(config.name);
-    const ebRole = new iam.Role(this, 'EbInstanceRole', {
+    const ebRole = new iam.Role(this, "EbInstanceRole", {
       roleName: ebRoleName,
-      assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+      assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
       managedPolicies: [
-        'AWSElasticBeanstalkWebTier',
-        'AWSElasticBeanstalkMulticontainerDocker',
-        'AWSElasticBeanstalkWorkerTier',
-        'AmazonEC2ContainerRegistryReadOnly',
+        "AWSElasticBeanstalkWebTier",
+        "AWSElasticBeanstalkMulticontainerDocker",
+        "AWSElasticBeanstalkWorkerTier",
+        "AmazonEC2ContainerRegistryReadOnly",
       ].map((name) => iam.ManagedPolicy.fromAwsManagedPolicyName(name)),
     });
-    const ebInstanceProfile = new iam.InstanceProfile(this, 'EbInstanceProfile', {
-      instanceProfileName: ebRoleName,
-      role: ebRole,
-    });
-    api.grant(ebRole, appsync.IamResource.all(), 'appsync:GraphQL');
+    const ebInstanceProfile = new iam.InstanceProfile(
+      this,
+      "EbInstanceProfile",
+      {
+        instanceProfileName: ebRoleName,
+        role: ebRole,
+      },
+    );
+    api.grant(ebRole, appsync.IamResource.all(), "appsync:GraphQL");
 
     // Web stacks read the URL from here, so they can attach to an
     // environment without a cross-stack reference to this stack.
-    new ssm.StringParameter(this, 'GraphQLApiUrlParameter', {
+    new ssm.StringParameter(this, "GraphQLApiUrlParameter", {
       parameterName: graphqlApiUrlParameterName(config.name),
       stringValue: api.graphqlUrl,
     });
 
-    new CfnOutput(this, 'GraphQLApiId', { value: api.apiId });
-    new CfnOutput(this, 'GraphQLApiUrl', { value: api.graphqlUrl });
-    new CfnOutput(this, 'GraphQLApiArn', { value: api.arn });
-    new CfnOutput(this, 'EbInstanceProfileName', { value: ebInstanceProfile.instanceProfileName });
-    new CfnOutput(this, 'OpenSearchStreamingFailureQueueUrl', { value: streamingFailures.queueUrl });
+    new CfnOutput(this, "GraphQLApiId", { value: api.apiId });
+    new CfnOutput(this, "GraphQLApiUrl", { value: api.graphqlUrl });
+    new CfnOutput(this, "GraphQLApiArn", { value: api.arn });
+    new CfnOutput(this, "EbInstanceProfileName", {
+      value: ebInstanceProfile.instanceProfileName,
+    });
+    new CfnOutput(this, "OpenSearchStreamingFailureQueueUrl", {
+      value: streamingFailures.queueUrl,
+    });
   }
 }

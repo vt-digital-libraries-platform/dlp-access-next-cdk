@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { searchCatalog, type SearchResponse, type SearchScope } from "./actions";
+import {
+  searchCatalog,
+  type SearchResponse,
+  type SearchScope,
+} from "./actions";
 
 const SCOPES: { value: SearchScope; label: string }[] = [
   { value: "archives", label: "Archives" },
@@ -11,7 +15,8 @@ const SCOPES: { value: SearchScope; label: string }[] = [
 
 const TYPE_STYLES = {
   Archive: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
-  Collection: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
+  Collection:
+    "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
 };
 
 export function SearchPanel() {
@@ -69,18 +74,26 @@ export function SearchPanel() {
       {response && (
         <div className="flex flex-col gap-2">
           {response.error ? (
-            <p className="text-sm text-red-700 dark:text-red-400">{response.error}</p>
+            <p className="text-sm text-red-700 dark:text-red-400">
+              {response.error}
+            </p>
           ) : (
             <>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Showing {response.items.length} of {response.total} results for “{searched}”.
+                Showing {response.items.length} of {response.total} results for
+                “{searched}”.
               </p>
               {response.items.length > 0 && (
                 <ul className="divide-y divide-zinc-200 rounded border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
                   {response.items.map((item) => (
-                    <li key={`${item.type}-${item.id}`} className="flex flex-col gap-1 p-3">
+                    <li
+                      key={`${item.type}-${item.id}`}
+                      className="flex flex-col gap-1 p-3"
+                    >
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_STYLES[item.type]}`}>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_STYLES[item.type]}`}
+                        >
                           {item.type}
                           {item.category ? ` · ${item.category}` : ""}
                         </span>
@@ -88,7 +101,9 @@ export function SearchPanel() {
                           {item.title ?? "(untitled)"}
                         </span>
                       </div>
-                      <code className="text-xs text-zinc-500 dark:text-zinc-400">{item.identifier ?? item.id}</code>
+                      <code className="text-xs text-zinc-500 dark:text-zinc-400">
+                        {item.identifier ?? item.id}
+                      </code>
                     </li>
                   ))}
                 </ul>

@@ -342,7 +342,6 @@ input SearchableBooleanFilterInput {
   ne: Boolean
 }
 
-
 type SearchableCollectionConnection {
   items: [Collection]
   nextToken: String
@@ -579,7 +578,6 @@ input SearchableObjectFilterInput {
   or: [SearchableObjectFilterInput]
   not: SearchableObjectFilterInput
 }
-
 
 input SearchableObjectSortInput {
   field: SearchableObjectSortableFields

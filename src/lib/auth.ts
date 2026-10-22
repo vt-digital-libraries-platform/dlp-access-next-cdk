@@ -24,7 +24,8 @@ export interface Session {
 
 function requireEnv(name: string): string {
   const value = process.env[name];
-  if (!value) throw new Error(`${name} is not set. It is required for Cognito sign-in.`);
+  if (!value)
+    throw new Error(`${name} is not set. It is required for Cognito sign-in.`);
   return value;
 }
 
@@ -47,7 +48,10 @@ export function authConfig() {
 // The app's public origin. Behind a proxy the request's own origin can differ
 // from the one the browser sees, so APP_BASE_URL overrides it.
 export function baseUrl(request: Request): string {
-  return (process.env.APP_BASE_URL ?? new URL(request.url).origin).replace(/\/$/, "");
+  return (process.env.APP_BASE_URL ?? new URL(request.url).origin).replace(
+    /\/$/,
+    "",
+  );
 }
 
 export function redirectUri(request: Request): string {
@@ -56,7 +60,12 @@ export function redirectUri(request: Request): string {
 
 // Only same-site paths, so the return path can't be used as an open redirect.
 export function safeReturnTo(value: string | null | undefined): string {
-  return value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\") ? value : "/";
+  return value &&
+    value.startsWith("/") &&
+    !value.startsWith("//") &&
+    !value.includes("\\")
+    ? value
+    : "/";
 }
 
 let clientPromise: Promise<Client> | undefined;
@@ -102,7 +111,10 @@ async function verifyIdToken(token: string): Promise<Session | null> {
   const { issuer, clientId } = authConfig();
   jwks ??= createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
   try {
-    const { payload } = await jwtVerify(token, jwks, { issuer, audience: clientId });
+    const { payload } = await jwtVerify(token, jwks, {
+      issuer,
+      audience: clientId,
+    });
     if (payload.token_use !== "id") return null;
     const groups = payload["cognito:groups"];
     return {
@@ -111,7 +123,8 @@ async function verifyIdToken(token: string): Promise<Session | null> {
       groups: Array.isArray(groups) ? groups.map(String) : [],
     };
   } catch (err) {
-    if (err instanceof errors.JOSEError && INVALID_TOKEN_CODES.has(err.code)) return null;
+    if (err instanceof errors.JOSEError && INVALID_TOKEN_CODES.has(err.code))
+      return null;
     console.error("ID token verification error:", err);
     throw new Error("Couldn't verify the sign-in session.", { cause: err });
   }
