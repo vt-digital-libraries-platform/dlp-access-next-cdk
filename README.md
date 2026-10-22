@@ -9,7 +9,7 @@ The repo holds two independent npm projects, each with its own `package.json`:
 
 ## Backend Environments and stacks
 
-Each **backend environment** has its own data and API. Backend environments are `dev`, `pre-production`, and `production` (which belongs in a separate AWS account), or short-lived feature environments named as: `f-<slug>`.
+Each **backend environment** has its own Data, API, and Auth stacks. Backend "tier" environments are `dev`, `pre-production`, and `production` (which belongs in a separate AWS account), or short-lived feature environments named as: `f-<slug>`.
 
 | Stack                        | Contents                                                                                                                                                                                                                                                                                                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -18,7 +18,7 @@ Each **backend environment** has its own data and API. Backend environments are 
 | `DlpAccessNext-<env>-Auth`   | A pointer to the environment's existing Cognito user pool and identity provider (two SSM parameters). The pool itself is made outside CDK                                                                                                                                                                                             |
 | `DlpAccessNext-Web-<branch>` | One git branch of the dlp-access-next app: an Elastic Beanstalk application in a Node.js environment (`dlpnext-<branch>`, one instance behind an HTTPS load balancer) at `https://<branch>.dlp-access-dev.dlp.cloud.lib.vt.edu`, that calls one environment's API, and the branch's Cognito app client on the environment's user pool |
 
-Many branches can share one backend environment. Only feature environments delete their tables and opensearch domain when their stacks are destroyed. `dev`, `pre-production` and `production` keep their data and have deletion protection and point-in-time recovery turned on.
+Multiple branches can share one backend environment. Only feature environments delete their tables and opensearch domain when their stacks are destroyed. `dev`, `pre-production` and `production` keep their data and have deletion protection and point-in-time recovery turned on.
 
 ## Running locally
 
@@ -36,7 +36,7 @@ Locally, put Cognito config in `.env.local` (git-ignored)
 | `COGNITO_ISSUER`            | `https://cognito-idp.<region>.amazonaws.com/<user pool ID>`                                                                                                                              |
 | `COGNITO_CLIENT_ID`         | The app client's ID                                                                                                                                                                      |
 | `COGNITO_CLIENT_SECRET`     | The app client's secret                                                                                                                                                                  |
-| `COGNITO_IDENTITY_PROVIDER` | Optional. The identity provider on the user pool to sign in through, such as `VT-SSO-OIDC`; sign-in goes straight to it. Without it, managed login shows whatever the app client allows. |
+| `COGNITO_IDENTITY_PROVIDER` | The identity provider on the user pool to sign in through, such as `VT-SSO-OIDC`; sign-in goes straight to it. Without it, managed login shows whatever the app client allows. |
 | `APP_BASE_URL`              | Optional. The app's public origin, when it differs from the one the server sees (behind a proxy). Defaults to the request's origin.                                                      |
 
 A Web stack's app client already allows `http://localhost:3000`. Any other app client needs `<origin>/authorize` as an allowed callback URL, `<origin>/` as an allowed sign-out URL, and the `openid` and `email` scopes. Cognito only accepts `http` callback URLs for `localhost`.
@@ -103,11 +103,12 @@ npx cdk destroy --all -c backend-env=dev -c aws-account-id=$ACCOUNT -c user-pool
 ```bash
 cd infra
 npm test              # Jest: assertions on the synthesized templates
+python3 -m venv .venv && .venv/bin/pip install -r lambda/requirements-dev.txt # one-time setup for test:lambda
 npm run test:lambda   # pytest: the OpenSearch streaming handler
 ```
 
-`test:lambda` needs a one-time setup: `python3 -m venv .venv && .venv/bin/pip install -r lambda/requirements-dev.txt`.
 
 ## More
 
 - `infra/schema/schema.graphql`: the GraphQL schema, which is the source of truth for the API.
+- `docs/deployment.md`: More exhaustive instructions for running deployments.
