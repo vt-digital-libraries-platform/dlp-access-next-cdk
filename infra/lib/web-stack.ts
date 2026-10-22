@@ -26,7 +26,7 @@ import {
 } from "./environments";
 
 /**
- * The Node.js platform the app runs on, matching the hand-made
+ * The Node platform the app runs on, matching the hand-made
  * `appsync-stack` environment. Managed updates apply minor platform
  * versions in place, so this only needs bumping for a major change.
  */
@@ -34,15 +34,10 @@ export const SOLUTION_STACK =
   "64bit Amazon Linux 2023 v6.11.8 running Node.js 24";
 
 const REPO_ROOT = path.join(__dirname, "..", "..");
-
-// Where `npm run dev` serves the app. Always registered on the app client,
-// so the branch can be run locally against its environment's user pool.
 const LOCAL_ORIGIN = "http://localhost:3000";
-// The app's sign-in callback route (src/app/authorize). It must match
-// CALLBACK_PATH in src/lib/auth.ts, which a test checks.
 export const CALLBACK_PATH = "/authorize";
 
-// Each branch is served at <slug>.<APP_DOMAIN>, by a record in the hosted
+// Each branch is served at <branch slug>.<APP_DOMAIN>, by a record in the hosted
 // zone HOSTED_ZONE, over HTTPS with an existing certificate covering
 // *.<APP_DOMAIN>.
 export const APP_DOMAIN = "dlp-access-dev.dlp.cloud.lib.vt.edu";
@@ -84,21 +79,20 @@ function git(...args: string[]): string {
 export interface WebStackProps extends StackProps {
   /** The environment whose API the app calls. */
   readonly config: EnvironmentConfig;
-  /** Branch slug; names the Beanstalk application and environment. */
-  readonly frontendBranchSlug: string;
-  /** The git branch name the slug came from. */
+  /** The git branch name. */
   readonly frontendBranch: string;
+  /** Branch slug; derived from frontendBranch; names the Beanstalk application/environment. */
+  readonly frontendBranchSlug: string;
   /** ARN of the ACM certificate covering the branch's domain name. */
   readonly certificateArn: string;
 }
 
 /**
- * One branch deployment of the Next.js app on Elastic Beanstalk. It finds
- * its environment's API and user pool by fixed names (the instance profile
- * and SSM parameters), so it deploys the same way whether the environment's
- * stacks are in this CDK app or were deployed earlier. The Cognito app
- * client the app signs users in with is the branch's own, and so is its
- * domain name, served over HTTPS by the environment's load balancer.
+ * One branch deployment of the dlp-access-next app on Elastic Beanstalk. It finds
+ * its environment's AppSync API and Cognito user pool by fixed names so it deploys the same way 
+ * whether the backend environment is being provisioned or already exists. 
+ * The Cognito app-client the app uses is specific to this branch, 
+ * as is its domain name, served over HTTPS by the environment's load balancer.
  */
 export class WebStack extends Stack {
   /** The repo source uploaded as the Beanstalk application version. */
@@ -361,7 +355,7 @@ export class WebStack extends Stack {
 
 /**
  * Turns a git branch name into the slug that names a Web stack, e.g.
- * `whunter/Multi_Env` becomes `whunter-multi-env`.
+ * `user/Multi_Env` becomes `user-multi-env`.
  */
 export function branchSlug(branch: string): string {
   return branch
@@ -384,7 +378,7 @@ export function webResourceName(slug: string): string {
   return `${WEB_PREFIX}${slug}`;
 }
 
-/** The branch's public domain name, e.g. `whunter-multi-env.dlp-access-dev.dlp.cloud.lib.vt.edu`. */
+/** The branch's public domain name, e.g. `user-multi-env.dlp-access-dev.dlp.cloud.lib.vt.edu`. */
 export function webDomainName(slug: string): string {
   return `${slug}.${APP_DOMAIN}`;
 }
