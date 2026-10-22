@@ -4,8 +4,10 @@ import { MODELS, tableName } from "./models";
 import { webResourceName } from "./web-stack";
 
 /**
- * Runs an AWS CLI command and returns its parsed JSON output. Throws an
- * `AwsError` carrying the CLI's message when the command fails.
+ * Checks the app plan before deployment
+ * 
+ * checks: aws account, creds, existence of already deployed stacks
+ * returns: DeployCheck, like: "{ stacks, warnings }" based on check results
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped JSON from the CLI
 export type AwsCli = (args: string[]) => any;
@@ -52,6 +54,7 @@ export function lookupDeployedState(plan: AppPlan, aws: AwsCli): DeployedState {
     }
   };
 
+  /** returns 12-digit AWS account number. ex: 226... */
   const callerAccount = find(
     "credentials",
     () => aws(["sts", "get-caller-identity"]).Account as string,
