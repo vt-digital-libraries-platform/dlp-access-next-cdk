@@ -6,7 +6,7 @@ import {
   isConfirmed,
   productionWarning,
   profileFromArgs,
-} from "../lib/deploy";
+} from "../lib/deploy-cli";
 
 const awsAccountId = "123456789012";
 const userPoolId = "us-east-1_AbCd12345";

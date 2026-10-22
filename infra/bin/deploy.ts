@@ -15,7 +15,7 @@ import {
   isConfirmed,
   productionWarning,
   profileFromArgs,
-} from "../lib/deploy";
+} from "../lib/deploy-cli";
 import {
   AwsError,
   checkDeploy,
