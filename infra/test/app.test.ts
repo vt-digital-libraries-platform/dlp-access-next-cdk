@@ -94,8 +94,8 @@ describe("environment selection", () => {
 });
 
 describe("tables", () => {
-  test("seven tables named <Model>-dlpnext-<env> with Amplify key and stream shape", () => {
-    dev.data.resourceCountIs("AWS::DynamoDB::Table", 7);
+  test("eight tables named <Model>-dlpnext-<env> with Amplify key and stream shape", () => {
+    dev.data.resourceCountIs("AWS::DynamoDB::Table", 8);
     for (const model of [
       "Archive",
       "Collection",
@@ -104,6 +104,7 @@ describe("tables", () => {
       "History",
       "MetadataField",
       "PageContent",
+      "RightsStatement",
     ]) {
       dev.data.hasResourceProperties("AWS::DynamoDB::Table", {
         TableName: `${model}-dlpnext-dev`,
@@ -149,7 +150,7 @@ describe("tables", () => {
     const tables = Object.values(
       feature.data.findResources("AWS::DynamoDB::Table"),
     );
-    expect(tables).toHaveLength(7);
+    expect(tables).toHaveLength(8);
     for (const table of tables) {
       expect(table.DeletionPolicy).toBe("Delete");
       expect(table.Properties.DeletionProtectionEnabled).toBe(false);
@@ -163,7 +164,7 @@ describe("tables", () => {
   test("dev and pre-production tables are retained, deletion-protected and have PITR", () => {
     for (const { data } of [dev, preProduction]) {
       const tables = Object.values(data.findResources("AWS::DynamoDB::Table"));
-      expect(tables).toHaveLength(7);
+      expect(tables).toHaveLength(8);
       for (const table of tables) {
         expect(table.DeletionPolicy).toBe("Retain");
         expect(table.Properties.DeletionProtectionEnabled).toBe(true);
