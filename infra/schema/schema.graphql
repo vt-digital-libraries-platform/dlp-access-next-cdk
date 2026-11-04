@@ -206,6 +206,17 @@ type PageContent {
   pageContentSiteId: Site
 }
 
+type RightsStatement {
+  id: ID!
+  rightsURI: String!
+  rightsCode: String!
+  rightsLabel: String!
+  rightsDescription: String
+  rightsCategory: String
+  isActive: Boolean
+  rightsStatementText: String
+}
+
 type Site {
   analyticsID: String
   assetBasePath: String
@@ -266,6 +277,11 @@ type PageContentConnection {
   nextToken: String
 }
 
+type RightsStatementConnection {
+  items: [RightsStatement]
+  nextToken: String
+}
+
 type Query {
   getArchive(id: ID!): Archive
   listArchives(limit: Int, nextToken: String): ArchiveConnection
@@ -311,6 +327,9 @@ type Query {
 
   getPageContent(id: ID!): PageContent
   listPageContents(limit: Int, nextToken: String): PageContentConnection
+
+  getRightsStatement(id: ID!): RightsStatement
+  listRightsStatements(limit: Int, nextToken: String): RightsStatementConnection
 
   searchObjects(
     allFields: String

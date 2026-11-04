@@ -10,6 +10,7 @@ export const MODELS = [
   "History",
   "MetadataField",
   "PageContent",
+  "RightsStatement",
 ] as const;
 export type ModelName = (typeof MODELS)[number];
 
@@ -23,6 +24,7 @@ export const LIST_QUERY_FIELD: Record<ModelName, string> = {
   History: "listHistories",
   MetadataField: "listMetadataFields",
   PageContent: "listPageContents",
+  RightsStatement: "listRightsStatements",
 };
 
 export interface GlobalIndex {
@@ -45,6 +47,7 @@ export const GLOBAL_INDEXES: Record<ModelName, GlobalIndex[]> = {
   History: [],
   MetadataField: [],
   PageContent: [],
+  RightsStatement: [],
 };
 
 /** Models whose table streams are indexed into OpenSearch. */
