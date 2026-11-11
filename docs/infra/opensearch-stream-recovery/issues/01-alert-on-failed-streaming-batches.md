@@ -13,11 +13,11 @@ Start the operations runbook (`docs/opensearch-streaming.md`) with two sections:
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done (awaiting on-AWS verification)
 
-- [ ] Each environment's Api stack creates an SNS topic and outputs its ARN
-- [ ] `alertEmails` is accepted in environment config, defaults to empty, and each address becomes an email subscription on the topic
-- [ ] An alarm on the failure queue fires at >= 1 visible message over 5 minutes, treats missing data as not breaching, and sends both ALARM and OK to the topic
-- [ ] CDK assertion tests cover the topic, output, alarm thresholds/actions, and subscriptions (present when configured, absent when empty)
-- [ ] `docs/opensearch-streaming.md` exists with the "How streaming works" and "Alerting" sections
+- [x] Each environment's Api stack creates an SNS topic and outputs its ARN
+- [x] `alertEmails` is accepted in environment config, defaults to empty, and each address becomes an email subscription on the topic
+- [x] An alarm on the failure queue fires at >= 1 visible message over 5 minutes, treats missing data as not breaching, and sends both ALARM and OK to the topic
+- [x] CDK assertion tests cover the topic, output, alarm thresholds/actions, and subscriptions (present when configured, absent when empty)
+- [x] `docs/opensearch-streaming.md` exists with the "How streaming works" and "Alerting" sections
 - [ ] Verified on a feature environment: sending a test message to the queue moves the alarm to ALARM; purging returns it to OK

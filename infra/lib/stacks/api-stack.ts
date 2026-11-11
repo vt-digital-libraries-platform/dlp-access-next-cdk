@@ -1,6 +1,8 @@
 import * as path from "path";
 import { Stack, StackProps, CfnOutput, Duration } from "aws-cdk-lib";
 import * as appsync from "aws-cdk-lib/aws-appsync";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
+import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -9,6 +11,8 @@ import {
   SqsDlq,
 } from "aws-cdk-lib/aws-lambda-event-sources";
 import * as opensearch from "aws-cdk-lib/aws-opensearchservice";
+import * as sns from "aws-cdk-lib/aws-sns";
+import * as snsSubscriptions from "aws-cdk-lib/aws-sns-subscriptions";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
@@ -268,6 +272,36 @@ export class ApiStack extends Stack {
         encryption: sqs.QueueEncryption.SQS_MANAGED,
       },
     );
+
+    // A batch lands on the failure queue only after its retries and
+    // bisection are exhausted, so any message there needs someone to act.
+    // The alarm stays in ALARM until the queue is drained or purged.
+    const alertTopic = new sns.Topic(this, "StreamingAlertTopic");
+    for (const address of config.alertEmails) {
+      alertTopic.addSubscription(
+        new snsSubscriptions.EmailSubscription(address),
+      );
+    }
+    const failureAlarm = new cloudwatch.Alarm(
+      this,
+      "OpenSearchStreamingFailureAlarm",
+      {
+        alarmDescription:
+          "OpenSearch streaming gave up on a batch; see docs/opensearch-streaming.md",
+        metric: streamingFailures.metricApproximateNumberOfMessagesVisible({
+          period: Duration.minutes(5),
+          statistic: cloudwatch.Stats.MAXIMUM,
+        }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      },
+    );
+    failureAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alertTopic));
+    failureAlarm.addOkAction(new cloudwatchActions.SnsAction(alertTopic));
+
     const streamingFn = new lambda.Function(
       this,
       "OpenSearchStreamingFunction",
@@ -346,6 +380,9 @@ export class ApiStack extends Stack {
     });
     new CfnOutput(this, "OpenSearchStreamingFailureQueueUrl", {
       value: streamingFailures.queueUrl,
+    });
+    new CfnOutput(this, "StreamingAlertTopicArn", {
+      value: alertTopic.topicArn,
     });
   }
 }

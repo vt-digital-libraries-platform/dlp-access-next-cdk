@@ -27,6 +27,12 @@ export interface EnvironmentConfig {
    * always destroyed with its stack.
    */
   readonly removalPolicy: RemovalPolicy;
+  /**
+   * Addresses subscribed by email to the environment's alert topic, which
+   * hears about OpenSearch streaming failures. Use team or list addresses;
+   * each one must confirm AWS's subscription email once.
+   */
+  readonly alertEmails: readonly string[];
 }
 
 type Sizing = Pick<EnvironmentConfig, "search" | "web">;
@@ -59,14 +65,17 @@ const ENVIRONMENTS: Record<string, Settings> = {
   dev: {
     region: "us-east-1",
     removalPolicy: RemovalPolicy.RETAIN,
+    alertEmails: [],
   },
   "pre-production": {
     region: "us-east-1",
     removalPolicy: RemovalPolicy.RETAIN,
+    alertEmails: [],
   },
   production: {
     region: "us-east-1",
     removalPolicy: RemovalPolicy.RETAIN,
+    alertEmails: [],
   },
 };
 
@@ -78,6 +87,7 @@ const FEATURE_PREFIX = "f-";
 const FEATURE: Settings = {
   ...ENVIRONMENTS.dev,
   removalPolicy: RemovalPolicy.DESTROY,
+  alertEmails: [],
 };
 
 // OpenSearch domain names are at most 28 characters and the domain is named

@@ -9,8 +9,11 @@ import {
   numericSortFields,
   searchMappings,
 } from "../lib/appsync/search-mappings";
+import { resolveEnvironment } from "../lib/config/environments";
 import { CALLBACK_PATH, CERTIFICATE_ID } from "../lib/config/web";
 import { sourceCommit } from "../lib/git";
+import { ApiStack } from "../lib/stacks/api-stack";
+import { DataStack } from "../lib/stacks/data-stack";
 
 const awsAccountId = "123456789012";
 const userPoolId = "us-east-1_AbCd12345";
@@ -456,6 +459,78 @@ describe("streaming Lambda", () => {
       expect(
         mapping.Properties.DestinationConfig.OnFailure.Destination,
       ).toBeDefined();
+    }
+  });
+});
+
+describe("streaming failure alerts", () => {
+  /** An Api stack for dev with the given alert addresses. */
+  function apiWithAlertEmails(alertEmails: string[]) {
+    const app = new App();
+    const env = { account: awsAccountId, region: "us-east-1" };
+    const config = { ...resolveEnvironment("dev"), alertEmails };
+    const data = new DataStack(app, "Data", { env, config });
+    const api = new ApiStack(app, "Api", {
+      env,
+      config,
+      tables: data.tables,
+      searchDomain: data.searchDomain,
+    });
+    return Template.fromStack(api);
+  }
+
+  const queueId = (t: Template) =>
+    Object.keys(t.findResources("AWS::SQS::Queue"))[0];
+  const topicId = (t: Template) =>
+    Object.keys(t.findResources("AWS::SNS::Topic"))[0];
+
+  test("every environment has an alert topic whose ARN is a stack output", () => {
+    for (const t of [dev.api, preProduction.api, feature.api]) {
+      t.resourceCountIs("AWS::SNS::Topic", 1);
+      t.hasOutput("StreamingAlertTopicArn", {
+        Value: { Ref: topicId(t) },
+      });
+    }
+  });
+
+  test("a message on the failure queue alarms the topic, and clearing it sends OK", () => {
+    for (const t of [dev.api, feature.api]) {
+      t.hasResourceProperties("AWS::CloudWatch::Alarm", {
+        Namespace: "AWS/SQS",
+        MetricName: "ApproximateNumberOfMessagesVisible",
+        Dimensions: [
+          {
+            Name: "QueueName",
+            Value: { "Fn::GetAtt": [queueId(t), "QueueName"] },
+          },
+        ],
+        Statistic: "Maximum",
+        Period: 300,
+        EvaluationPeriods: 1,
+        Threshold: 1,
+        ComparisonOperator: "GreaterThanOrEqualToThreshold",
+        TreatMissingData: "notBreaching",
+        AlarmActions: [{ Ref: topicId(t) }],
+        OKActions: [{ Ref: topicId(t) }],
+      });
+    }
+  });
+
+  test("no environment subscribes anyone yet", () => {
+    for (const t of [dev.api, preProduction.api, feature.api]) {
+      t.resourceCountIs("AWS::SNS::Subscription", 0);
+    }
+  });
+
+  test("each configured alert address is an email subscription on the topic", () => {
+    const t = apiWithAlertEmails(["dlp-team@example.edu", "ops@example.edu"]);
+    t.resourceCountIs("AWS::SNS::Subscription", 2);
+    for (const address of ["dlp-team@example.edu", "ops@example.edu"]) {
+      t.hasResourceProperties("AWS::SNS::Subscription", {
+        Protocol: "email",
+        Endpoint: address,
+        TopicArn: { Ref: topicId(t) },
+      });
     }
   });
 });
