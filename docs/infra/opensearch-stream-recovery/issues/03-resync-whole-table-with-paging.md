@@ -12,10 +12,10 @@ Extend the runbook's **Resync reference** with the full-table mode and the resum
 
 **Blocked by:** 02 (Resync documents by ID)
 
-**Status:** ready-for-agent
+**Status:** done (awaiting on-AWS verification)
 
-- [ ] Invoking without `ids` scans the model's table and indexes every item through the streaming handler's transform
-- [ ] A run stops before ~12 minutes and returns `processed` and `lastEvaluatedKey`; `startKey` resumes from that key; a finished scan returns a null key
-- [ ] pytest covers a multi-page scan, resuming from `startKey`, and stopping on the time budget
-- [ ] Runbook "Resync reference" documents full-table mode and how to loop until the key is null
+- [x] Invoking without `ids` scans the model's table and indexes every item through the streaming handler's transform
+- [x] A run stops before ~12 minutes and returns `processed` and `lastEvaluatedKey`; `startKey` resumes from that key; a finished scan returns a null key
+- [x] pytest covers a multi-page scan, resuming from `startKey`, and stopping on the time budget
+- [x] Runbook "Resync reference" documents full-table mode and how to loop until the key is null
 - [ ] Verified on a feature environment: a full resync reports `processed` equal to the table's item count

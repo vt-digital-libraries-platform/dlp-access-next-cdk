@@ -366,7 +366,7 @@ export class ApiStack extends Stack {
     searchDomain.grantPathReadWrite("_bulk", resyncFn);
     for (const model of SEARCHABLE_MODELS) {
       searchDomain.grantIndexReadWrite(model.toLowerCase(), resyncFn);
-      tables[model].grant(resyncFn, "dynamodb:BatchGetItem");
+      tables[model].grant(resyncFn, "dynamodb:BatchGetItem", "dynamodb:Scan");
     }
 
     // --- IAM auth for the Elastic Beanstalk app -----------------------------

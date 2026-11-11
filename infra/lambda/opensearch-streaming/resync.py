@@ -18,6 +18,10 @@ import python_streaming_function as streaming
 TABLES = json.loads(os.environ['RESYNC_TABLES'])
 BATCH_SIZE = 100  # BatchGetItem's key limit, and the stream's batch size
 MAX_UNPROCESSED_RETRIES = 8
+# A full-table run stops starting new pages with this much of the Lambda's
+# 15 minutes left, so a page in flight finishes and the run returns its
+# resume key instead of timing out.
+RESERVE_MS = 3 * 60 * 1000
 
 logger = logging.getLogger()
 dynamodb = boto3.client('dynamodb')
@@ -66,23 +70,57 @@ def _resync_ids(table, ids):
     return len(ids), deleted
 
 
+def _resync_table(table, start_key, context):
+    """Indexes every item in the table from start_key, a page at a time.
+
+    Returns the number of items indexed and the key to resume from, which
+    is None once the whole table is done.
+    """
+    processed = 0
+    while context.get_remaining_time_in_millis() >= RESERVE_MS:
+        scan = {'TableName': table, 'Limit': BATCH_SIZE}
+        if start_key:
+            scan['ExclusiveStartKey'] = start_key
+        page = dynamodb.scan(**scan)
+        records = [_stream_record(table, 'INSERT', item) for item in page['Items']]
+        if records:
+            streaming._lambda_handler({'Records': records}, None)
+        processed += len(records)
+        start_key = page.get('LastEvaluatedKey')
+        if not start_key:
+            return processed, None
+    return processed, start_key
+
+
 def _parse(event):
-    """The table and IDs to resync, or ValueError naming what is wrong."""
+    """The table, IDs and start key to resync, or ValueError naming what is wrong."""
     if not isinstance(event, dict):
         raise ValueError('payload must be a JSON object, like {"model": "Archive", "ids": ["..."]}')
-    unknown = sorted(set(event) - {'model', 'ids'})
+    unknown = sorted(set(event) - {'model', 'ids', 'startKey'})
     if unknown:
         raise ValueError('unknown fields: {}'.format(', '.join(unknown)))
     if event.get('model') not in TABLES:
         raise ValueError('model must be one of {}'.format(', '.join(sorted(TABLES))))
     ids = event.get('ids')
+    start_key = event.get('startKey')
+    if ids is None:
+        if start_key is not None and not isinstance(start_key, dict):
+            raise ValueError('startKey must be the lastEvaluatedKey a previous run returned')
+        return TABLES[event['model']], None, start_key
+    if start_key is not None:
+        raise ValueError('startKey only applies without ids, to resume a full-table resync')
     if not (isinstance(ids, list) and ids and all(isinstance(i, str) and i for i in ids)):
         raise ValueError('ids must be a non-empty list of IDs')
-    return TABLES[event['model']], ids
+    return TABLES[event['model']], ids, None
 
 
 def lambda_handler(event, context):
-    table, ids = _parse(event)
+    table, ids, start_key = _parse(event)
+    if ids is None:
+        logger.info('Resyncing %s from %s', table, start_key or 'the start')
+        processed, last_key = _resync_table(table, start_key, context)
+        logger.info('Resynced %s items; lastEvaluatedKey=%s', processed, last_key)
+        return {'processed': processed, 'lastEvaluatedKey': last_key}
     logger.info('Resyncing %s IDs from %s', len(ids), table)
     processed, deleted = _resync_ids(table, ids)
     logger.info('Resynced %s IDs; deleted from the index: %s', processed, deleted)

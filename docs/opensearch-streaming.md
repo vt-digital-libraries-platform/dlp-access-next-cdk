@@ -57,6 +57,29 @@ aws lambda invoke \
 
 It returns `{"processed": <number of distinct IDs>, "deleted": [<IDs deleted from the index>]}`. If OpenSearch rejects any document, the invocation fails with the same `List of items with errors` log line the streaming function writes, in the resync function's log group.
 
+### Whole table
+
+Leave out `ids` to resync every item in a table:
+
+```sh
+aws lambda invoke \
+  --function-name dlp-access-next-<env>-opensearch-resync \
+  --cli-binary-format raw-in-base64-out \
+  --cli-read-timeout 0 \
+  --payload '{"model": "Archive"}' \
+  /dev/stdout
+```
+
+A Lambda can run for at most 15 minutes, so a run stops starting new pages when about 3 minutes are left and returns `{"processed": <items this run>, "lastEvaluatedKey": <key or null>}`. While `lastEvaluatedKey` is not null, invoke again with it as `startKey`, exactly as returned:
+
+```sh
+--payload '{"model": "Archive", "startKey": {"id": {"S": "<id>"}}}'
+```
+
+When `lastEvaluatedKey` is null, the whole table has been resynced. `--cli-read-timeout 0` keeps the CLI waiting for a run that takes the full 12 or so minutes.
+
+A full-table resync only indexes what is in the table. It does not remove documents whose items are gone from the table; resync those IDs by ID instead.
+
 ### Racing the live stream
 
 Writes are last-writer-wins. If an item changes while a resync of it is in flight, the resync can land after the stream's update and put the older version back. The window is a few seconds per batch. Run resyncs at a quiet time, and if in doubt, run the resync again for the affected IDs.

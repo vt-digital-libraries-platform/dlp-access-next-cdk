@@ -30,6 +30,7 @@ class FakeDynamoDB:
         self.tables = {name: [typed(i) for i in items] for name, items in tables.items()}
         # IDs left unprocessed the first time they are asked for, as under throttling
         self.unprocessed_once = set(unprocessed_once)
+        self.pages_scanned = 0
 
     def batch_get_item(self, RequestItems):
         (table, request), = RequestItems.items()
@@ -40,6 +41,18 @@ class FakeDynamoDB:
         found = [i for i in self.tables[table] if i['id']['S'] in ids and i['id']['S'] not in deferred]
         unprocessed = {table: {'Keys': [{'id': {'S': i}} for i in deferred]}} if deferred else {}
         return {'Responses': {table: found}, 'UnprocessedKeys': unprocessed}
+
+    def scan(self, TableName, Limit, ExclusiveStartKey=None):
+        items = self.tables[TableName]
+        start = 0
+        if ExclusiveStartKey:
+            start = next(n for n, i in enumerate(items) if i['id'] == ExclusiveStartKey['id']) + 1
+        page = items[start:start + Limit]
+        self.pages_scanned += 1
+        response = {'Items': page}
+        if start + Limit < len(items):
+            response['LastEvaluatedKey'] = {'id': page[-1]['id']}
+        return response
 
 
 @pytest.fixture
@@ -58,7 +71,9 @@ def posted(monkeypatch):
 @pytest.fixture
 def tables(monkeypatch):
     def use(unprocessed_once=(), **tables):
-        monkeypatch.setattr(resync, 'dynamodb', FakeDynamoDB(tables, unprocessed_once))
+        fake = FakeDynamoDB(tables, unprocessed_once)
+        monkeypatch.setattr(resync, 'dynamodb', fake)
+        return fake
     return use
 
 
@@ -131,4 +146,64 @@ def test_invalid_payloads_are_rejected_before_anything_is_touched(posted, tables
 
     with pytest.raises(ValueError, match=message):
         resync.lambda_handler(event, None)
+    assert posted == []
+
+
+class FakeContext:
+    """A Lambda context whose remaining time drops by a fixed amount per check."""
+
+    def __init__(self, remaining_ms=15 * 60 * 1000, spent_per_check_ms=0):
+        self.remaining_ms = remaining_ms
+        self.spent_per_check_ms = spent_per_check_ms
+
+    def get_remaining_time_in_millis(self):
+        remaining = self.remaining_ms
+        self.remaining_ms -= self.spent_per_check_ms
+        return remaining
+
+
+def test_without_ids_the_whole_table_is_resynced_page_by_page(posted, tables):
+    ids = ['c{}'.format(n) for n in range(230)]
+    dynamo = tables(**{'Collection-dlpnext-dev': [{'id': i} for i in ids]})
+
+    result = resync.lambda_handler({'model': 'Collection'}, FakeContext())
+
+    assert indexed_ids(posted) == ids
+    assert dynamo.pages_scanned == 3
+    assert result == {'processed': 230, 'lastEvaluatedKey': None}
+
+
+def test_a_run_stops_before_the_lambda_limit_and_says_where_to_resume(posted, tables):
+    ids = ['c{}'.format(n) for n in range(230)]
+    tables(**{'Collection-dlpnext-dev': [{'id': i} for i in ids]})
+    # 15 minutes left at the start, 7 minutes gone per page: at the third
+    # check only 1 minute is left, under the 3 minutes kept in reserve
+    context = FakeContext(spent_per_check_ms=7 * 60 * 1000)
+
+    result = resync.lambda_handler({'model': 'Collection'}, context)
+
+    assert indexed_ids(posted) == ids[:200]
+    assert result == {'processed': 200, 'lastEvaluatedKey': {'id': {'S': 'c199'}}}
+
+
+def test_start_key_resumes_a_scan_where_the_last_run_stopped(posted, tables):
+    ids = ['c{}'.format(n) for n in range(230)]
+    tables(**{'Collection-dlpnext-dev': [{'id': i} for i in ids]})
+
+    result = resync.lambda_handler(
+        {'model': 'Collection', 'startKey': {'id': {'S': 'c199'}}}, FakeContext())
+
+    assert indexed_ids(posted) == ids[200:]
+    assert result == {'processed': 30, 'lastEvaluatedKey': None}
+
+
+@pytest.mark.parametrize('event, message', [
+    ({'model': 'Archive', 'ids': ['a1'], 'startKey': {'id': {'S': 'a1'}}}, 'startKey only applies without ids'),
+    ({'model': 'Archive', 'startKey': 'a1'}, 'startKey must be the lastEvaluatedKey'),
+])
+def test_start_key_is_validated(posted, tables, event, message):
+    tables(**{'Archive-dlpnext-dev': [{'id': 'a1'}]})
+
+    with pytest.raises(ValueError, match=message):
+        resync.lambda_handler(event, FakeContext())
     assert posted == []

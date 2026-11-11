@@ -503,6 +503,7 @@ describe("resync Lambda", () => {
     expect(new Set(actions)).toEqual(
       new Set([
         "dynamodb:BatchGetItem",
+        "dynamodb:Scan",
         "es:ESHttpDelete",
         "es:ESHttpGet",
         "es:ESHttpHead",
