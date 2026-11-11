@@ -36,3 +36,27 @@ Both transitions are published to the topic. The alarm does not clear on its own
 ```sh
 aws sns subscribe --topic-arn <StreamingAlertTopicArn> --protocol email --notification-endpoint <address>
 ```
+
+## Resync reference
+
+The resync function, `dlp-access-next-<env>-opensearch-resync` (stack output `OpenSearchResyncFunctionName`), re-reads items from DynamoDB and indexes them into OpenSearch. It wraps each item as a stream record and runs it through the streaming handler, so documents come out exactly as the stream would have indexed them, `date_range` included.
+
+### By ID
+
+```sh
+aws lambda invoke \
+  --function-name dlp-access-next-<env>-opensearch-resync \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"model": "Archive", "ids": ["<id>", "<id>"]}' \
+  /dev/stdout
+```
+
+- `model` is `Archive` or `Collection`.
+- `ids` is any number of IDs; duplicates are ignored.
+- An ID that exists in the table is indexed. An ID that is **no longer in the table is deleted from the index**, which covers a `REMOVE` that never reached OpenSearch.
+
+It returns `{"processed": <number of distinct IDs>, "deleted": [<IDs deleted from the index>]}`. If OpenSearch rejects any document, the invocation fails with the same `List of items with errors` log line the streaming function writes, in the resync function's log group.
+
+### Racing the live stream
+
+Writes are last-writer-wins. If an item changes while a resync of it is in flight, the resync can land after the stream's update and put the older version back. The window is a few seconds per batch. Run resyncs at a quiet time, and if in doubt, run the resync again for the affected IDs.

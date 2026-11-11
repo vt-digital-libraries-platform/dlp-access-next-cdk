@@ -14,13 +14,13 @@ Add a **Resync reference** section to the runbook covering the by-ID payload, th
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done (awaiting on-AWS verification)
 
-- [ ] A resync function is deployed per environment with DynamoDB read and OpenSearch read/write grants, and nothing broader
-- [ ] Invoking it with a model and IDs indexes existing items through the streaming handler's transform
-- [ ] IDs missing from the table are deleted from the index
-- [ ] Invalid payloads (unknown model, missing/empty `ids` while full-table mode doesn't exist yet, wrong types) fail with a clear message
-- [ ] pytest covers index-by-ID, delete-missing-ID, and payload validation
-- [ ] CDK assertion tests cover the function and its grants
-- [ ] Runbook has a "Resync reference" section for the by-ID mode, including the race note
+- [x] A resync function is deployed per environment with DynamoDB read and OpenSearch read/write grants, and nothing broader
+- [x] Invoking it with a model and IDs indexes existing items through the streaming handler's transform
+- [x] IDs missing from the table are deleted from the index
+- [x] Invalid payloads (unknown model, missing/empty `ids` while full-table mode doesn't exist yet, wrong types) fail with a clear message
+- [x] pytest covers index-by-ID, delete-missing-ID, and payload validation
+- [x] CDK assertion tests cover the function and its grants
+- [x] Runbook has a "Resync reference" section for the by-ID mode, including the race note
 - [ ] Verified on a feature environment: a hand-edited OpenSearch document matches the table again after resyncing its ID

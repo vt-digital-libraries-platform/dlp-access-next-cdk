@@ -20,12 +20,14 @@ import {
   EnvironmentConfig,
   ebInstanceProfileName,
   graphqlApiUrlParameterName,
+  resyncFunctionName,
 } from "../config/environments";
 import {
   LIST_QUERY_FIELD,
   MODELS,
   ModelName,
   SEARCHABLE_MODELS,
+  tableName,
 } from "../config/models";
 import {
   getByIdCode,
@@ -302,26 +304,26 @@ export class ApiStack extends Stack {
     failureAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alertTopic));
     failureAlarm.addOkAction(new cloudwatchActions.SnsAction(alertTopic));
 
+    const streamingCode = lambda.Code.fromAsset(
+      path.join(LAMBDA_DIR, "opensearch-streaming"),
+      { exclude: ["tests", "__pycache__", ".pytest_cache"] },
+    );
+    const streamingEnvironment = {
+      OPENSEARCH_ENDPOINT: `https://${searchDomain.domainEndpoint}`,
+      OPENSEARCH_REGION: this.region,
+      DEBUG: "0",
+      OPENSEARCH_USE_EXTERNAL_VERSIONING: "false",
+    };
     const streamingFn = new lambda.Function(
       this,
       "OpenSearchStreamingFunction",
       {
         runtime: lambda.Runtime.PYTHON_3_12,
         handler: "python_streaming_function.lambda_handler",
-        code: lambda.Code.fromAsset(
-          path.join(LAMBDA_DIR, "opensearch-streaming"),
-          {
-            exclude: ["tests", "__pycache__", ".pytest_cache"],
-          },
-        ),
+        code: streamingCode,
         timeout: Duration.seconds(30),
         memorySize: 128,
-        environment: {
-          OPENSEARCH_ENDPOINT: `https://${searchDomain.domainEndpoint}`,
-          OPENSEARCH_REGION: this.region,
-          DEBUG: "0",
-          OPENSEARCH_USE_EXTERNAL_VERSIONING: "false",
-        },
+        environment: streamingEnvironment,
       },
     );
     searchDomain.grantPathReadWrite("_bulk", streamingFn);
@@ -337,6 +339,34 @@ export class ApiStack extends Stack {
           onFailure: new SqsDlq(streamingFailures),
         }),
       );
+    }
+
+    // Recovery for batches the stream gave up on: re-reads items from the
+    // tables and runs them through the streaming handler, so they are indexed
+    // exactly as the stream indexes them. See docs/opensearch-streaming.md.
+    const resyncFn = new lambda.Function(this, "OpenSearchResyncFunction", {
+      functionName: resyncFunctionName(config.name),
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "resync.lambda_handler",
+      code: streamingCode,
+      timeout: Duration.minutes(15),
+      memorySize: 256,
+      environment: {
+        ...streamingEnvironment,
+        RESYNC_TABLES: JSON.stringify(
+          Object.fromEntries(
+            SEARCHABLE_MODELS.map((model) => [
+              model,
+              tableName(model, config.name),
+            ]),
+          ),
+        ),
+      },
+    });
+    searchDomain.grantPathReadWrite("_bulk", resyncFn);
+    for (const model of SEARCHABLE_MODELS) {
+      searchDomain.grantIndexReadWrite(model.toLowerCase(), resyncFn);
+      tables[model].grant(resyncFn, "dynamodb:BatchGetItem");
     }
 
     // --- IAM auth for the Elastic Beanstalk app -----------------------------
@@ -380,6 +410,9 @@ export class ApiStack extends Stack {
     });
     new CfnOutput(this, "OpenSearchStreamingFailureQueueUrl", {
       value: streamingFailures.queueUrl,
+    });
+    new CfnOutput(this, "OpenSearchResyncFunctionName", {
+      value: resyncFn.functionName,
     });
     new CfnOutput(this, "StreamingAlertTopicArn", {
       value: alertTopic.topicArn,

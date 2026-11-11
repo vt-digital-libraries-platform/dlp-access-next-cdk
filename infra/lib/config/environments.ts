@@ -132,6 +132,11 @@ export function ebInstanceProfileName(envName: string): string {
   return `dlp-access-next-${envName}-eb`;
 }
 
+/** The environment's function that re-indexes items into OpenSearch. */
+export function resyncFunctionName(envName: string): string {
+  return `dlp-access-next-${envName}-opensearch-resync`;
+}
+
 /** SSM parameter holding the ID of the environment's Cognito user pool. */
 export function userPoolIdParameterName(envName: string): string {
   return `/dlp-access-next/${envName}/user-pool-id`;

@@ -463,6 +463,65 @@ describe("streaming Lambda", () => {
   });
 });
 
+describe("resync Lambda", () => {
+  const resyncFunction = (t: Template) =>
+    Object.entries(t.findResources("AWS::Lambda::Function")).find(
+      ([, f]) => f.Properties.Handler === "resync.lambda_handler",
+    )!;
+  /** Every statement in the policies attached to the resync function's role. */
+  const resyncStatements = (t: Template) => {
+    const roleRef = resyncFunction(t)[1].Properties.Role["Fn::GetAtt"][0];
+    return Object.values(t.findResources("AWS::IAM::Policy"))
+      .filter((p) =>
+        p.Properties.Roles.some((r: { Ref: string }) => r.Ref === roleRef),
+      )
+      .flatMap((p) => p.Properties.PolicyDocument.Statement);
+  };
+
+  test("is named after the environment and runs the streaming code's resync entry point", () => {
+    feature.api.hasResourceProperties("AWS::Lambda::Function", {
+      FunctionName: "dlp-access-next-f-search-opensearch-resync",
+      Handler: "resync.lambda_handler",
+      Runtime: "python3.12",
+      Timeout: 900,
+      Environment: {
+        Variables: Match.objectLike({
+          OPENSEARCH_USE_EXTERNAL_VERSIONING: "false",
+          RESYNC_TABLES: JSON.stringify({
+            Archive: "Archive-dlpnext-f-search",
+            Collection: "Collection-dlpnext-f-search",
+          }),
+        }),
+      },
+    });
+    feature.api.hasOutput("OpenSearchResyncFunctionName", {});
+  });
+
+  test("may read Archive and Collection items and write to the search domain, and nothing else", () => {
+    const statements = resyncStatements(dev.api);
+    const actions = statements.flatMap((s) => [s.Action].flat()).sort();
+    expect(new Set(actions)).toEqual(
+      new Set([
+        "dynamodb:BatchGetItem",
+        "es:ESHttpDelete",
+        "es:ESHttpGet",
+        "es:ESHttpHead",
+        "es:ESHttpPatch",
+        "es:ESHttpPost",
+        "es:ESHttpPut",
+      ]),
+    );
+    const dynamoResources = JSON.stringify(
+      statements
+        .filter((s) => [s.Action].flat().includes("dynamodb:BatchGetItem"))
+        .map((s) => s.Resource),
+    );
+    expect(dynamoResources).toMatch(/ArchiveTable/);
+    expect(dynamoResources).toMatch(/CollectionTable/);
+    expect(dynamoResources).not.toMatch(/PartnerTable/);
+  });
+});
+
 describe("streaming failure alerts", () => {
   /** An Api stack for dev with the given alert addresses. */
   function apiWithAlertEmails(alertEmails: string[]) {
