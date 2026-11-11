@@ -69,6 +69,8 @@ npm run deploy -- -c backend-env=production -c aws-account-id=$ACCOUNT -c produc
   -c user-pool-id=<user pool ID> -c identity-provider=VT-SSO-OIDC
 ```
 
+Each backend has an SNS topic for OpenSearch streaming failure alerts (stack output `StreamingAlertTopicArn`). Nobody is subscribed by default; see [Alerting in the OpenSearch streaming runbook](opensearch-streaming.md#alerting) for how to subscribe, and for what to do when an alert arrives.
+
 ### New frontend attached to an existing backend
 
 Check out the branch, then:

@@ -14,7 +14,7 @@ Each **backend environment** has its own Data, API, and Auth stacks. Backend "ti
 | Stack                        | Contents                                                                                                                                                                                                                                                                                                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DlpAccessNext-<env>-Data`   | Seven DynamoDB tables (`<Model>-dlpnext-<env>`) and an OpenSearch 2.19 domain (`dlpnext-<env>`)                                                                                                                                                                                                                                       |
-| `DlpAccessNext-<env>-Api`    | The AppSync API (IAM auth), the Lambda that streams Archive and Collection changes into OpenSearch, and the environment's Beanstalk instance role (`dlp-access-next-<env>-eb`)                                                                                                                                                        |
+| `DlpAccessNext-<env>-Api`    | The AppSync API (IAM auth), the Lambda that streams Archive and Collection changes into OpenSearch (with failure alerts and a resync function, see `docs/opensearch-streaming.md`), and the environment's Beanstalk instance role (`dlp-access-next-<env>-eb`)                                                                                                                                                        |
 | `DlpAccessNext-<env>-Auth`   | A pointer to the environment's existing Cognito user pool and identity provider (two SSM parameters). The pool itself is made outside CDK                                                                                                                                                                                             |
 | `DlpAccessNext-Web-<branch>` | One git branch of the dlp-access-next app: an Elastic Beanstalk application in a Node.js environment (`dlpnext-<branch>`, one instance behind an HTTPS load balancer) at `https://<branch>.dlp-access-dev.dlp.cloud.lib.vt.edu`, that calls one environment's API, and the branch's Cognito app client on the environment's user pool |
 
@@ -104,7 +104,7 @@ npx cdk destroy --all -c backend-env=dev -c aws-account-id=$ACCOUNT -c user-pool
 cd infra
 npm test              # Jest: assertions on the synthesized templates
 python3 -m venv .venv && .venv/bin/pip install -r lambda/requirements-dev.txt # one-time setup for test:lambda
-npm run test:lambda   # pytest: the OpenSearch streaming handler
+npm run test:lambda   # pytest: the OpenSearch streaming and resync handlers
 ```
 
 
@@ -112,3 +112,4 @@ npm run test:lambda   # pytest: the OpenSearch streaming handler
 
 - `infra/schema/schema.graphql`: the GraphQL schema, which is the source of truth for the API.
 - `docs/deployment.md`: More exhaustive instructions for running deployments.
+- `docs/opensearch-streaming.md`: How Archive and Collection changes reach OpenSearch, the alerts for failed batches, and how to recover them.

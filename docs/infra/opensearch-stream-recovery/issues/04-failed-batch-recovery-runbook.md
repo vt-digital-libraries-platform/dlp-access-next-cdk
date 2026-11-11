@@ -16,8 +16,8 @@ Link the runbook from the README and from the deployment guide.
 
 **Blocked by:** 01 (Alert on failed streaming batches), 03 (Resync a whole table with paging)
 
-**Status:** ready-for-agent
+**Status:** done (awaiting on-AWS verification)
 
-- [ ] Runbook has "When the alarm fires" and "Limitations" sections as described
-- [ ] README and deployment guide link to the runbook
+- [x] Runbook has "When the alarm fires" and "Limitations" sections as described
+- [x] README and deployment guide link to the runbook
 - [ ] Verified on a feature environment: a deliberately failed batch is taken from alarm to OK by following only the runbook
