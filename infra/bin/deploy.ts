@@ -21,7 +21,7 @@ import {
   checkDeploy,
   lookupDeployedState,
 } from "../lib/deployment/deploy-check";
-import { sourceCommit, uncommittedChanges } from "../lib/stacks/web-stack";
+import { sourceCommit, uncommittedChanges } from "../lib/git";
 
 const INFRA_DIR = path.join(__dirname, "..");
 

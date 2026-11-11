@@ -5,11 +5,11 @@ import { DataStack } from "./stacks/data-stack";
 import { EnvironmentConfig, resolveEnvironment } from "./config/environments";
 import {
   CERTIFICATE_ID,
-  WebStack,
   branchSlug,
   webDomainName,
   webResourceName,
-} from "./stacks/web-stack";
+} from "./config/web";
+import { WebStack } from "./stacks/web-stack";
 
 export interface AppOptions {
   readonly backendEnv?: string;

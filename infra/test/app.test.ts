@@ -9,11 +9,8 @@ import {
   numericSortFields,
   searchMappings,
 } from "../lib/appsync/search-mappings";
-import {
-  CALLBACK_PATH,
-  CERTIFICATE_ID,
-  sourceCommit,
-} from "../lib/stacks/web-stack";
+import { CALLBACK_PATH, CERTIFICATE_ID } from "../lib/config/web";
+import { sourceCommit } from "../lib/git";
 
 const awsAccountId = "123456789012";
 const userPoolId = "us-east-1_AbCd12345";
