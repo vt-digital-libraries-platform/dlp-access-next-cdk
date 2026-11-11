@@ -27,7 +27,7 @@ interface CatalogItem {
   embargo_note: String
   embargo_start_date: AWSDateTime
   end_date: String
-  hierarchy_path: [String!]
+  heirarchy_path: [String!]
   id: ID!
   identifier: String!
   is_part_of: [String!]
@@ -82,7 +82,7 @@ type Archive implements CatalogItem {
   has_format: [String!]
   has_part: [String!]
   has_version: [String!]
-  hierarchy_path: [String!]
+  heirarchy_path: [String!]
   id: ID!
   identifier: String!
   is_format_of: [String!]
@@ -141,7 +141,7 @@ type Collection implements CatalogItem {
   embargo_start_date: AWSDateTime
   end_date: String
   explicit_content: Boolean
-  hierarchy_path: [String!]
+  heirarchy_path: [String!]
   id: ID!
   identifier: String!
   is_part_of: [String!]
@@ -372,7 +372,7 @@ input SearchableCollectionFilterInput {
   visibility: SearchableBooleanFilterInput
   thumbnail_path: SearchableStringFilterInput
   parent_collection: SearchableStringFilterInput
-  hierarchy_path: SearchableStringFilterInput
+  heirarchy_path: SearchableStringFilterInput
   create_date: SearchableStringFilterInput
   modified_date: SearchableStringFilterInput
   and: [SearchableCollectionFilterInput]
@@ -406,7 +406,7 @@ enum SearchableCollectionSortableFields {
   custom_key
   collection_category
   visibility
-  hierarchy_path
+  heirarchy_path
   thumbnail_path
   parent_collection
   create_date
@@ -453,7 +453,7 @@ input SearchableArchiveFilterInput {
   manifest_url: SearchableStringFilterInput
   create_date: SearchableStringFilterInput
   modified_date: SearchableStringFilterInput
-  hierarchy_path: SearchableStringFilterInput
+  heirarchy_path: SearchableStringFilterInput
   and: [SearchableArchiveFilterInput]
   or: [SearchableArchiveFilterInput]
   not: SearchableArchiveFilterInput
@@ -493,7 +493,7 @@ enum SearchableArchiveSortableFields {
   parent_collection
   item_category
   visibility
-  hierarchy_path
+  heirarchy_path
   thumbnail_path
   manifest_url
   create_date
@@ -567,7 +567,7 @@ input SearchableObjectFilterInput {
   format_physical: SearchableStringFilterInput
   custom_key: SearchableStringFilterInput
   visibility: SearchableBooleanFilterInput
-  hierarchy_path: SearchableStringFilterInput
+  heirarchy_path: SearchableStringFilterInput
   thumbnail_path: SearchableStringFilterInput
   parent_collection: SearchableStringFilterInput
   create_date: SearchableStringFilterInput
