@@ -1,15 +1,15 @@
 import { App } from "aws-cdk-lib";
-import { ApiStack } from "./api-stack";
-import { AuthStack } from "./auth-stack";
-import { DataStack } from "./data-stack";
-import { EnvironmentConfig, resolveEnvironment } from "./environments";
+import { ApiStack } from "./stacks/api-stack";
+import { AuthStack } from "./stacks/auth-stack";
+import { DataStack } from "./stacks/data-stack";
+import { EnvironmentConfig, resolveEnvironment } from "./config/environments";
 import {
   CERTIFICATE_ID,
   WebStack,
   branchSlug,
   webDomainName,
   webResourceName,
-} from "./web-stack";
+} from "./stacks/web-stack";
 
 export interface AppOptions {
   readonly backendEnv?: string;

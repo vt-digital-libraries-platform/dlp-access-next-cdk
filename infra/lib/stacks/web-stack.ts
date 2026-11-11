@@ -23,7 +23,8 @@ import {
   graphqlApiUrlParameterName,
   identityProviderParameterName,
   userPoolIdParameterName,
-} from "./environments";
+} from "../config/environments";
+import { REPO_ROOT } from "../paths";
 
 /**
  * The Node platform the app runs on, matching the hand-made
@@ -33,7 +34,6 @@ import {
 export const SOLUTION_STACK =
   "64bit Amazon Linux 2023 v6.11.8 running Node.js 24";
 
-const REPO_ROOT = path.join(__dirname, "..", "..");
 const LOCAL_ORIGIN = "http://localhost:3000";
 export const CALLBACK_PATH = "/authorize";
 

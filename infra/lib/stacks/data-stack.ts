@@ -13,15 +13,16 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as opensearch from "aws-cdk-lib/aws-opensearchservice";
 import * as cr from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
-import { EnvironmentConfig } from "./environments";
+import { EnvironmentConfig } from "../config/environments";
 import {
   GLOBAL_INDEXES,
   MODELS,
   ModelName,
   SEARCHABLE_MODELS,
   tableName,
-} from "./models";
-import { searchMappings } from "./search-mappings";
+} from "../config/models";
+import { searchMappings } from "../appsync/search-mappings";
+import { LAMBDA_DIR } from "../paths";
 
 export interface DataStackProps extends StackProps {
   readonly config: EnvironmentConfig;
@@ -111,7 +112,7 @@ export class DataStack extends Stack {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "index.on_event",
       code: lambda.Code.fromAsset(
-        path.join(__dirname, "..", "lambda", "opensearch-index-template"),
+        path.join(LAMBDA_DIR, "opensearch-index-template"),
       ),
       timeout: Duration.minutes(1),
       environment: {

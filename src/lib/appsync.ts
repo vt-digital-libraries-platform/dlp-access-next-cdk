@@ -1,7 +1,7 @@
 import { AwsClient } from "aws4fetch";
 import { defaultProvider } from "@aws-sdk/credential-provider-node";
 
-// The Api stack (infra/lib/api-stack.ts) authorizes this API with IAM auth
+// The Api stack (infra/lib/stacks/api-stack.ts) authorizes this API with IAM auth
 // only, granted to the environment's Elastic Beanstalk instance role.
 // Requests must be SigV4-signed, so this module resolves AWS credentials via
 // the standard Node credential chain (env vars / shared config locally,

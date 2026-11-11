@@ -1,7 +1,7 @@
-import { AppPlan } from "./app";
-import { COGNITO_DIRECTORY } from "./environments";
-import { MODELS, tableName } from "./models";
-import { webResourceName } from "./web-stack";
+import { AppPlan } from "../app";
+import { COGNITO_DIRECTORY } from "../config/environments";
+import { MODELS, tableName } from "../config/models";
+import { webResourceName } from "../stacks/web-stack";
 
 /**
  * Checks the app plan before deployment

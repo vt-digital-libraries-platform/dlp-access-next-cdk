@@ -16,13 +16,13 @@ import {
   EnvironmentConfig,
   ebInstanceProfileName,
   graphqlApiUrlParameterName,
-} from "./environments";
+} from "../config/environments";
 import {
   LIST_QUERY_FIELD,
   MODELS,
   ModelName,
   SEARCHABLE_MODELS,
-} from "./models";
+} from "../config/models";
 import {
   getByIdCode,
   listScanCode,
@@ -30,8 +30,9 @@ import {
   hasOneCode,
   hasManyCode,
   openSearchQueryCode,
-} from "./resolvers";
-import { numericSortFields } from "./search-mappings";
+} from "../appsync/resolvers";
+import { numericSortFields } from "../appsync/search-mappings";
+import { LAMBDA_DIR, SCHEMA_FILE } from "../paths";
 
 /** The fields an `allFields` search matches, per index; searchObjects uses both. */
 const ARCHIVE_SEARCH_FIELDS = [
@@ -86,9 +87,7 @@ export class ApiStack extends Stack {
 
     const api = new appsync.GraphqlApi(this, "VtdlpApi", {
       name: `dlp-access-next-${config.name}`,
-      definition: appsync.Definition.fromFile(
-        path.join(__dirname, "..", "schema", "schema.graphql"),
-      ),
+      definition: appsync.Definition.fromFile(SCHEMA_FILE),
       authorizationConfig: {
         defaultAuthorization: {
           authorizationType: appsync.AuthorizationType.IAM,
@@ -276,7 +275,7 @@ export class ApiStack extends Stack {
         runtime: lambda.Runtime.PYTHON_3_12,
         handler: "python_streaming_function.lambda_handler",
         code: lambda.Code.fromAsset(
-          path.join(__dirname, "..", "lambda", "opensearch-streaming"),
+          path.join(LAMBDA_DIR, "opensearch-streaming"),
           {
             exclude: ["tests", "__pycache__", ".pytest_cache"],
           },

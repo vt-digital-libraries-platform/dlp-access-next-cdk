@@ -1,4 +1,4 @@
-import { AppPlan } from "./app";
+import { AppPlan } from "../app";
 
 /**
  * Collects the `-c key=value` and `--context key=value` (or

@@ -6,7 +6,7 @@ import {
   EnvironmentConfig,
   identityProviderParameterName,
   userPoolIdParameterName,
-} from "./environments";
+} from "../config/environments";
 
 export interface AuthStackProps extends StackProps {
   readonly config: EnvironmentConfig;

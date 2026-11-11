@@ -1,5 +1,5 @@
-import { openSearchQueryCode } from "../lib/resolvers";
-import { numericSortFields } from "../lib/search-mappings";
+import { openSearchQueryCode } from "../lib/appsync/resolvers";
+import { numericSortFields } from "../lib/appsync/search-mappings";
 
 type Resolver = {
   request: (ctx: object) => {

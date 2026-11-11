@@ -1,7 +1,7 @@
 import * as fs from "fs";
-import * as path from "path";
 import { parse, type TypeNode } from "graphql";
-import { SEARCHABLE_MODELS } from "./models";
+import { SEARCHABLE_MODELS } from "../config/models";
+import { SCHEMA_FILE } from "../paths";
 
 /**
  * Explicit OpenSearch mappings for the searchable models, derived from the
@@ -225,7 +225,6 @@ export function buildSearchMappings(
   return mappings;
 }
 
-const SCHEMA_FILE = path.join(__dirname, "..", "schema", "schema.graphql");
 let cached: Record<string, IndexMapping> | undefined;
 
 /** The mappings of one index, generated from `schema/schema.graphql`. */

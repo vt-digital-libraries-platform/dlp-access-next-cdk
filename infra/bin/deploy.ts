@@ -15,13 +15,13 @@ import {
   isConfirmed,
   productionWarning,
   profileFromArgs,
-} from "../lib/deploy-cli";
+} from "../lib/deployment/deploy-cli";
 import {
   AwsError,
   checkDeploy,
   lookupDeployedState,
-} from "../lib/deploy-check";
-import { sourceCommit, uncommittedChanges } from "../lib/web-stack";
+} from "../lib/deployment/deploy-check";
+import { sourceCommit, uncommittedChanges } from "../lib/stacks/web-stack";
 
 const INFRA_DIR = path.join(__dirname, "..");
 

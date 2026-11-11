@@ -4,7 +4,7 @@ import {
   AwsError,
   checkDeploy,
   lookupDeployedState,
-} from "../lib/deploy-check";
+} from "../lib/deployment/deploy-check";
 
 const awsAccountId = "123456789012";
 const userPoolId = "us-east-1_AbCd12345";
