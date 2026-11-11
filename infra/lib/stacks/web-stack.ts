@@ -34,8 +34,7 @@ import {
   webDomainName,
   webResourceName,
 } from "../config/web";
-import { sourceCommit } from "../git";
-import { REPO_ROOT } from "../paths";
+import { archiveCommit, sourceCommit } from "../git";
 
 export interface WebStackProps extends StackProps {
   /** The environment whose API the app calls. */
@@ -82,18 +81,7 @@ export class WebStack extends Stack {
         ".",
         ...BUNDLE_EXCLUDES.map((exclude) => `:(exclude)${exclude}`),
       ];
-      execFileSync(
-        "git",
-        [
-          "archive",
-          "--format=tar",
-          `--output=${archive}`,
-          commit,
-          "--",
-          ...pathspecs,
-        ],
-        { cwd: REPO_ROOT },
-      );
+      archiveCommit(commit, archive, pathspecs);
       try {
         execFileSync("tar", ["-xf", archive, "-C", source]);
       } finally {

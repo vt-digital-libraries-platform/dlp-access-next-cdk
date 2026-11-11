@@ -1,7 +1,8 @@
+/**
+ * Every filesystem path the library needs, computed from this file's place at
+ * the root of infra/lib, so the files that use them can move freely.
+ */
 import * as path from "path";
-
-// Every filesystem path the library needs, computed from this file's place at
-// the root of infra/lib, so the files that use them can move freely.
 
 /** The infra directory: the CDK app's root. */
 export const INFRA_ROOT = path.join(__dirname, "..");

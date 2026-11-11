@@ -1,5 +1,7 @@
-// Settings for each frontend branch's Web stack, and the rules that name and
-// address a branch.
+/**
+ * Settings for each frontend branch's Web stack, and the rules that name and
+ * address a branch.
+ */
 
 /**
  * The Node platform the app runs on, matching the hand-made
