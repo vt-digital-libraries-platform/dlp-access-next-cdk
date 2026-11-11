@@ -49,9 +49,9 @@ export interface WebStackProps extends StackProps {
 
 /**
  * One branch deployment of the dlp-access-next app on Elastic Beanstalk. It finds
- * its environment's AppSync API and Cognito user pool by fixed names so it deploys the same way 
- * whether the backend environment is being provisioned or already exists. 
- * The Cognito app-client the app uses is specific to this branch, 
+ * its environment's AppSync API and Cognito user pool by fixed names so it deploys the same way
+ * whether the backend environment is being provisioned or already exists.
+ * The Cognito app-client the app uses is specific to this branch,
  * as is its domain name, served over HTTPS by the environment's load balancer.
  */
 export class WebStack extends Stack {
@@ -305,4 +305,3 @@ export class WebStack extends Stack {
     });
   }
 }
-
