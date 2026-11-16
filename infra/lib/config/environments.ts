@@ -65,17 +65,17 @@ const ENVIRONMENTS: Record<string, Settings> = {
   dev: {
     region: "us-east-1",
     removalPolicy: RemovalPolicy.RETAIN,
-    alertEmails: [],
+    alertEmails: ["digitallibraries@vt.edu"],
   },
   "pre-production": {
     region: "us-east-1",
     removalPolicy: RemovalPolicy.RETAIN,
-    alertEmails: [],
+    alertEmails: ["digitallibraries@vt.edu"],
   },
   production: {
     region: "us-east-1",
     removalPolicy: RemovalPolicy.RETAIN,
-    alertEmails: [],
+    alertEmails: ["digitallibraries@vt.edu"],
   },
 };
 
