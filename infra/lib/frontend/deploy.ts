@@ -53,10 +53,7 @@ export function deployFrontend(
 ): void {
   const existing = describeEnvironment(plan, run);
   if (existing) {
-    ensureApplication(plan, run);
-    log(
-      `The ${plan.environmentName} environment exists; deploying to it isn't implemented yet.`,
-    );
+    redeploy(plan, existing, commit, run, log);
     return;
   }
 
@@ -98,10 +95,86 @@ export function versionLabel(plan: FrontendPlan, commit: string): string {
 
 /** The fields of a Beanstalk environment the tooling reads. */
 interface Environment {
+  readonly EnvironmentArn: string;
   readonly Status: string;
   readonly Health: string;
   /** The Beanstalk endpoint, `<CNAME prefix>.<region>.elasticbeanstalk.com`. */
   readonly CNAME: string;
+  /** The application version running, absent while none is. */
+  readonly VersionLabel?: string;
+}
+
+/**
+ * Pushes the commit to the branch's existing frontend with `eb deploy`, which
+ * ships the committed HEAD. Nothing else changes: not the settings, the
+ * Cognito client, the secret or DNS.
+ */
+function redeploy(
+  plan: FrontendPlan,
+  existing: Environment,
+  commit: string,
+  run: CommandRunner,
+  log: (text: string) => void,
+): void {
+  checkTags(plan, existing, run);
+  ensureApplication(plan, run);
+  const label = versionLabel(plan, commit);
+  // A new label makes eb deploy create the version from HEAD; an existing
+  // one, e.g. a commit deployed before, would fail as a duplicate.
+  const exists = versionExists(label, run);
+  log(
+    `Deploying ${exists ? "the existing version " : ""}${label} to ${plan.environmentName}...`,
+  );
+  run("eb", [
+    "deploy",
+    plan.environmentName,
+    exists ? "--version" : "--label",
+    label,
+  ]);
+  const environment = describeEnvironment(plan, run);
+  log(
+    `${plan.environmentName} is running ${environment?.VersionLabel} (${environment?.Status}, health ${environment?.Health}) at ${plan.appUrl}.`,
+  );
+}
+
+/**
+ * Refuses an environment whose tags don't match the request. A different
+ * branch means two branch names share the slug; a different backend means
+ * the frontend's Cognito client is on another backend's pool. There is no
+ * override: the frontend has to be destroyed and recreated.
+ */
+function checkTags(
+  plan: FrontendPlan,
+  environment: Environment,
+  run: CommandRunner,
+): void {
+  const tags = new Map(
+    (
+      awsJson(run, [
+        "elasticbeanstalk",
+        "list-tags-for-resource",
+        "--resource-arn",
+        environment.EnvironmentArn,
+      ]).ResourceTags as { Key: string; Value: string }[]
+    ).map(({ Key, Value }) => [Key, Value]),
+  );
+  const shown = (key: string) => {
+    const value = tags.get(key);
+    return value === undefined ? `(no ${key} tag)` : JSON.stringify(value);
+  };
+  const recreate = `Destroy the frontend and deploy again to recreate it for branch ${JSON.stringify(plan.branch)} on backend env ${JSON.stringify(plan.backendEnv)}.`;
+  if (tags.get(BRANCH_TAG) !== plan.branch) {
+    throw new Error(
+      `${plan.environmentName} is the frontend for branch ${shown(BRANCH_TAG)}, not ${JSON.stringify(plan.branch)}: ` +
+        `the two branch names share the slug ${plan.slug}.\n${recreate}`,
+    );
+  }
+  if (tags.get(BACKEND_ENV_TAG) !== plan.backendEnv) {
+    throw new Error(
+      `${plan.environmentName} uses backend env ${shown(BACKEND_ENV_TAG)}, not ${JSON.stringify(plan.backendEnv)}, ` +
+        `and its Cognito client is on that backend's user pool.\n${recreate}`,
+    );
+  }
 }
 
 function describeEnvironment(
@@ -292,6 +365,19 @@ function writeSecret(
   }
 }
 
+function versionExists(label: string, run: CommandRunner): boolean {
+  return (
+    awsJson(run, [
+      "elasticbeanstalk",
+      "describe-application-versions",
+      "--application-name",
+      FRONTEND_APPLICATION,
+      "--version-labels",
+      label,
+    ]).ApplicationVersions.length > 0
+  );
+}
+
 /**
  * Makes sure the application has the commit's version and returns its label.
  * The bundle is `git archive` of the commit, which leaves out the paths
@@ -304,15 +390,7 @@ function ensureVersion(
   run: CommandRunner,
 ): string {
   const label = versionLabel(plan, commit);
-  const [existing] = awsJson(run, [
-    "elasticbeanstalk",
-    "describe-application-versions",
-    "--application-name",
-    FRONTEND_APPLICATION,
-    "--version-labels",
-    label,
-  ]).ApplicationVersions;
-  if (existing) {
+  if (versionExists(label, run)) {
     return label;
   }
   const bundle = path.join(workDir, `${label}.zip`);

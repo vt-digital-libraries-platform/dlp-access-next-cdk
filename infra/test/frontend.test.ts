@@ -102,6 +102,7 @@ describe("frontendDeploy", () => {
   const userPoolId = "us-east-1_AbCdEfGhI";
   const secretArn = `arn:aws:secretsmanager:us-east-1:${awsAccountId}:secret:dlpnext/whunter-feature/cognito-client-secret-AbCdEf`;
   const bucket = `elasticbeanstalk-us-east-1-${awsAccountId}`;
+  const environmentArn = `arn:aws:elasticbeanstalk:us-east-1:${awsAccountId}:environment/dlpnext/dlpnext-whunter-feature`;
 
   /** The value after `flag` in `args`. */
   const flagValue = (args: readonly string[], name: string) =>
@@ -125,9 +126,17 @@ describe("frontendDeploy", () => {
     launchingWaits = 0,
     health = "Green",
     previouslyTerminated = false,
+    tags = {
+      "dlpnext:branch": "whunter/feature",
+      "dlpnext:backend-env": "dev",
+    } as Record<string, string>,
   } = {}) {
-    let environment = environmentExists
-      ? { Status: "Ready", Health: health }
+    let environment: Record<string, string> | undefined = environmentExists
+      ? {
+          Status: "Ready",
+          Health: health,
+          VersionLabel: "whunter-feature-fedcba9",
+        }
       : undefined;
     let waitsLeft = launchingWaits;
     const secretStrings: string[] = [];
@@ -146,6 +155,16 @@ describe("frontendDeploy", () => {
       if (command === "git status --porcelain") return status;
       if (executable === "git" && args[0] === "archive") return "";
       if (executable === "eb" && args[0] === "init") return "";
+      if (executable === "eb" && args[0] === "deploy") {
+        environment = {
+          ...environment!,
+          VersionLabel: flagValue(
+            args,
+            args.includes("--version") ? "--version" : "--label",
+          ),
+        };
+        return "";
+      }
       if (executable !== "aws") {
         throw new Error(`unexpected command: ${command}`);
       }
@@ -239,12 +258,22 @@ describe("frontendDeploy", () => {
               ? [
                   {
                     EnvironmentName: "dlpnext-whunter-feature",
+                    EnvironmentArn: environmentArn,
                     CNAME:
                       "dlpnext-whunter-feature.us-east-1.elasticbeanstalk.com",
                     ...environment,
                   },
                 ]
               : [],
+          });
+        case "elasticbeanstalk list-tags-for-resource":
+          expect(flagValue(args, "--resource-arn")).toBe(environmentArn);
+          return json({
+            ResourceArn: environmentArn,
+            ResourceTags: Object.entries(tags).map(([Key, Value]) => ({
+              Key,
+              Value,
+            })),
           });
         case "elasticbeanstalk create-environment":
           environment = { Status: "Launching", Health: "Grey" };
@@ -819,16 +848,109 @@ describe("frontendDeploy", () => {
         ),
       ).toEqual([]);
     });
+  });
 
-    test("an existing environment is left alone", async () => {
-      const { run, io } = setup({ appExists: true, environmentExists: true });
+  describe("a later deploy", () => {
+    test("checks the tags, then only runs eb deploy of HEAD with the version label", async () => {
+      const { run, io, output } = setup({
+        appExists: true,
+        environmentExists: true,
+      });
 
       expect(
         await frontendDeploy(["--backend-env", "dev"], undefined, io),
       ).toBe(0);
 
-      expect(writes(run.commands)).toEqual(applicationSetup(run.commands));
+      expect(
+        run.commands.filter(({ args }) => args[1] === "list-tags-for-resource"),
+      ).toEqual([
+        {
+          executable: "aws",
+          args: [
+            "elasticbeanstalk",
+            "list-tags-for-resource",
+            "--resource-arn",
+            environmentArn,
+          ],
+        },
+      ]);
+      expect(writes(run.commands)).toEqual([
+        {
+          executable: "eb",
+          args: ["init", "dlpnext", "--platform", SOLUTION_STACK],
+        },
+        {
+          executable: "eb",
+          args: [
+            "deploy",
+            "dlpnext-whunter-feature",
+            "--label",
+            "whunter-feature-0123456",
+          ],
+        },
+      ]);
+      expect(output.join("\n")).toMatch(
+        /dlpnext-whunter-feature is running whunter-feature-0123456/,
+      );
     });
+
+    test("redeploying a commit already deployed deploys its existing version", async () => {
+      const { run, io } = setup({
+        appExists: true,
+        environmentExists: true,
+        versionExists: true,
+      });
+
+      expect(
+        await frontendDeploy(["--backend-env", "dev"], undefined, io),
+      ).toBe(0);
+
+      expect(writes(run.commands).at(-1)).toEqual({
+        executable: "eb",
+        args: [
+          "deploy",
+          "dlpnext-whunter-feature",
+          "--version",
+          "whunter-feature-0123456",
+        ],
+      });
+    });
+
+    test.each([
+      [
+        "a branch whose name shares the slug",
+        { "dlpnext:branch": "whunter-feature", "dlpnext:backend-env": "dev" },
+        /dlpnext-whunter-feature is the frontend for branch "whunter-feature", not "whunter\/feature".*Destroy the frontend and deploy again to recreate it/s,
+      ],
+      [
+        "another backend",
+        {
+          "dlpnext:branch": "whunter/feature",
+          "dlpnext:backend-env": "f-search",
+        },
+        /dlpnext-whunter-feature uses backend env "f-search", not "dev".*Destroy the frontend and deploy again to recreate it/s,
+      ],
+      [
+        "nothing, without the tags",
+        {},
+        /dlpnext-whunter-feature is the frontend for branch \(no dlpnext:branch tag\), not "whunter\/feature"/,
+      ],
+    ])(
+      "refuses, changing nothing, an environment tagged for %s",
+      async (_, tags, error) => {
+        const { run, io } = setup({
+          appExists: true,
+          environmentExists: true,
+          tags,
+        });
+
+        await expect(
+          frontendDeploy(["--backend-env", "dev"], undefined, io),
+        ).rejects.toThrow(error);
+
+        expect(writes(run.commands)).toEqual([]);
+      },
+    );
   });
 
   test.each(["", "no", "n", "yess"])(
@@ -892,6 +1014,10 @@ describe("frontendDeploy", () => {
     const { io, questions, output } = setup({
       appExists: true,
       environmentExists: true,
+      tags: {
+        "dlpnext:branch": "whunter/feature",
+        "dlpnext:backend-env": "production",
+      },
     });
     io.alert = (text) => `<red>${text}</red>`;
 
