@@ -5,12 +5,8 @@ import {
   isConfirmed,
   productionWarningFor,
 } from "../deployment/deploy-cli";
-import {
-  ensureApplication,
-  requireBackend,
-  FrontendPlan,
-  planFrontend,
-} from "./frontend";
+import { deployFrontend } from "./deploy";
+import { requireBackend, FrontendPlan, planFrontend } from "./frontend";
 
 /** Everything `frontend:deploy` does outside the process. Tests replace it. */
 export interface FrontendIO {
@@ -24,8 +20,8 @@ export interface FrontendIO {
 }
 
 /**
- * `frontend:deploy`: plans the frontend, confirms, and makes sure the shared
- * application and the local EB CLI config exist. Returns the exit code.
+ * `frontend:deploy`: plans the frontend, confirms, and deploys the commit at
+ * HEAD, creating the frontend if the branch has none. Returns the exit code.
  */
 export async function frontendDeploy(
   argv: readonly string[],
@@ -74,9 +70,8 @@ export async function frontendDeploy(
   }
   io.log(`About to deploy a frontend:\n\n${describeFrontendPlan(plan)}\n`);
   // Only the commit is deployed, so local edits are left out.
-  io.log(
-    `App source: commit ${run("git", ["rev-parse", "--verify", "HEAD"]).trim()}\n`,
-  );
+  const commit = run("git", ["rev-parse", "--verify", "HEAD"]).trim();
+  io.log(`App source: commit ${commit}\n`);
   const changes = run("git", ["status", "--porcelain"])
     .split("\n")
     .filter(Boolean);
@@ -98,10 +93,7 @@ export async function frontendDeploy(
     }
   }
 
-  ensureApplication(plan, run);
-  io.log(
-    `The ${plan.environmentName} environment isn't created yet: that step isn't implemented.`,
-  );
+  deployFrontend(plan, commit, run, io.log);
   return 0;
 }
 

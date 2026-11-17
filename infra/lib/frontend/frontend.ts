@@ -58,11 +58,23 @@ export function requireBackend(
   return resolveEnvironment(backendEnv, production);
 }
 
+// The full branch name is the value of the environment's branch tag.
+const TAG_VALUE = /^[\p{L}\p{Z}\p{N}_.:/=+\-@]{0,256}$/u;
+
+function checkTagValue(branch: string): void {
+  if (!TAG_VALUE.test(branch)) {
+    throw new Error(
+      `Invalid branch ${JSON.stringify(branch)}: the environment is tagged with the branch name, which may only have letters, digits, spaces and _ . : / = + - @, at most 256 characters`,
+    );
+  }
+}
+
 /** Validates the options and works out the frontend's names. */
 export function planFrontend(options: FrontendOptions): FrontendPlan {
   const production = options.production ?? false;
   const config = requireBackend(options.backendEnv, production);
   const slug = validBranchSlug(options.branch, "branch", "--branch <name>");
+  checkTagValue(options.branch);
   if (options.certificate !== undefined) {
     checkCertificateArn(
       options.certificate,
