@@ -123,6 +123,12 @@ export function frontendSecretName(slug: string): string {
   return `${FRONTEND_SECRET_PREFIX}${slug}/cognito-client-secret`;
 }
 
+/**
+ * The region the shared Beanstalk application, and so every frontend, lives
+ * in. A frontend can only attach to a backend in this region.
+ */
+export const FRONTEND_REGION = "us-east-1";
+
 /** The Beanstalk application every frontend's environment lives in, one per account. */
 export const FRONTEND_APPLICATION = "dlpnext";
 

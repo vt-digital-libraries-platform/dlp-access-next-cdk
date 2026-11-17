@@ -1,6 +1,6 @@
 import { awsJson, CommandError, CommandRunner } from "../command-runner";
 import { FRONTEND_APPLICATION } from "../config/web";
-import { FrontendPlan } from "./frontend";
+import { FrontendNames, FrontendPlan } from "./frontend";
 
 /** The environment tag recording the full branch name the frontend is for. */
 export const BRANCH_TAG = "dlpnext:branch";
@@ -23,7 +23,7 @@ export interface Environment {
 
 /** The plan's environment, leaving out terminated ones with its name. */
 export function describeEnvironment(
-  plan: FrontendPlan,
+  plan: Pick<FrontendNames, "environmentName">,
   run: CommandRunner,
 ): Environment | undefined {
   const [environment] = awsJson(run, [

@@ -6,6 +6,7 @@ import {
   FrontendIO,
   frontendDeploy,
   frontendDestroy,
+  frontendStatus,
 } from "../lib/frontend/frontend-cli";
 import { committedOptions } from "./committed-options";
 import { fakeRunner } from "./fake-runner";
@@ -1614,4 +1615,188 @@ describe("frontendDestroy", () => {
       expect(run.commands).toEqual([]);
     },
   );
+});
+
+describe("frontendStatus", () => {
+  const userPoolId = "us-east-1_AbCdEfGhI";
+  const environmentArn = `arn:aws:elasticbeanstalk:us-east-1:${awsAccountId}:environment/dlpnext/dlpnext-whunter-feature`;
+  const endpoint = "dlpnext-whunter-feature.us-east-1.elasticbeanstalk.com";
+  const secretName = "dlpnext/whunter-feature/cognito-client-secret";
+  const secretValue = "s3cr3t-client-secret-value";
+  const issuer = `https://cognito-idp.us-east-1.amazonaws.com/${userPoolId}`;
+
+  /** Fakes a deployed frontend; secret values are there to be read, and must never be. */
+  function setup({
+    environment = true,
+    tags = {
+      "dlpnext:branch": "whunter/feature",
+      "dlpnext:backend-env": "dev",
+    } as Record<string, string>,
+  } = {}) {
+    const json = (value: unknown) => JSON.stringify(value);
+    const run = fakeRunner(({ executable, args }) => {
+      const command = [executable, ...args].join(" ");
+      if (command === "git branch --show-current") return "whunter/feature\n";
+      if (executable !== "aws") {
+        throw new Error(`unexpected command: ${command}`);
+      }
+      switch (`${args[0]} ${args[1]}`) {
+        case "elasticbeanstalk describe-environments":
+          expect(args).toContain("--no-include-deleted");
+          return json({
+            Environments: environment
+              ? [
+                  {
+                    EnvironmentName: "dlpnext-whunter-feature",
+                    EnvironmentArn: environmentArn,
+                    CNAME: endpoint,
+                    Status: "Ready",
+                    Health: "Green",
+                    VersionLabel: "whunter-feature-0123abc",
+                  },
+                ]
+              : [],
+          });
+        case "elasticbeanstalk list-tags-for-resource":
+          return json({
+            ResourceTags: Object.entries(tags).map(([Key, Value]) => ({
+              Key,
+              Value,
+            })),
+          });
+        case "elasticbeanstalk describe-configuration-settings": {
+          const setting = (
+            Namespace: string,
+            OptionName: string,
+            Value: string,
+          ) => ({ Namespace, OptionName, Value });
+          const env = "aws:elasticbeanstalk:application:environment";
+          return json({
+            ConfigurationSettings: [
+              {
+                OptionSettings: [
+                  setting("aws:ec2:instances", "InstanceTypes", "t3.small"),
+                  setting(env, "COGNITO_ISSUER", issuer),
+                  setting(env, "COGNITO_CLIENT_ID", "frontendclient"),
+                  setting(env, "COGNITO_IDENTITY_PROVIDER", "VTGateway"),
+                  setting(
+                    "aws:elasticbeanstalk:application:environmentsecrets",
+                    "COGNITO_CLIENT_SECRET",
+                    `arn:aws:secretsmanager:us-east-1:${awsAccountId}:secret:${secretName}-AbCdEf`,
+                  ),
+                ],
+              },
+            ],
+          });
+        }
+        case "secretsmanager get-secret-value":
+          return json({ SecretString: secretValue });
+        case "cognito-idp describe-user-pool-client":
+          return json({
+            UserPoolClient: {
+              ClientId: "frontendclient",
+              ClientSecret: secretValue,
+            },
+          });
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+    const output: string[] = [];
+    const runnerOptions: RunnerOptions[] = [];
+    const io: FrontendIO = {
+      alert: (text) => text,
+      runner: (options) => {
+        runnerOptions.push(options);
+        return run;
+      },
+      ask: async () => {
+        throw new Error("status never asks");
+      },
+      log: (text) => output.push(text),
+    };
+    return { run, io, output, runnerOptions };
+  }
+
+  test("prints how to reach the frontend and run the branch locally", async () => {
+    const { io, output, run } = setup();
+
+    expect(await frontendStatus([], io)).toBe(0);
+
+    const text = output.join("\n");
+    for (const value of [
+      "whunter/feature",
+      "https://whunter-feature.dlp-access-dev.dlp.cloud.lib.vt.edu",
+      endpoint,
+      "dev",
+      issuer,
+      "frontendclient",
+      "VTGateway",
+      secretName,
+    ]) {
+      expect(text).toContain(value);
+    }
+    // Read-only: nothing is changed.
+    expect(
+      run.commands.filter(({ args }) =>
+        /^(create|update|delete|put|terminate)-/.test(args[1] ?? ""),
+      ),
+    ).toEqual([]);
+  });
+
+  test("never prints the client secret's value, nor reads it", async () => {
+    const { io, output, run } = setup();
+
+    await frontendStatus([], io);
+
+    expect(output.join("\n")).not.toContain(secretValue);
+    expect(run.commands.map(({ args }) => `${args[0]} ${args[1]}`)).not.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/get-secret-value|describe-user-pool-client/),
+      ]),
+    );
+  });
+
+  test("a branch with no frontend says it isn't deployed", async () => {
+    const { io, output } = setup({ environment: false });
+
+    expect(await frontendStatus(["--branch", "someone/else"], io)).toBe(1);
+
+    expect(output.join("\n")).toMatch(
+      /"someone\/else" has no frontend deployed.*dlpnext-someone-else/,
+    );
+  });
+
+  test("--branch and --profile pick the frontend and the credentials", async () => {
+    const { io, run, runnerOptions } = setup();
+
+    await frontendStatus(
+      ["--branch", "whunter/feature", "--profile", "dlp"],
+      io,
+    );
+
+    expect(runnerOptions).toEqual([{ region: "us-east-1", profile: "dlp" }]);
+    expect(run.commands).not.toContainEqual({
+      executable: "git",
+      args: ["branch", "--show-current"],
+    });
+    expect(
+      run.commands.find(({ args }) => args[1] === "describe-environments")
+        ?.args,
+    ).toContain("dlpnext-whunter-feature");
+  });
+
+  test("an environment tagged for another branch that shares the slug shows that branch", async () => {
+    const { io, output } = setup({
+      tags: {
+        "dlpnext:branch": "whunter_feature",
+        "dlpnext:backend-env": "dev",
+      },
+    });
+
+    await frontendStatus([], io);
+
+    expect(output.join("\n")).toMatch(
+      /is the frontend for branch "whunter_feature"/,
+    );
+  });
 });

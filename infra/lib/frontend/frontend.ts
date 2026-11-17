@@ -8,6 +8,7 @@ import {
   checkCertificateArn,
   defaultCertificateArn,
   FRONTEND_APPLICATION,
+  FRONTEND_REGION,
   SOLUTION_STACK,
   frontendSecretName,
   validBranchSlug,
@@ -28,21 +29,25 @@ export interface FrontendOptions {
   readonly awsAccountId: string;
 }
 
-/** The validated options, with defaults applied, and the names they produce. */
-export interface FrontendPlan {
-  readonly backendEnv: string;
-  readonly region: string;
-  readonly awsAccountId: string;
-  readonly production: boolean;
-  readonly instanceType: string;
+/** The names a branch's frontend has, whatever backend it attaches to. */
+export interface FrontendNames {
   readonly branch: string;
   readonly slug: string;
   /** The Beanstalk environment, `dlpnext-<slug>`. */
   readonly environmentName: string;
   readonly domainName: string;
   readonly appUrl: string;
-  readonly certificate: string;
   readonly secretName: string;
+}
+
+/** The validated options, with defaults applied, and the names they produce. */
+export interface FrontendPlan extends FrontendNames {
+  readonly backendEnv: string;
+  readonly region: string;
+  readonly awsAccountId: string;
+  readonly production: boolean;
+  readonly instanceType: string;
+  readonly certificate: string;
 }
 
 /** The backend environment `--backend-env` names; throws when it is missing or unknown. */
@@ -69,12 +74,33 @@ function checkTagValue(branch: string): void {
   }
 }
 
+/** Validates the branch name and works out its frontend's names. */
+export function planFrontendNames(branch: string): FrontendNames {
+  const slug = validBranchSlug(branch, "branch", "--branch <name>");
+  checkTagValue(branch);
+  const domainName = webDomainName(slug);
+  return {
+    branch,
+    slug,
+    environmentName: webResourceName(slug),
+    domainName,
+    appUrl: `https://${domainName}`,
+    secretName: frontendSecretName(slug),
+  };
+}
+
 /** Validates the options and works out the frontend's names. */
 export function planFrontend(options: FrontendOptions): FrontendPlan {
   const production = options.production ?? false;
   const config = requireBackend(options.backendEnv, production);
-  const slug = validBranchSlug(options.branch, "branch", "--branch <name>");
-  checkTagValue(options.branch);
+  const names = planFrontendNames(options.branch);
+  // frontend:status finds frontends without a backend env, so they all
+  // have to be in the region it looks in.
+  if (config.region !== FRONTEND_REGION) {
+    throw new Error(
+      `Backend env ${config.name} is in ${config.region}, but frontends live in ${FRONTEND_REGION}`,
+    );
+  }
   if (options.certificate !== undefined) {
     checkCertificateArn(
       options.certificate,
@@ -82,22 +108,16 @@ export function planFrontend(options: FrontendOptions): FrontendPlan {
       options.awsAccountId,
     );
   }
-  const domainName = webDomainName(slug);
   return {
+    ...names,
     backendEnv: config.name,
     region: config.region,
     awsAccountId: options.awsAccountId,
     production,
     instanceType: config.web.instanceType,
-    branch: options.branch,
-    slug,
-    environmentName: webResourceName(slug),
-    domainName,
-    appUrl: `https://${domainName}`,
     certificate:
       options.certificate ??
       defaultCertificateArn(config.region, options.awsAccountId),
-    secretName: frontendSecretName(slug),
   };
 }
 

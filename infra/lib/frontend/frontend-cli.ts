@@ -8,7 +8,14 @@ import {
 } from "../deployment/deploy-cli";
 import { deployFrontend } from "./deploy";
 import { destroyFrontend } from "./destroy";
-import { requireBackend, FrontendPlan, planFrontend } from "./frontend";
+import { FRONTEND_REGION } from "../config/web";
+import {
+  requireBackend,
+  FrontendPlan,
+  planFrontend,
+  planFrontendNames,
+} from "./frontend";
+import { readFrontendStatus } from "./status";
 
 /** Everything the frontend commands do outside the process. Tests replace it. */
 export interface FrontendIO {
@@ -118,6 +125,62 @@ export async function frontendDestroy(
   }
 
   destroyFrontend(plan, run, io.log);
+  return 0;
+}
+
+/**
+ * `frontend:status`: prints how to reach the branch's frontend and what a
+ * local run needs to sign in with its Cognito client: never the client
+ * secret's value. Returns the exit code, 1 when the branch has no frontend.
+ */
+export async function frontendStatus(
+  argv: readonly string[],
+  io: FrontendIO,
+): Promise<number> {
+  const { values } = parseArgs({
+    args: [...argv],
+    options: {
+      branch: { type: "string" },
+      profile: { type: "string" },
+    },
+    strict: true,
+    allowPositionals: false,
+  });
+  const run = io.runner({ region: FRONTEND_REGION, profile: values.profile });
+  const names = planFrontendNames(values.branch ?? currentBranch(run));
+  const status = readFrontendStatus(names, run);
+  if (!status) {
+    io.log(
+      `Branch ${JSON.stringify(names.branch)} has no frontend deployed: there is no environment ${names.environmentName}.\n` +
+        `Create one with: npm run frontend:deploy -- --backend-env <env> --branch ${names.branch}`,
+    );
+    return 1;
+  }
+  if (status.branch !== names.branch) {
+    io.log(
+      io.alert(
+        `${names.environmentName} is the frontend for branch ${JSON.stringify(status.branch)}, not ${JSON.stringify(names.branch)}: ` +
+          `the two branch names share the slug ${names.slug}.`,
+      ) + "\n",
+    );
+  }
+  const unset = "(not set)";
+  io.log(
+    formatRows([
+      ["Branch", status.branch],
+      ["App URL", status.appUrl],
+      ["Endpoint", status.endpoint],
+      ["State", `${status.status} (health ${status.health})`],
+      ["Version", status.versionLabel ?? "none"],
+      ["Backend env", status.backendEnv ?? "(no tag)"],
+      ["Cognito issuer", status.cognitoIssuer ?? unset],
+      ["Client ID", status.cognitoClientId ?? unset],
+      ["Identity provider", status.cognitoIdentityProvider ?? unset],
+      ["Client secret", status.secretName],
+    ]) +
+      `\n\nThe client secret's value is in Secrets Manager: ` +
+      `aws secretsmanager get-secret-value --secret-id ${status.secretName}`,
+  );
   return 0;
 }
 
