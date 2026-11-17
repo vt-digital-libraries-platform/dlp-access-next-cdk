@@ -2,7 +2,11 @@ import * as fs from "fs";
 import { Command, CommandError, RunnerOptions } from "../lib/command-runner";
 import { SOLUTION_STACK } from "../lib/config/web";
 import { planFrontend } from "../lib/frontend/frontend";
-import { FrontendIO, frontendDeploy } from "../lib/frontend/frontend-cli";
+import {
+  FrontendIO,
+  frontendDeploy,
+  frontendDestroy,
+} from "../lib/frontend/frontend-cli";
 import { committedOptions } from "./committed-options";
 import { fakeRunner } from "./fake-runner";
 
@@ -1067,4 +1071,474 @@ describe("frontendDeploy", () => {
     const { io } = setup();
     await expect(frontendDeploy(argv, undefined, io)).rejects.toThrow(error);
   });
+});
+
+describe("frontendDestroy", () => {
+  const userPoolId = "us-east-1_AbCdEfGhI";
+  const environmentArn = `arn:aws:elasticbeanstalk:us-east-1:${awsAccountId}:environment/dlpnext/dlpnext-whunter-feature`;
+  const endpoint = "dlpnext-whunter-feature.us-east-1.elasticbeanstalk.com";
+  const domainName = "whunter-feature.dlp-access-dev.dlp.cloud.lib.vt.edu";
+  const secretName = "dlpnext/whunter-feature/cognito-client-secret";
+  const record = {
+    Name: `${domainName}.`,
+    Type: "CNAME",
+    TTL: 300,
+    ResourceRecords: [{ Value: endpoint }],
+  };
+  const frontendClient = {
+    ClientId: "frontendclient",
+    ClientName: "dlpnext-whunter-feature",
+  };
+  const otherClient = {
+    ClientId: "otherclient",
+    ClientName: "dlpnext-whunter-other",
+  };
+
+  const flagValue = (args: readonly string[], name: string) =>
+    args[args.indexOf(name) + 1];
+
+  /**
+   * Fakes a frontend's AWS state, removing pieces as commands delete them.
+   * `failOnce` names an `aws <service> <operation>` that fails the first
+   * time it runs, as if the connection dropped.
+   */
+  function setup({
+    answer = "yes",
+    environment = "Ready" as string | undefined,
+    tags = {
+      "dlpnext:branch": "whunter/feature",
+      "dlpnext:backend-env": "dev",
+    } as Record<string, string>,
+    terminatingWaits = 0,
+    recordExists = true,
+    clients = [otherClient, frontendClient],
+    secretExists = true,
+    failOnce = undefined as string | undefined,
+  } = {}) {
+    const state = {
+      environment,
+      recordExists,
+      clients: [...clients],
+      secretExists,
+    };
+    let waitsLeft = terminatingWaits;
+    let failure = failOnce;
+    const json = (value: unknown) => JSON.stringify(value);
+    const run = fakeRunner(({ executable, args }) => {
+      const command = [executable, ...args].join(" ");
+      if (command === "git branch --show-current") return "whunter/feature\n";
+      if (executable !== "aws") {
+        throw new Error(`unexpected command: ${command}`);
+      }
+      const operation = `${args[0]} ${args[1]}`;
+      if (operation === failure) {
+        failure = undefined;
+        throw new CommandError("aws", 255, "Connection was closed");
+      }
+      switch (operation) {
+        case "sts get-caller-identity":
+          return json({ Account: awsAccountId });
+        case "ssm get-parameter":
+          expect(flagValue(args, "--name")).toBe(
+            "/dlp-access-next/dev/user-pool-id",
+          );
+          return json({ Parameter: { Value: userPoolId } });
+        case "elasticbeanstalk describe-environments":
+          expect(args).toContain("--no-include-deleted");
+          return json({
+            Environments: state.environment
+              ? [
+                  {
+                    EnvironmentName: "dlpnext-whunter-feature",
+                    EnvironmentArn: environmentArn,
+                    CNAME: endpoint,
+                    Status: state.environment,
+                    Health: "Green",
+                  },
+                ]
+              : [],
+          });
+        case "elasticbeanstalk list-tags-for-resource":
+          return json({
+            ResourceArn: environmentArn,
+            ResourceTags: Object.entries(tags).map(([Key, Value]) => ({
+              Key,
+              Value,
+            })),
+          });
+        case "elasticbeanstalk terminate-environment":
+          if (state.environment !== "Ready") {
+            throw new CommandError("aws", 254, "InvalidParameterValue");
+          }
+          state.environment = "Terminating";
+          return "{}";
+        case "elasticbeanstalk wait":
+          if (waitsLeft > 0) {
+            waitsLeft--;
+            throw new CommandError(
+              "aws",
+              255,
+              "Waiter EnvironmentTerminated failed: Max attempts exceeded",
+            );
+          }
+          state.environment = undefined;
+          return "";
+        case "route53 list-hosted-zones-by-name":
+          return json({
+            HostedZones: [
+              {
+                Id: "/hostedzone/Z0123456789",
+                Name: "dlp.cloud.lib.vt.edu.",
+                Config: { PrivateZone: false },
+              },
+            ],
+          });
+        case "route53 list-resource-record-sets":
+          // Records are listed from the start name on, so once the CNAME is
+          // gone the next record, someone else's, comes back.
+          return json({
+            ResourceRecordSets: [
+              ...(state.recordExists ? [record] : []),
+              {
+                Name: "x-other.dlp-access-dev.dlp.cloud.lib.vt.edu.",
+                Type: "CNAME",
+                TTL: 300,
+                ResourceRecords: [{ Value: "elsewhere.example.com" }],
+              },
+            ],
+          });
+        case "route53 change-resource-record-sets":
+          if (!state.recordExists) {
+            throw new CommandError("aws", 254, "InvalidChangeBatch");
+          }
+          state.recordExists = false;
+          return "{}";
+        case "cognito-idp list-user-pool-clients":
+          expect(flagValue(args, "--user-pool-id")).toBe(userPoolId);
+          return json({ UserPoolClients: state.clients });
+        case "cognito-idp delete-user-pool-client": {
+          const id = flagValue(args, "--client-id");
+          if (!state.clients.some(({ ClientId }) => ClientId === id)) {
+            throw new CommandError("aws", 254, "ResourceNotFoundException");
+          }
+          state.clients = state.clients.filter(
+            ({ ClientId }) => ClientId !== id,
+          );
+          return "";
+        }
+        case "secretsmanager list-secrets":
+          return json({
+            SecretList: [
+              // A prefix match, which the name filter also returns.
+              { Name: `${secretName}-old` },
+              ...(state.secretExists ? [{ Name: secretName }] : []),
+            ],
+          });
+        case "secretsmanager delete-secret":
+          if (!state.secretExists) {
+            throw new CommandError("aws", 254, "ResourceNotFoundException");
+          }
+          state.secretExists = false;
+          return "{}";
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+    const questions: string[] = [];
+    const output: string[] = [];
+    const io: { -readonly [K in keyof FrontendIO]: FrontendIO[K] } = {
+      alert: (text) => text,
+      runner: () => run,
+      ask: async (question) => {
+        questions.push(question);
+        return answer;
+      },
+      log: (text) => output.push(text),
+    };
+    return { run, io, state, questions, output };
+  }
+
+  /** The commands that change something in AWS, and the waits between them. */
+  const teardown = (commands: Command[]) =>
+    commands.filter(({ args }) =>
+      /^(wait|terminate-.*|delete-.*|change-.*)$/.test(args[1] ?? ""),
+    );
+
+  const gone = {
+    environment: undefined,
+    recordExists: false,
+    clients: [otherClient],
+    secretExists: false,
+  };
+
+  test("removes a complete frontend: environment, CNAME, Cognito client, then secret", async () => {
+    const { run, io, state } = setup();
+
+    expect(await frontendDestroy(["--backend-env", "dev"], undefined, io)).toBe(
+      0,
+    );
+
+    expect(teardown(run.commands)).toEqual([
+      {
+        executable: "aws",
+        args: [
+          "elasticbeanstalk",
+          "terminate-environment",
+          "--environment-name",
+          "dlpnext-whunter-feature",
+        ],
+      },
+      {
+        executable: "aws",
+        args: [
+          "elasticbeanstalk",
+          "wait",
+          "environment-terminated",
+          "--application-name",
+          "dlpnext",
+          "--environment-names",
+          "dlpnext-whunter-feature",
+        ],
+      },
+      {
+        executable: "aws",
+        args: [
+          "route53",
+          "change-resource-record-sets",
+          "--hosted-zone-id",
+          "Z0123456789",
+          "--change-batch",
+          expect.any(String),
+        ],
+      },
+      {
+        executable: "aws",
+        args: [
+          "cognito-idp",
+          "delete-user-pool-client",
+          "--user-pool-id",
+          userPoolId,
+          "--client-id",
+          "frontendclient",
+        ],
+      },
+      {
+        executable: "aws",
+        args: [
+          "secretsmanager",
+          "delete-secret",
+          "--secret-id",
+          secretName,
+          "--force-delete-without-recovery",
+        ],
+      },
+    ]);
+    expect(
+      JSON.parse(flagValue(teardown(run.commands)[2].args, "--change-batch")),
+    ).toEqual({ Changes: [{ Action: "DELETE", ResourceRecordSet: record }] });
+    expect(state).toEqual(gone);
+  });
+
+  test.each([
+    "elasticbeanstalk terminate-environment",
+    "route53 list-resource-record-sets",
+    "route53 change-resource-record-sets",
+    "cognito-idp list-user-pool-clients",
+    "cognito-idp delete-user-pool-client",
+    "secretsmanager list-secrets",
+    "secretsmanager delete-secret",
+  ])("a re-run after %s fails finishes the teardown", async (failOnce) => {
+    const { io, state } = setup({ failOnce });
+
+    await expect(
+      frontendDestroy(["--backend-env", "dev"], undefined, io),
+    ).rejects.toThrow(/Connection was closed/);
+    expect(state).not.toEqual(gone);
+
+    expect(await frontendDestroy(["--backend-env", "dev"], undefined, io)).toBe(
+      0,
+    );
+    expect(state).toEqual(gone);
+  });
+
+  test.each([
+    [
+      "nothing left",
+      {
+        environment: undefined,
+        recordExists: false,
+        clients: [otherClient],
+        secretExists: false,
+      },
+    ],
+    [
+      "only a client and secret, from a deploy that failed before the environment",
+      { environment: undefined, recordExists: false },
+    ],
+    ["no CNAME, from a deploy that gave up waiting", { recordExists: false }],
+    [
+      "only the secret",
+      { environment: undefined, recordExists: false, clients: [otherClient] },
+    ],
+    [
+      "only the environment",
+      { recordExists: false, clients: [otherClient], secretExists: false },
+    ],
+  ])("skips what is missing from a frontend with %s", async (_, pieces) => {
+    const { io, state, output } = setup(pieces);
+
+    expect(await frontendDestroy(["--backend-env", "dev"], undefined, io)).toBe(
+      0,
+    );
+    expect(state).toEqual(gone);
+    expect(output.join("\n")).toMatch(/already gone/);
+  });
+
+  test("deletes every client with the frontend's name", async () => {
+    const duplicate = { ...frontendClient, ClientId: "duplicateclient" };
+    const { io, state } = setup({
+      clients: [frontendClient, otherClient, duplicate],
+    });
+
+    await frontendDestroy(["--backend-env", "dev"], undefined, io);
+
+    expect(state.clients).toEqual([otherClient]);
+  });
+
+  test("a re-run while the environment is terminating waits for it, then finishes", async () => {
+    const { run, io, state } = setup({ environment: "Terminating" });
+
+    expect(await frontendDestroy(["--backend-env", "dev"], undefined, io)).toBe(
+      0,
+    );
+    expect(
+      run.commands.filter(({ args }) => args[1] === "terminate-environment"),
+    ).toEqual([]);
+    expect(state).toEqual(gone);
+  });
+
+  test("keeps waiting while the environment is terminating", async () => {
+    const { run, io, state } = setup({ terminatingWaits: 2 });
+
+    expect(await frontendDestroy(["--backend-env", "dev"], undefined, io)).toBe(
+      0,
+    );
+    expect(run.commands.filter(({ args }) => args[1] === "wait")).toHaveLength(
+      3,
+    );
+    expect(state).toEqual(gone);
+  });
+
+  test("gives up, deleting nothing else, when the environment never terminates", async () => {
+    const { run, io, state } = setup({ terminatingWaits: 99 });
+
+    await expect(
+      frontendDestroy(["--backend-env", "dev"], undefined, io),
+    ).rejects.toThrow(
+      /dlpnext-whunter-feature did not terminate \(status Terminating\)/,
+    );
+    expect(teardown(run.commands).map(({ args }) => args[1])).toEqual([
+      "terminate-environment",
+      "wait",
+      "wait",
+      "wait",
+      "wait",
+    ]);
+    expect(state.secretExists).toBe(true);
+  });
+
+  test("refuses, changing nothing, an environment tagged for another backend", async () => {
+    const { run, io, state } = setup({
+      tags: {
+        "dlpnext:branch": "whunter/feature",
+        "dlpnext:backend-env": "f-search",
+      },
+    });
+
+    await expect(
+      frontendDestroy(["--backend-env", "dev"], undefined, io),
+    ).rejects.toThrow(
+      /dlpnext-whunter-feature uses backend env "f-search", not "dev".*--backend-env f-search/s,
+    );
+    expect(teardown(run.commands)).toEqual([]);
+    expect(state.environment).toBe("Ready");
+  });
+
+  test("destroys an environment tagged for a branch that shares the slug, as deploy's refusal says to", async () => {
+    const { io, state } = setup({
+      tags: {
+        "dlpnext:branch": "whunter-feature",
+        "dlpnext:backend-env": "dev",
+      },
+    });
+
+    expect(await frontendDestroy(["--backend-env", "dev"], undefined, io)).toBe(
+      0,
+    );
+    expect(state).toEqual(gone);
+  });
+
+  test.each(["", "no", "n", "yess"])(
+    "answering %p changes nothing",
+    async (answer) => {
+      const { run, io, questions, output } = setup({ answer });
+
+      expect(
+        await frontendDestroy(["--backend-env", "dev"], undefined, io),
+      ).toBe(1);
+
+      expect(questions).toEqual(['Destroy? Type "yes" or "y" to continue: ']);
+      expect(teardown(run.commands)).toEqual([]);
+      expect(output).toContain("Not destroyed.");
+    },
+  );
+
+  test("prints what it is about to destroy before asking", async () => {
+    const { io, output } = setup({ answer: "no" });
+
+    await frontendDestroy(
+      ["--backend-env", "dev", "--branch", "whunter/feature"],
+      undefined,
+      io,
+    );
+
+    const printed = output.join("\n");
+    expect(printed).toMatch(/dlpnext-whunter-feature/);
+    expect(printed).toMatch(/whunter-feature\.dlp-access-dev/);
+    expect(printed).toMatch(/dlpnext\/whunter-feature\/cognito-client-secret/);
+  });
+
+  test("the production backend gets a highlighted question", async () => {
+    const { io, questions } = setup({ answer: "no" });
+    io.alert = (text) => `<red>${text}</red>`;
+
+    await frontendDestroy(["--backend-env", "production"], undefined, io);
+
+    expect(questions).toEqual([
+      '<red>Destroy this frontend of the PRODUCTION backend? Type "yes" or "y" to continue: </red>',
+    ]);
+  });
+
+  test("--yes in CI skips the prompt", async () => {
+    const { io, questions, state } = setup({ answer: "no" });
+
+    expect(
+      await frontendDestroy(["--backend-env", "dev", "--yes"], "true", io),
+    ).toBe(0);
+    expect(questions).toEqual([]);
+    expect(state).toEqual(gone);
+  });
+
+  test.each([
+    [["--backend-env", "dev", "-y"], /only applies in CI/],
+    [[], /Missing backend env: pass --backend-env <env>/],
+    [["--backend-env", "dev", "--production"], /Unknown option '--production'/],
+  ])(
+    "rejects the arguments %p before any command runs",
+    async (argv, error) => {
+      const { run, io } = setup();
+
+      await expect(frontendDestroy(argv, undefined, io)).rejects.toThrow(error);
+      expect(run.commands).toEqual([]);
+    },
+  );
 });

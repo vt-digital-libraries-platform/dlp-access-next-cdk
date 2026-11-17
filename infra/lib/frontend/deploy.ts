@@ -94,7 +94,7 @@ export function versionLabel(plan: FrontendPlan, commit: string): string {
 }
 
 /** The fields of a Beanstalk environment the tooling reads. */
-interface Environment {
+export interface Environment {
   readonly EnvironmentArn: string;
   readonly Status: string;
   readonly Health: string;
@@ -153,16 +153,7 @@ function checkTags(
   environment: Environment,
   run: CommandRunner,
 ): void {
-  const tags = new Map(
-    (
-      awsJson(run, [
-        "elasticbeanstalk",
-        "list-tags-for-resource",
-        "--resource-arn",
-        environment.EnvironmentArn,
-      ]).ResourceTags as { Key: string; Value: string }[]
-    ).map(({ Key, Value }) => [Key, Value]),
-  );
+  const tags = readTags(environment, run);
   const recreate = `Destroy the frontend and deploy again to recreate it for branch ${JSON.stringify(plan.branch)} on backend env ${JSON.stringify(plan.backendEnv)}.`;
   const missing = [BRANCH_TAG, BACKEND_ENV_TAG].filter((key) => !tags.has(key));
   if (missing.length > 0) {
@@ -186,7 +177,25 @@ function checkTags(
   }
 }
 
-function describeEnvironment(
+/** The environment's tags, by key. */
+export function readTags(
+  environment: Environment,
+  run: CommandRunner,
+): Map<string, string> {
+  return new Map(
+    (
+      awsJson(run, [
+        "elasticbeanstalk",
+        "list-tags-for-resource",
+        "--resource-arn",
+        environment.EnvironmentArn,
+      ]).ResourceTags as { Key: string; Value: string }[]
+    ).map(({ Key, Value }) => [Key, Value]),
+  );
+}
+
+/** The plan's environment, leaving out terminated ones with its name. */
+export function describeEnvironment(
   plan: FrontendPlan,
   run: CommandRunner,
 ): Environment | undefined {
@@ -202,7 +211,7 @@ function describeEnvironment(
   return environment;
 }
 
-function parameter(run: CommandRunner, name: string): string {
+export function parameter(run: CommandRunner, name: string): string {
   return awsJson(run, ["ssm", "get-parameter", "--name", name]).Parameter
     .Value as string;
 }
@@ -248,7 +257,7 @@ function findClient(
 }
 
 /** The ID of the public hosted zone the branch's record goes in. */
-function findHostedZone(run: CommandRunner): string {
+export function findHostedZone(run: CommandRunner): string {
   const zones = (
     awsJson(run, [
       "route53",

@@ -8,6 +8,7 @@
     "cdk": "cdk",
     "deploy": "ts-node --prefer-ts-exts bin/deploy.ts",
     "frontend:deploy": "ts-node --prefer-ts-exts bin/frontend-deploy.ts",
+    "frontend:destroy": "ts-node --prefer-ts-exts bin/frontend-destroy.ts",
     "test": "jest",
     "test:lambda": ".venv/bin/pytest lambda"
   },

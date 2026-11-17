@@ -6,9 +6,10 @@ import {
   productionWarningFor,
 } from "../deployment/deploy-cli";
 import { deployFrontend } from "./deploy";
+import { destroyFrontend } from "./destroy";
 import { requireBackend, FrontendPlan, planFrontend } from "./frontend";
 
-/** Everything `frontend:deploy` does outside the process. Tests replace it. */
+/** Everything the frontend commands do outside the process. Tests replace it. */
 export interface FrontendIO {
   /** Makes the runner for the backend's region and the chosen profile. */
   readonly runner: (options: RunnerOptions) => CommandRunner;
@@ -81,20 +82,91 @@ export async function frontendDeploy(
     );
   }
 
-  if (yes) {
-    io.log("Confirmed by --yes (CI).");
-  } else {
-    const question = warning
-      ? alert('Deploy to PRODUCTION? Type "yes" or "y" to continue: ')
-      : 'Deploy? Type "yes" or "y" to continue: ';
-    if (!isConfirmed(await io.ask(question))) {
-      io.log("Not deployed.");
-      return 1;
-    }
+  const question = warning
+    ? alert('Deploy to PRODUCTION? Type "yes" or "y" to continue: ')
+    : 'Deploy? Type "yes" or "y" to continue: ';
+  if (!(await confirm(io, yes, question))) {
+    io.log("Not deployed.");
+    return 1;
   }
 
   deployFrontend(plan, commit, run, io.log);
   return 0;
+}
+
+/**
+ * `frontend:destroy`: confirms, then removes everything the branch's frontend
+ * owns, skipping what is already gone. Returns the exit code.
+ */
+export async function frontendDestroy(
+  argv: readonly string[],
+  ci: string | undefined,
+  io: FrontendIO,
+): Promise<number> {
+  const { values } = parseArgs({
+    args: [...argv],
+    options: {
+      "backend-env": { type: "string" },
+      branch: { type: "string" },
+      profile: { type: "string" },
+      yes: { type: "boolean", short: "y" },
+    },
+    strict: true,
+    allowPositionals: false,
+  });
+  const yes = values.yes ?? false;
+  if (yes) {
+    checkYesInCi(ci);
+  }
+  const backend = requireBackend(values["backend-env"]);
+  const run = io.runner({ region: backend.region, profile: values.profile });
+  const plan = planFrontend({
+    backendEnv: backend.name,
+    branch: values.branch ?? currentBranch(run),
+    awsAccountId: awsJson(run, ["sts", "get-caller-identity"])
+      .Account as string,
+  });
+
+  io.log(
+    `About to destroy a frontend, and everything it owns that is left:\n\n${formatRows(
+      [
+        ["Branch", plan.branch],
+        ["Backend env", plan.backendEnv],
+        ["Account", plan.awsAccountId],
+        ["Region", plan.region],
+        ["Environment", plan.environmentName],
+        ["CNAME", plan.domainName],
+        ["Cognito client", plan.environmentName],
+        ["Client secret", plan.secretName],
+      ],
+    )}\n`,
+  );
+  const question =
+    plan.backendEnv === "production"
+      ? io.alert(
+          'Destroy this frontend of the PRODUCTION backend? Type "yes" or "y" to continue: ',
+        )
+      : 'Destroy? Type "yes" or "y" to continue: ';
+  if (!(await confirm(io, yes, question))) {
+    io.log("Not destroyed.");
+    return 1;
+  }
+
+  destroyFrontend(plan, run, io.log);
+  return 0;
+}
+
+/** True when `--yes` (already checked to be in CI) or the answer confirms. */
+async function confirm(
+  io: FrontendIO,
+  yes: boolean,
+  question: string,
+): Promise<boolean> {
+  if (yes) {
+    io.log("Confirmed by --yes (CI).");
+    return true;
+  }
+  return isConfirmed(await io.ask(question));
 }
 
 function currentBranch(run: CommandRunner): string {
@@ -109,7 +181,7 @@ function currentBranch(run: CommandRunner): string {
 
 /** The confirmation text shown before deploying a frontend. */
 export function describeFrontendPlan(plan: FrontendPlan): string {
-  const rows: [string, string][] = [
+  return formatRows([
     ["Branch", plan.branch],
     ["Backend env", plan.backendEnv],
     ["Account", plan.awsAccountId],
@@ -119,7 +191,10 @@ export function describeFrontendPlan(plan: FrontendPlan): string {
     ["App URL", plan.appUrl],
     ["Certificate", plan.certificate],
     ["Client secret", plan.secretName],
-  ];
+  ]);
+}
+
+function formatRows(rows: [string, string][]): string {
   const width = Math.max(...rows.map(([label]) => label.length));
   return rows
     .map(([label, value]) => `  ${label.padEnd(width)}  ${value}`)
