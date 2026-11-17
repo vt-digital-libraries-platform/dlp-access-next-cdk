@@ -56,12 +56,60 @@ const MAX_SLUG_LENGTH = 40 - WEB_PREFIX.length;
 
 /** Name of the branch's Beanstalk application and environment. */
 export function webResourceName(slug: string): string {
+  checkSlugLength(slug, slug, "-c frontend-branch=<name>");
+  return `${WEB_PREFIX}${slug}`;
+}
+
+function checkSlugLength(branch: string, slug: string, flag: string): void {
   if (!slug || slug.length > MAX_SLUG_LENGTH) {
     throw new Error(
-      `Invalid branch "${slug}": after slugifying it must be 1 to ${MAX_SLUG_LENGTH} characters; pass a shorter -c frontend-branch=<name>`,
+      `Invalid branch "${branch}": after slugifying it must be 1 to ${MAX_SLUG_LENGTH} characters; pass a shorter ${flag}`,
     );
   }
-  return `${WEB_PREFIX}${slug}`;
+}
+
+// Git never allows these in a branch name, and the deploy scripts print the
+// name before asking to confirm, where escape sequences could rewrite the screen.
+const CONTROL_CHARACTERS = /[\x00-\x1f\x7f]/;
+
+/**
+ * Checks a branch name and returns its slug. `option` names the option in
+ * errors, e.g. `frontend-branch`, and `flag` shows how to pass it.
+ */
+export function validBranchSlug(
+  branch: string,
+  option: string,
+  flag: string,
+): string {
+  if (CONTROL_CHARACTERS.test(branch)) {
+    throw new Error(
+      `Invalid ${option} ${JSON.stringify(branch)}: a git branch name has no control characters`,
+    );
+  }
+  const slug = branchSlug(branch);
+  checkSlugLength(branch, slug, flag);
+  return slug;
+}
+
+const CERTIFICATE_ARN_PATTERN =
+  /^arn:aws:acm:([a-z0-9-]+):(\d{12}):certificate\/[0-9a-f-]+$/;
+
+/** Checks that `arn` is an ACM certificate in the account and region. */
+export function checkCertificateArn(
+  arn: string,
+  region: string,
+  awsAccountId: string,
+): void {
+  const [, certificateRegion, certificateAccount] =
+    CERTIFICATE_ARN_PATTERN.exec(arn) ?? [];
+  if (certificateRegion === undefined) {
+    throw new Error(`Invalid certificate "${arn}": use an ACM certificate ARN`);
+  }
+  if (certificateRegion !== region || certificateAccount !== awsAccountId) {
+    throw new Error(
+      `Invalid certificate "${arn}": the certificate must be in account ${awsAccountId} and ${region}, the environment's region`,
+    );
+  }
 }
 
 /**
@@ -69,6 +117,22 @@ export function webResourceName(slug: string): string {
  * `dlpnext/<slug>/cognito-client-secret`.
  */
 export const FRONTEND_SECRET_PREFIX = "dlpnext/";
+
+/** The Secrets Manager secret holding the branch's Cognito client secret. */
+export function frontendSecretName(slug: string): string {
+  return `${FRONTEND_SECRET_PREFIX}${slug}/cognito-client-secret`;
+}
+
+/** The Beanstalk application every frontend's environment lives in, one per account. */
+export const FRONTEND_APPLICATION = "dlpnext";
+
+/** The default certificate's ARN in the deploying account and region. */
+export function defaultCertificateArn(
+  region: string,
+  awsAccountId: string,
+): string {
+  return `arn:aws:acm:${region}:${awsAccountId}:certificate/${CERTIFICATE_ID}`;
+}
 
 /** The branch's public domain name, e.g. `user-multi-env.dlp-access-dev.dlp.cloud.lib.vt.edu`. */
 export function webDomainName(slug: string): string {

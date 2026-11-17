@@ -48,8 +48,9 @@ export interface RunnerOptions {
 
 /**
  * The real runner. `aws` and `eb` get the region and profile, and `aws`
- * prints JSON; `git` runs at the root of the repo, and the others in the
- * current directory.
+ * prints JSON. `git` and `eb` run at the root of the repo, where the app and
+ * its `.elasticbeanstalk` project config live; `aws` runs in the current
+ * directory.
  */
 export function spawnRunner({ region, profile }: RunnerOptions): CommandRunner {
   const regionAndProfile = [
@@ -64,7 +65,7 @@ export function spawnRunner({ region, profile }: RunnerOptions): CommandRunner {
   };
   return (executable, args) => {
     const result = spawnSync(executable, [...args, ...extraArgs[executable]], {
-      cwd: executable === "git" ? REPO_ROOT : undefined,
+      cwd: executable === "aws" ? undefined : REPO_ROOT,
       encoding: "utf8",
     });
     if (result.error) {

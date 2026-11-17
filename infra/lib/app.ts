@@ -4,10 +4,10 @@ import { AuthStack } from "./stacks/auth-stack";
 import { DataStack } from "./stacks/data-stack";
 import { EnvironmentConfig, resolveEnvironment } from "./config/environments";
 import {
-  CERTIFICATE_ID,
-  branchSlug,
+  checkCertificateArn,
+  defaultCertificateArn,
+  validBranchSlug,
   webDomainName,
-  webResourceName,
 } from "./config/web";
 import { WebStack } from "./stacks/web-stack";
 
@@ -71,13 +71,8 @@ const BACKENDS = ["attach", "provision"];
 const ACCOUNT_PATTERN = /^\d{12}$/;
 // <region>_<id>, e.g. us-east-1_AbCd12345
 const USER_POOL_ID_PATTERN = /^([a-z0-9-]+)_[0-9a-zA-Z]+$/;
-const CERTIFICATE_ARN_PATTERN =
-  /^arn:aws:acm:([a-z0-9-]+):(\d{12}):certificate\/[0-9a-f-]+$/;
 // Cognito provider names are at most 32 characters, without spaces or underscores.
 const IDENTITY_PROVIDER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9.-]{0,31}$/;
-// Git never allows these in a branch name, and the deploy script prints the
-// name before asking to confirm, where escape sequences could rewrite the screen.
-const CONTROL_CHARACTERS = /[\x00-\x1f\x7f]/;
 
 /**
  * Reads a boolean context value. `-c name=true` arrives as the string
@@ -151,24 +146,17 @@ export function planApp(options: AppOptions): AppPlan {
   const prefix = `DlpAccessNext-${config.name}`;
   const provision =
     options.frontendBranch === undefined || backend === "provision";
-  if (
-    options.frontendBranch !== undefined &&
-    CONTROL_CHARACTERS.test(options.frontendBranch)
-  ) {
-    throw new Error(
-      `Invalid frontend-branch ${JSON.stringify(options.frontendBranch)}: a git branch name has no control characters`,
-    );
-  }
   const branch =
     options.frontendBranch === undefined
       ? undefined
       : {
           branch: options.frontendBranch,
-          slug: branchSlug(options.frontendBranch),
+          slug: validBranchSlug(
+            options.frontendBranch,
+            "frontend-branch",
+            "-c frontend-branch=<name>",
+          ),
         };
-  if (branch) {
-    webResourceName(branch.slug);
-  }
 
   for (const [field, option] of [
     ["userPoolId", "user-pool-id"],
@@ -212,21 +200,11 @@ export function planApp(options: AppOptions): AppPlan {
     );
   }
   if (options.certificate !== undefined) {
-    const [, region, certificateAccount] =
-      CERTIFICATE_ARN_PATTERN.exec(options.certificate) ?? [];
-    if (region === undefined) {
-      throw new Error(
-        `Invalid certificate "${options.certificate}": use an ACM certificate ARN`,
-      );
-    }
-    if (
-      region !== config.region ||
-      certificateAccount !== options.awsAccountId
-    ) {
-      throw new Error(
-        `Invalid certificate "${options.certificate}": the certificate must be in account ${options.awsAccountId} and ${config.region}, the environment's region`,
-      );
-    }
+    checkCertificateArn(
+      options.certificate,
+      config.region,
+      options.awsAccountId,
+    );
   }
   return {
     config,
@@ -238,7 +216,7 @@ export function planApp(options: AppOptions): AppPlan {
       appUrl: `https://${webDomainName(branch.slug)}`,
       certificate:
         options.certificate ??
-        `arn:aws:acm:${config.region}:${options.awsAccountId}:certificate/${CERTIFICATE_ID}`,
+        defaultCertificateArn(config.region, options.awsAccountId),
       stackName: `DlpAccessNext-Web-${branch.slug}`,
     },
     userPoolId: options.userPoolId,

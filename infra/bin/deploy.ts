@@ -6,7 +6,6 @@
 import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
-import * as readline from "readline";
 import { optionsFromContext, planApp } from "../lib/app";
 import { spawnRunner } from "../lib/command-runner";
 import {
@@ -21,25 +20,10 @@ import {
   checkDeploy,
   lookupDeployedState,
 } from "../lib/deployment/deploy-check";
+import { alert, ask } from "../lib/deployment/terminal";
 import { sourceCommit, uncommittedChanges } from "../lib/git";
 
 const INFRA_DIR = path.join(__dirname, "..");
-
-// prompts user for approval
-function ask(question: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  return new Promise((resolve) => {
-    // Closed stdin (Ctrl-D, or no terminal) counts as no answer.
-    rl.once("close", () => resolve(""));
-    rl.question(question, (answer) => {
-      resolve(answer);
-      rl.close();
-    });
-  });
-}
 
 async function main(): Promise<number> {
   const {
@@ -59,9 +43,6 @@ async function main(): Promise<number> {
   // generate app plan. warn user if targeting production
   const plan = planApp(optionsFromContext((key) => context[key]));
   const warning = productionWarning(plan);
-  // Bold red on a terminal.
-  const alert = (text: string) =>
-    process.stdout.isTTY ? `\x1b[1;31m${text}\x1b[0m` : text;
   if (warning) {
     console.log(`${alert(warning)}\n`);
   }

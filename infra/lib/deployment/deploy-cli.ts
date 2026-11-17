@@ -71,11 +71,7 @@ export function deployArgs(
   if (!yes) {
     return { yes, check, cdkArgs: rest };
   }
-  if (!/^(true|1)$/i.test(ci ?? "")) {
-    throw new Error(
-      "--yes only applies in CI (CI=true); run without it to confirm the deploy",
-    );
-  }
+  checkYesInCi(ci);
   const approval = rest.some(
     (arg) =>
       arg === "--require-approval" || arg.startsWith("--require-approval="),
@@ -85,6 +81,19 @@ export function deployArgs(
     check,
     cdkArgs: approval ? rest : [...rest, "--require-approval", "never"],
   };
+}
+
+/**
+ * `--yes` skips the confirmation, so it is accepted only in CI (the `CI`
+ * environment variable is `true` or `1`), where approval belongs to the
+ * pipeline.
+ */
+export function checkYesInCi(ci: string | undefined): void {
+  if (!/^(true|1)$/i.test(ci ?? "")) {
+    throw new Error(
+      "--yes only applies in CI (CI=true); run without it to confirm the deploy",
+    );
+  }
 }
 
 /** The confirmation text shown before deploying. */
@@ -130,18 +139,37 @@ export function describePlan(plan: AppPlan): string {
 
 /** A warning to show above the plan when the environment is production; undefined otherwise. */
 export function productionWarning(plan: AppPlan): string | undefined {
-  if (plan.config.name !== "production") {
+  return productionWarningFor(
+    plan.config.name,
+    plan.awsAccountId,
+    plan.production,
+    "-c production=true",
+  );
+}
+
+/**
+ * A warning to show above a plan for the `envName` environment when it is
+ * production; undefined otherwise. `productionFlag` is how the person
+ * deploying asks for production sizing.
+ */
+export function productionWarningFor(
+  envName: string,
+  awsAccountId: string,
+  production: boolean,
+  productionFlag: string,
+): string | undefined {
+  if (envName !== "production") {
     return undefined;
   }
   const rule = "!".repeat(64);
   const lines = [
     rule,
     "!!  WARNING: THIS DEPLOYS TO THE PRODUCTION ENVIRONMENT",
-    `!!  Account ${plan.awsAccountId}. Check it is the production account.`,
+    `!!  Account ${awsAccountId}. Check it is the production account.`,
   ];
-  if (!plan.production) {
+  if (!production) {
     lines.push(
-      "!!  -c production=true is not set: this uses the small, non-production sizing.",
+      `!!  ${productionFlag} is not set: this uses the small, non-production sizing.`,
     );
   }
   lines.push(rule);
