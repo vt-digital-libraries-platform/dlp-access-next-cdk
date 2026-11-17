@@ -1,4 +1,5 @@
 import { AppPlan } from "../app";
+import { awsJson, CommandError, CommandRunner } from "../command-runner";
 import { COGNITO_DIRECTORY } from "../config/environments";
 import { MODELS, tableName } from "../config/models";
 import { webResourceName } from "../config/web";
@@ -9,10 +10,6 @@ import { webResourceName } from "../config/web";
  * checks: aws account, creds, existence of already deployed stacks
  * returns: DeployCheck, like: "{ stacks, warnings }" based on check results
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped JSON from the CLI
-export type AwsCli = (args: string[]) => any;
-
-export class AwsError extends Error {}
 
 export interface StackState {
   readonly status: string;
@@ -40,14 +37,18 @@ export interface DeployedState {
 const NOT_FOUND = /does not exist|not found|ResourceNotFound|NoSuchEntity/i;
 
 /** Looks up the stacks and named resources the plan would create or update. */
-export function lookupDeployedState(plan: AppPlan, aws: AwsCli): DeployedState {
+export function lookupDeployedState(
+  plan: AppPlan,
+  run: CommandRunner,
+): DeployedState {
+  const aws = (args: string[]) => awsJson(run, args);
   const errors: string[] = [];
   // Runs a lookup; not-found is undefined, anything else is recorded.
   const find = <T>(what: string, lookup: () => T): T | undefined => {
     try {
       return lookup();
     } catch (err) {
-      if (!(err instanceof AwsError) || !NOT_FOUND.test(err.message)) {
+      if (!(err instanceof CommandError) || !NOT_FOUND.test(err.message)) {
         errors.push(`${what}: ${(err as Error).message.trim()}`);
       }
       return undefined;

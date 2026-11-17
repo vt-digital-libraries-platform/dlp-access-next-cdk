@@ -1,10 +1,10 @@
 import { planApp } from "../lib/app";
+import { CommandError } from "../lib/command-runner";
 import {
-  AwsCli,
-  AwsError,
   checkDeploy,
   lookupDeployedState,
 } from "../lib/deployment/deploy-check";
+import { FakeRunner, fakeRunner } from "./fake-runner";
 
 const awsAccountId = "123456789012";
 const userPoolId = "us-east-1_AbCd12345";
@@ -24,18 +24,21 @@ const attach = planApp({
 });
 
 /**
- * A fake AWS CLI: `resources` maps "service command name" to the parsed
- * output, or to an Error to throw (a command without a name argument is just
- * "service command"). Anything missing is "not found".
+ * A fake runner for the AWS CLI: `resources` maps "service command name" to
+ * the parsed output, or to an Error to throw (a command without a name
+ * argument is just "service command"). Anything missing is "not found".
  */
 function fakeAws(
   resources: Record<string, unknown>,
   caller = awsAccountId,
-): AwsCli {
-  return (args) => {
+): FakeRunner {
+  return fakeRunner(({ executable, args }) => {
+    if (executable !== "aws") {
+      throw new Error(`unexpected ${executable} command`);
+    }
     const [service, command] = args;
     if (service === "sts") {
-      return { Account: caller };
+      return JSON.stringify({ Account: caller });
     }
     const key =
       args.length > 2
@@ -46,12 +49,14 @@ function fakeAws(
       throw found;
     }
     if (found === undefined) {
-      throw new AwsError(
+      throw new CommandError(
+        "aws",
+        254,
         `An error occurred (ValidationError): ${args[3]} does not exist`,
       );
     }
-    return found;
-  };
+    return JSON.stringify(found);
+  });
 }
 
 const stack = (status: string, outputs: Record<string, string> = {}) => ({
@@ -246,7 +251,9 @@ describe("checkDeploy", () => {
   test("reports lookups that fail for reasons other than not found", () => {
     const { stacks, warnings } = check(provision, {
       ...deployedBackend,
-      "cloudformation describe-stacks DlpAccessNext-dev-Api": new AwsError(
+      "cloudformation describe-stacks DlpAccessNext-dev-Api": new CommandError(
+        "aws",
+        254,
         "AccessDenied: not authorized",
       ),
     });

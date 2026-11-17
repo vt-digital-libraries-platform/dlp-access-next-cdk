@@ -8,6 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
 import { optionsFromContext, planApp } from "../lib/app";
+import { spawnRunner } from "../lib/command-runner";
 import {
   contextFromArgs,
   deployArgs,
@@ -17,7 +18,6 @@ import {
   profileFromArgs,
 } from "../lib/deployment/deploy-cli";
 import {
-  AwsError,
   checkDeploy,
   lookupDeployedState,
 } from "../lib/deployment/deploy-check";
@@ -80,29 +80,14 @@ async function main(): Promise<number> {
   // inspect plan, raise warnings
   let warned = false;
   if (check) {
-    const region = plan.config.region;
     // The same credentials as cdk deploy, which gets every argument.
-    const profile = profileFromArgs(args);
-    const profileArgs = profile ? ["--profile", profile] : [];
-    const aws = (awsArgs: string[]) => {
-      const result = spawnSync(
-        "aws",
-        [...awsArgs, "--region", region, ...profileArgs, "--output", "json"],
-        {
-          encoding: "utf8",
-        },
-      );
-      if (result.error) {
-        throw result.error;
-      }
-      if (result.status !== 0) {
-        throw new AwsError(result.stderr || `aws exited with ${result.status}`);
-      }
-      return JSON.parse(result.stdout);
-    };
+    const run = spawnRunner({
+      region: plan.config.region,
+      profile: profileFromArgs(args),
+    });
     const { stacks, warnings } = checkDeploy(
       plan,
-      lookupDeployedState(plan, aws),
+      lookupDeployedState(plan, run),
     );
     if (stacks.length > 0) {
       console.log(`Stacks:\n${stacks.map((line) => `  ${line}`).join("\n")}\n`);
