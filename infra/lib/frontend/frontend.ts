@@ -101,6 +101,15 @@ export function planFrontend(options: FrontendOptions): FrontendPlan {
   };
 }
 
+/**
+ * Writes the local EB CLI project config, `.elasticbeanstalk/config.yml`
+ * (gitignored), that `eb deploy` needs, creating the application if it is
+ * missing.
+ */
+export function initEbProject(run: CommandRunner): void {
+  run("eb", ["init", FRONTEND_APPLICATION, "--platform", SOLUTION_STACK]);
+}
+
 /** Application versions kept before the oldest are deleted. */
 const MAX_APPLICATION_VERSIONS = 200;
 
@@ -134,7 +143,7 @@ export function ensureApplication(
         "--name",
         ebServiceRoleArnParameterName(plan.backendEnv),
       ]).Parameter.Value as string);
-  run("eb", ["init", FRONTEND_APPLICATION, "--platform", SOLUTION_STACK]);
+  initEbProject(run);
   if (serviceRole !== undefined) {
     run("aws", [
       "elasticbeanstalk",

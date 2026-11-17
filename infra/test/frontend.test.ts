@@ -852,8 +852,10 @@ describe("frontendDeploy", () => {
 
   describe("a later deploy", () => {
     test("checks the tags, then only runs eb deploy of HEAD with the version label", async () => {
+      // No lifecycle policy: a redeploy still leaves the application alone.
       const { run, io, output } = setup({
         appExists: true,
+        hasPolicy: false,
         environmentExists: true,
       });
 
@@ -905,15 +907,21 @@ describe("frontendDeploy", () => {
         await frontendDeploy(["--backend-env", "dev"], undefined, io),
       ).toBe(0);
 
-      expect(writes(run.commands).at(-1)).toEqual({
-        executable: "eb",
-        args: [
-          "deploy",
-          "dlpnext-whunter-feature",
-          "--version",
-          "whunter-feature-0123456",
-        ],
-      });
+      expect(writes(run.commands)).toEqual([
+        {
+          executable: "eb",
+          args: ["init", "dlpnext", "--platform", SOLUTION_STACK],
+        },
+        {
+          executable: "eb",
+          args: [
+            "deploy",
+            "dlpnext-whunter-feature",
+            "--version",
+            "whunter-feature-0123456",
+          ],
+        },
+      ]);
     });
 
     test.each([
@@ -933,7 +941,7 @@ describe("frontendDeploy", () => {
       [
         "nothing, without the tags",
         {},
-        /dlpnext-whunter-feature is the frontend for branch \(no dlpnext:branch tag\), not "whunter\/feature"/,
+        /dlpnext-whunter-feature has no dlpnext:branch or dlpnext:backend-env tag.*Destroy the frontend and deploy again to recreate it/s,
       ],
     ])(
       "refuses, changing nothing, an environment tagged for %s",

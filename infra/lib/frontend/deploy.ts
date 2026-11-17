@@ -16,7 +16,7 @@ import {
   LOCAL_ORIGIN,
   SOLUTION_STACK,
 } from "../config/web";
-import { ensureApplication, FrontendPlan } from "./frontend";
+import { ensureApplication, FrontendPlan, initEbProject } from "./frontend";
 
 /** The environment tag recording the full branch name the frontend is for. */
 export const BRANCH_TAG = "dlpnext:branch";
@@ -111,29 +111,34 @@ interface Environment {
  */
 function redeploy(
   plan: FrontendPlan,
-  existing: Environment,
+  environment: Environment,
   commit: string,
   run: CommandRunner,
   log: (text: string) => void,
 ): void {
-  checkTags(plan, existing, run);
-  ensureApplication(plan, run);
+  checkTags(plan, environment, run);
+  // The application exists with its lifecycle policy, made by the first
+  // deploy, so only the local EB CLI config may be missing, e.g. in a clone.
+  initEbProject(run);
   const label = versionLabel(plan, commit);
   // A new label makes eb deploy create the version from HEAD; an existing
   // one, e.g. a commit deployed before, would fail as a duplicate.
-  const exists = versionExists(label, run);
+  const reuseVersion = versionExists(label, run);
   log(
-    `Deploying ${exists ? "the existing version " : ""}${label} to ${plan.environmentName}...`,
+    `Deploying ${reuseVersion ? "the existing version " : ""}${label} to ${plan.environmentName}...`,
   );
   run("eb", [
     "deploy",
     plan.environmentName,
-    exists ? "--version" : "--label",
+    reuseVersion ? "--version" : "--label",
     label,
   ]);
-  const environment = describeEnvironment(plan, run);
+  const deployed = describeEnvironment(plan, run);
+  if (!deployed) {
+    throw new Error(`${plan.environmentName} disappeared while deploying`);
+  }
   log(
-    `${plan.environmentName} is running ${environment?.VersionLabel} (${environment?.Status}, health ${environment?.Health}) at ${plan.appUrl}.`,
+    `${plan.environmentName} is running ${deployed.VersionLabel ?? "no version"} (${deployed.Status}, health ${deployed.Health}) at ${plan.appUrl}.`,
   );
 }
 
@@ -158,11 +163,15 @@ function checkTags(
       ]).ResourceTags as { Key: string; Value: string }[]
     ).map(({ Key, Value }) => [Key, Value]),
   );
-  const shown = (key: string) => {
-    const value = tags.get(key);
-    return value === undefined ? `(no ${key} tag)` : JSON.stringify(value);
-  };
   const recreate = `Destroy the frontend and deploy again to recreate it for branch ${JSON.stringify(plan.branch)} on backend env ${JSON.stringify(plan.backendEnv)}.`;
+  const missing = [BRANCH_TAG, BACKEND_ENV_TAG].filter((key) => !tags.has(key));
+  if (missing.length > 0) {
+    throw new Error(
+      `${plan.environmentName} has no ${missing.join(" or ")} tag, so it can't be checked as the frontend for this branch and backend: ` +
+        `it wasn't created by frontend:deploy.\n${recreate}`,
+    );
+  }
+  const shown = (key: string) => JSON.stringify(tags.get(key));
   if (tags.get(BRANCH_TAG) !== plan.branch) {
     throw new Error(
       `${plan.environmentName} is the frontend for branch ${shown(BRANCH_TAG)}, not ${JSON.stringify(plan.branch)}: ` +
