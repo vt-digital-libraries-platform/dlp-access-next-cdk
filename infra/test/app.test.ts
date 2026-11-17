@@ -581,10 +581,15 @@ describe("streaming failure alerts", () => {
     }
   });
 
-  test("no environment subscribes anyone yet", () => {
-    for (const t of [dev.api, preProduction.api, feature.api]) {
-      t.resourceCountIs("AWS::SNS::Subscription", 0);
+  test("named environments alert the team; feature environments alert no one", () => {
+    for (const t of [dev.api, preProduction.api]) {
+      t.resourceCountIs("AWS::SNS::Subscription", 1);
+      t.hasResourceProperties("AWS::SNS::Subscription", {
+        Protocol: "email",
+        Endpoint: "digitallibraries@vt.edu",
+      });
     }
+    feature.api.resourceCountIs("AWS::SNS::Subscription", 0);
   });
 
   test("each configured alert address is an email subscription on the topic", () => {
