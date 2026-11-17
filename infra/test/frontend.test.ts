@@ -93,14 +93,19 @@ describe("planFrontend", () => {
 describe("frontendDeploy", () => {
   const serviceRoleArn = `arn:aws:iam::${awsAccountId}:role/dlp-access-next-dev-eb-service`;
 
-  /** Fakes the AWS, EB and git state; `appExists` says whether dlpnext exists yet. */
+  /**
+   * Fakes the AWS, EB and git state. `appExists` says whether dlpnext exists
+   * yet, and `hasPolicy` whether it has its version lifecycle policy.
+   */
   function setup({
     appExists = false,
+    hasPolicy = true,
     answer = "yes",
     branch = "whunter/feature",
     status = "",
   }: {
     appExists?: boolean;
+    hasPolicy?: boolean;
     answer?: string;
     branch?: string;
     status?: string;
@@ -118,7 +123,22 @@ describe("frontendDeploy", () => {
         "aws elasticbeanstalk describe-applications --application-names dlpnext"
       )
         return JSON.stringify({
-          Applications: appExists ? [{ ApplicationName: "dlpnext" }] : [],
+          Applications: appExists
+            ? [
+                {
+                  ApplicationName: "dlpnext",
+                  ResourceLifecycleConfig: {
+                    VersionLifecycleConfig: {
+                      MaxCountRule: {
+                        Enabled: hasPolicy,
+                        MaxCount: 200,
+                        DeleteSourceFromS3: true,
+                      },
+                    },
+                  },
+                },
+              ]
+            : [],
         });
       if (
         command ===
@@ -138,6 +158,7 @@ describe("frontendDeploy", () => {
     const questions: string[] = [];
     const output: string[] = [];
     const io: { -readonly [K in keyof FrontendIO]: FrontendIO[K] } = {
+      alert: (text) => text,
       runner: (options) => {
         runnerOptions.push(options);
         return run;
@@ -213,6 +234,19 @@ describe("frontendDeploy", () => {
         executable: "eb",
         args: ["init", "dlpnext", "--platform", SOLUTION_STACK],
       },
+    ]);
+  });
+
+  test("an existing application without the lifecycle policy gets it, e.g. after a failed first run", async () => {
+    const { run, io } = setup({ appExists: true, hasPolicy: false });
+
+    expect(await frontendDeploy(["--backend-env", "dev"], undefined, io)).toBe(
+      0,
+    );
+
+    expect(writes(run.commands).map(({ args }) => args[1] ?? args[0])).toEqual([
+      "dlpnext",
+      "update-application-resource-lifecycle",
     ]);
   });
 
@@ -308,7 +342,8 @@ describe("frontendDeploy", () => {
   });
 
   test.each([
-    [[], /Missing --backend-env/],
+    [[], /Missing backend env: pass --backend-env <env>/],
+    [["--backend-env", ""], /Missing backend env: pass --backend-env <env>/],
     [["--backend-env", "dev", "--bogus"], /Unknown option '--bogus'/],
   ])("rejects the arguments %p", async (argv, error) => {
     const { io } = setup();

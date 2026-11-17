@@ -7,7 +7,7 @@ import {
 } from "../deployment/deploy-cli";
 import {
   ensureApplication,
-  frontendBackend,
+  requireBackend,
   FrontendPlan,
   planFrontend,
 } from "./frontend";
@@ -19,8 +19,8 @@ export interface FrontendIO {
   /** Asks a question and returns the answer; an empty answer when there is none. */
   readonly ask: (question: string) => Promise<string>;
   readonly log: (text: string) => void;
-  /** Highlights a warning, e.g. bold red on a terminal. Defaults to plain text. */
-  readonly alert?: (text: string) => string;
+  /** Highlights a warning, e.g. bold red on a terminal. */
+  readonly alert: (text: string) => string;
 }
 
 /**
@@ -49,7 +49,7 @@ export async function frontendDeploy(
   if (yes) {
     checkYesInCi(ci);
   }
-  const backend = frontendBackend(values["backend-env"]);
+  const backend = requireBackend(values["backend-env"]);
   const run = io.runner({ region: backend.region, profile: values.profile });
 
   const branch = values.branch ?? currentBranch(run);
@@ -62,7 +62,7 @@ export async function frontendDeploy(
       .Account as string,
   });
 
-  const alert = io.alert ?? ((text: string) => text);
+  const { alert } = io;
   const warning = productionWarningFor(
     plan.backendEnv,
     plan.awsAccountId,

@@ -45,14 +45,14 @@ export interface FrontendPlan {
   readonly secretName: string;
 }
 
-/** The backend environment `--backend-env` names. */
-export function frontendBackend(
+/** The backend environment `--backend-env` names; throws when it is missing or unknown. */
+export function requireBackend(
   backendEnv: string | undefined,
   production = false,
 ): EnvironmentConfig {
-  if (backendEnv === undefined) {
+  if (!backendEnv) {
     throw new Error(
-      "Missing --backend-env <env>: the backend environment the frontend attaches to",
+      "Missing backend env: pass --backend-env <env>, the backend environment the frontend attaches to",
     );
   }
   return resolveEnvironment(backendEnv, production);
@@ -61,7 +61,7 @@ export function frontendBackend(
 /** Validates the options and works out the frontend's names. */
 export function planFrontend(options: FrontendOptions): FrontendPlan {
   const production = options.production ?? false;
-  const config = frontendBackend(options.backendEnv, production);
+  const config = requireBackend(options.backendEnv, production);
   const slug = validBranchSlug(options.branch, "branch", "--branch <name>");
   if (options.certificate !== undefined) {
     checkCertificateArn(
@@ -95,30 +95,33 @@ const MAX_APPLICATION_VERSIONS = 200;
 /**
  * Makes sure the shared Beanstalk application and the local EB CLI project
  * config (`.elasticbeanstalk/config.yml`, gitignored) exist. `eb init` creates
- * the application when it is missing; a new application also gets a version
- * lifecycle policy, which needs a service role: the backend's.
+ * the application when it is missing. An application without the version
+ * lifecycle policy gets it: a new one, or one whose first run failed after
+ * `eb init`. Setting the policy needs a service role: the backend's.
  */
 export function ensureApplication(
   plan: FrontendPlan,
   run: CommandRunner,
 ): void {
-  const { Applications: applications } = awsJson(run, [
+  const [application] = awsJson(run, [
     "elasticbeanstalk",
     "describe-applications",
     "--application-names",
     FRONTEND_APPLICATION,
-  ]);
-  const isNew = applications.length === 0;
+  ]).Applications;
+  const hasPolicy =
+    application?.ResourceLifecycleConfig?.VersionLifecycleConfig?.MaxCountRule
+      ?.Enabled === true;
   // Read before anything is created, so a backend without a service role
   // fails cleanly.
-  const serviceRole = isNew
-    ? (awsJson(run, [
+  const serviceRole = hasPolicy
+    ? undefined
+    : (awsJson(run, [
         "ssm",
         "get-parameter",
         "--name",
         ebServiceRoleArnParameterName(plan.backendEnv),
-      ]).Parameter.Value as string)
-    : undefined;
+      ]).Parameter.Value as string);
   run("eb", ["init", FRONTEND_APPLICATION, "--platform", SOLUTION_STACK]);
   if (serviceRole !== undefined) {
     run("aws", [
