@@ -1,5 +1,11 @@
 import * as path from "path";
-import { Stack, StackProps, CfnOutput, Duration } from "aws-cdk-lib";
+import {
+  ArnFormat,
+  CfnOutput,
+  Duration,
+  Stack,
+  StackProps,
+} from "aws-cdk-lib";
 import * as appsync from "aws-cdk-lib/aws-appsync";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
@@ -19,6 +25,8 @@ import { Construct } from "constructs";
 import {
   EnvironmentConfig,
   ebInstanceProfileName,
+  ebServiceRoleArnParameterName,
+  ebServiceRoleName,
   graphqlApiUrlParameterName,
   resyncFunctionName,
 } from "../config/environments";
@@ -29,6 +37,7 @@ import {
   SEARCHABLE_MODELS,
   tableName,
 } from "../config/models";
+import { FRONTEND_SECRET_PREFIX } from "../config/web";
 import {
   getByIdCode,
   listScanCode,
@@ -395,6 +404,43 @@ export class ApiStack extends Stack {
     );
     api.grant(ebRole, appsync.IamResource.all(), "appsync:GraphQL");
 
+    // Frontends keep their Cognito client secret at dlpnext/<slug>/…, created
+    // by the frontend tooling. Every frontend on this environment shares the
+    // instance role, so any of them may read any other's secret; accepted.
+    ebRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+        ],
+        resources: [
+          this.formatArn({
+            service: "secretsmanager",
+            resource: "secret",
+            resourceName: `${FRONTEND_SECRET_PREFIX}*`,
+            arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+          }),
+        ],
+      }),
+    );
+
+    // One Beanstalk service role per environment, shared by every frontend
+    // on it, so the frontend tooling never creates IAM. Same policies as the
+    // default aws-elasticbeanstalk-service-role; the enhanced-health policy
+    // lives under the service-role/ path.
+    const ebServiceRole = new iam.Role(this, "EbServiceRole", {
+      roleName: ebServiceRoleName(config.name),
+      assumedBy: new iam.ServicePrincipal("elasticbeanstalk.amazonaws.com"),
+      managedPolicies: [
+        "service-role/AWSElasticBeanstalkEnhancedHealth",
+        "AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy",
+      ].map((name) => iam.ManagedPolicy.fromAwsManagedPolicyName(name)),
+    });
+    new ssm.StringParameter(this, "EbServiceRoleArnParameter", {
+      parameterName: ebServiceRoleArnParameterName(config.name),
+      stringValue: ebServiceRole.roleArn,
+    });
+
     // Web stacks read the URL from here, so they can attach to an
     // environment without a cross-stack reference to this stack.
     new ssm.StringParameter(this, "GraphQLApiUrlParameter", {
@@ -407,6 +453,9 @@ export class ApiStack extends Stack {
     new CfnOutput(this, "GraphQLApiArn", { value: api.arn });
     new CfnOutput(this, "EbInstanceProfileName", {
       value: ebInstanceProfile.instanceProfileName,
+    });
+    new CfnOutput(this, "EbServiceRoleArn", {
+      value: ebServiceRole.roleArn,
     });
     new CfnOutput(this, "OpenSearchStreamingFailureQueueUrl", {
       value: streamingFailures.queueUrl,

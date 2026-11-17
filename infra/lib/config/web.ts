@@ -64,6 +64,13 @@ export function webResourceName(slug: string): string {
   return `${WEB_PREFIX}${slug}`;
 }
 
+/**
+ * Every frontend's secrets are named under this prefix, e.g.
+ * `dlpnext/<slug>/cognito-client-secret`. Each environment's instance role
+ * may read any secret under it.
+ */
+export const FRONTEND_SECRET_PREFIX = "dlpnext/";
+
 /** The branch's public domain name, e.g. `user-multi-env.dlp-access-dev.dlp.cloud.lib.vt.edu`. */
 export function webDomainName(slug: string): string {
   return `${slug}.${APP_DOMAIN}`;

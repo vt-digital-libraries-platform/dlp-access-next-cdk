@@ -132,6 +132,16 @@ export function ebInstanceProfileName(envName: string): string {
   return `dlp-access-next-${envName}-eb`;
 }
 
+/** The environment's Elastic Beanstalk service role. */
+export function ebServiceRoleName(envName: string): string {
+  return `dlp-access-next-${envName}-eb-service`;
+}
+
+/** SSM parameter holding the ARN of the environment's Beanstalk service role. */
+export function ebServiceRoleArnParameterName(envName: string): string {
+  return `/dlp-access-next/${envName}/eb-service-role-arn`;
+}
+
 /** The environment's function that re-indexes items into OpenSearch. */
 export function resyncFunctionName(envName: string): string {
   return `dlp-access-next-${envName}-opensearch-resync`;

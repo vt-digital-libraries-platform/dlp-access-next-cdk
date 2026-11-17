@@ -621,9 +621,81 @@ describe("API and Elastic Beanstalk access", () => {
     dev.api.hasResourceProperties("AWS::IAM::Policy", {
       Roles: [{ Ref: ebRoleId }],
       PolicyDocument: {
-        Statement: [Match.objectLike({ Action: "appsync:GraphQL" })],
+        Statement: Match.arrayWith([
+          Match.objectLike({ Action: "appsync:GraphQL" }),
+        ]),
       },
     });
+  });
+
+  test("per-environment Beanstalk service role, published to SSM", () => {
+    const serviceRoles = Object.entries(
+      dev.api.findResources("AWS::IAM::Role", {
+        Properties: {
+          AssumeRolePolicyDocument: {
+            Statement: [
+              Match.objectLike({
+                Principal: { Service: "elasticbeanstalk.amazonaws.com" },
+              }),
+            ],
+          },
+        },
+      }),
+    );
+    expect(serviceRoles).toHaveLength(1);
+    const [serviceRoleId, serviceRole] = serviceRoles[0];
+    expect(serviceRole.Properties.RoleName).toBe(
+      "dlp-access-next-dev-eb-service",
+    );
+    // Each ARN is Fn::Join ["", ["arn:", partition, ":iam::aws:policy/<name>"]].
+    const managedPolicies = (
+      serviceRole.Properties.ManagedPolicyArns as {
+        "Fn::Join": [string, unknown[]];
+      }[]
+    ).map((arn) =>
+      String(arn["Fn::Join"][1].at(-1)).replace(":iam::aws:policy/", ""),
+    );
+    expect(managedPolicies.sort()).toEqual([
+      "AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy",
+      "service-role/AWSElasticBeanstalkEnhancedHealth",
+    ]);
+    dev.api.hasResourceProperties("AWS::SSM::Parameter", {
+      Name: "/dlp-access-next/dev/eb-service-role-arn",
+      Value: { "Fn::GetAtt": [serviceRoleId, "Arn"] },
+    });
+  });
+
+  test("instance role may read frontend client secrets named dlpnext/*, and nothing broader", () => {
+    const ebRoleId = Object.entries(
+      dev.api.findResources("AWS::IAM::Role"),
+    ).find(([, r]) => r.Properties.RoleName === "dlp-access-next-dev-eb")![0];
+    const secretStatements = Object.values(
+      dev.api.findResources("AWS::IAM::Policy"),
+    ).flatMap((p) =>
+      (p.Properties.PolicyDocument.Statement as Record<string, unknown>[])
+        .filter((s) => JSON.stringify(s.Action).includes("secretsmanager:"))
+        .map((s) => ({ roles: p.Properties.Roles, ...s })),
+    );
+    expect(secretStatements).toEqual([
+      {
+        roles: [{ Ref: ebRoleId }],
+        Effect: "Allow",
+        Action: [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+        ],
+        Resource: {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              { Ref: "AWS::Partition" },
+              `:secretsmanager:us-east-1:${awsAccountId}:secret:dlpnext/*`,
+            ],
+          ],
+        },
+      },
+    ]);
   });
 
   test("publishes the API URL to SSM for Web stacks", () => {
@@ -639,6 +711,7 @@ describe("API and Elastic Beanstalk access", () => {
   test("stack outputs what the Beanstalk config needs", () => {
     dev.api.hasOutput("GraphQLApiUrl", {});
     dev.api.hasOutput("EbInstanceProfileName", {});
+    dev.api.hasOutput("EbServiceRoleArn", {});
   });
 });
 
