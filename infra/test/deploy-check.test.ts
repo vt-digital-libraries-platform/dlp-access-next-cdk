@@ -23,6 +23,9 @@ const attach = planApp({
   certificate,
 });
 
+/** A failed `aws` command: the CLI exits 254 when the service returns an error. */
+const awsError = (message: string) => new CommandError("aws", 254, message);
+
 /**
  * A fake runner for the AWS CLI: `resources` maps "service command name" to
  * the parsed output, or to an Error to throw (a command without a name
@@ -49,9 +52,7 @@ function fakeAws(
       throw found;
     }
     if (found === undefined) {
-      throw new CommandError(
-        "aws",
-        254,
+      throw awsError(
         `An error occurred (ValidationError): ${args[3]} does not exist`,
       );
     }
@@ -251,9 +252,7 @@ describe("checkDeploy", () => {
   test("reports lookups that fail for reasons other than not found", () => {
     const { stacks, warnings } = check(provision, {
       ...deployedBackend,
-      "cloudformation describe-stacks DlpAccessNext-dev-Api": new CommandError(
-        "aws",
-        254,
+      "cloudformation describe-stacks DlpAccessNext-dev-Api": awsError(
         "AccessDenied: not authorized",
       ),
     });

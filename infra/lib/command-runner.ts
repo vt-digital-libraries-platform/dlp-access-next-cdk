@@ -48,22 +48,23 @@ export interface RunnerOptions {
 
 /**
  * The real runner. `aws` and `eb` get the region and profile, and `aws`
- * prints JSON; `git` runs at the root of the repo.
+ * prints JSON; `git` runs at the root of the repo, and the others in the
+ * current directory.
  */
 export function spawnRunner({ region, profile }: RunnerOptions): CommandRunner {
-  const scope = [
+  const regionAndProfile = [
     "--region",
     region,
     ...(profile ? ["--profile", profile] : []),
   ];
   const extraArgs: Record<Executable, string[]> = {
-    aws: [...scope, "--output", "json"],
-    eb: scope,
+    aws: [...regionAndProfile, "--output", "json"],
+    eb: regionAndProfile,
     git: [],
   };
   return (executable, args) => {
     const result = spawnSync(executable, [...args, ...extraArgs[executable]], {
-      cwd: REPO_ROOT,
+      cwd: executable === "git" ? REPO_ROOT : undefined,
       encoding: "utf8",
     });
     if (result.error) {

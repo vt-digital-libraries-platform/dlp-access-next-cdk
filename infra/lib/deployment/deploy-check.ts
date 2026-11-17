@@ -4,7 +4,7 @@ import { COGNITO_DIRECTORY } from "../config/environments";
 import { MODELS, tableName } from "../config/models";
 import { webResourceName } from "../config/web";
 
-/**
+/*
  * Checks the app plan before deployment
  *
  * checks: aws account, creds, existence of already deployed stacks
