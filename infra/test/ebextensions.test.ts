@@ -2,15 +2,15 @@ import * as fs from "fs";
 import * as yaml from "js-yaml";
 import * as path from "path";
 
-const ebextensions = path.resolve(__dirname, "../../.ebextensions");
+const ebextensionsDir = path.resolve(__dirname, "../../.ebextensions");
 
 /** Every option set by the committed `.ebextensions` config, as strings. */
 function committedOptions(): Record<string, Record<string, string>> {
   const options: Record<string, Record<string, string>> = {};
-  for (const file of fs.readdirSync(ebextensions).sort()) {
+  for (const file of fs.readdirSync(ebextensionsDir).sort()) {
     expect(file).toMatch(/\.config$/);
     const config = yaml.load(
-      fs.readFileSync(path.join(ebextensions, file), "utf8"),
+      fs.readFileSync(path.join(ebextensionsDir, file), "utf8"),
     ) as Record<string, unknown>;
     // Option settings only: no resources, commands or files.
     expect(Object.keys(config)).toEqual(["option_settings"]);

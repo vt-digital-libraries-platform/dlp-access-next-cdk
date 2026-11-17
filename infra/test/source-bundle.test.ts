@@ -8,7 +8,8 @@ const repo = path.resolve(__dirname, "../..");
 /**
  * The paths `git archive` ships for the working tree as it would be
  * committed, plus `extraPaths` as empty committed files, using the
- * `.gitattributes` of that tree. The repository's own index is untouched.
+ * `.gitattributes` of that tree. A temporary index keeps the staging area
+ * untouched; the blobs it writes are left in the object store for gc.
  */
 function archivedPaths(extraPaths: string[] = []): string[] {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dlpnext-bundle-"));
@@ -18,9 +19,18 @@ function archivedPaths(extraPaths: string[] = []): string[] {
       execFileSync("git", args, { cwd: repo, env, encoding: "utf8" });
     git("read-tree", "HEAD");
     git("add", "--all");
-    const emptyBlob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: repo, input: "", encoding: "utf8" }).trim();
+    const emptyBlob = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+      cwd: repo,
+      input: "",
+      encoding: "utf8",
+    }).trim();
     for (const extra of extraPaths) {
-      git("update-index", "--add", "--cacheinfo", `100644,${emptyBlob},${extra}`);
+      git(
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        `100644,${emptyBlob},${extra}`,
+      );
     }
     const tree = git("write-tree").trim();
     const archive = path.join(dir, "bundle.tar");
@@ -39,7 +49,7 @@ describe("source bundle", () => {
   });
 
   const excluded = [
-    ".github/workflows/x.yaml",
+    ".github/workflows/deploy.yaml",
     ".claude/settings.json",
     ".scratch/notes.txt",
     ".elasticbeanstalk/config.yml",
