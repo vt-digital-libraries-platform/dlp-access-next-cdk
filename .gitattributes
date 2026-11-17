@@ -1,0 +1,13 @@
+# The EB CLI deploys `git archive` of HEAD, which leaves out every path marked
+# export-ignore: committed files the Next.js server doesn't need. Leading
+# slashes anchor a pattern to the repository root; a pattern without a slash
+# matches at any depth.
+/.github export-ignore
+/.claude export-ignore
+/.scratch export-ignore
+/.elasticbeanstalk export-ignore
+/infra export-ignore
+/docs export-ignore
+*.md export-ignore
+# Kept out even if one is ever committed.
+.env* export-ignore
