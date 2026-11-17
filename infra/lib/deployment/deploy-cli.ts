@@ -158,7 +158,7 @@ export function productionWarningFor(
   production: boolean,
   productionFlag: string,
 ): string | undefined {
-  if (envName !== "production") {
+  if (!isProductionEnv(envName)) {
     return undefined;
   }
   const rule = "!".repeat(64);
@@ -174,6 +174,11 @@ export function productionWarningFor(
   }
   lines.push(rule);
   return lines.join("\n");
+}
+
+/** Whether `envName` is the production backend environment. */
+export function isProductionEnv(envName: string): boolean {
+  return envName === "production";
 }
 
 /** Only "y" or "yes", in any case, confirms. */

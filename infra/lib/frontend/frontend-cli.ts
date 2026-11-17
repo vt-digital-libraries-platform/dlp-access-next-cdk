@@ -3,6 +3,7 @@ import { awsJson, CommandRunner, RunnerOptions } from "../command-runner";
 import {
   checkYesInCi,
   isConfirmed,
+  isProductionEnv,
   productionWarningFor,
 } from "../deployment/deploy-cli";
 import { deployFrontend } from "./deploy";
@@ -42,22 +43,8 @@ export async function frontendDeploy(
     strict: true,
     allowPositionals: false,
   });
-  const yes = values.yes ?? false;
-  if (yes) {
-    checkYesInCi(ci);
-  }
-  const backend = requireBackend(values["backend-env"]);
-  const run = io.runner({ region: backend.region, profile: values.profile });
-
-  const branch = values.branch ?? currentBranch(run);
-  const plan = planFrontend({
-    backendEnv: backend.name,
-    branch,
-    production: values.production,
-    certificate: values.certificate,
-    awsAccountId: awsJson(run, ["sts", "get-caller-identity"])
-      .Account as string,
-  });
+  const yes = checkYes(values.yes, ci);
+  const { plan, run } = planWithRunner(values, io);
 
   const { alert } = io;
   const warning = productionWarningFor(
@@ -114,39 +101,17 @@ export async function frontendDestroy(
     strict: true,
     allowPositionals: false,
   });
-  const yes = values.yes ?? false;
-  if (yes) {
-    checkYesInCi(ci);
-  }
-  const backend = requireBackend(values["backend-env"]);
-  const run = io.runner({ region: backend.region, profile: values.profile });
-  const plan = planFrontend({
-    backendEnv: backend.name,
-    branch: values.branch ?? currentBranch(run),
-    awsAccountId: awsJson(run, ["sts", "get-caller-identity"])
-      .Account as string,
-  });
+  const yes = checkYes(values.yes, ci);
+  const { plan, run } = planWithRunner(values, io);
 
   io.log(
-    `About to destroy a frontend, and everything it owns that is left:\n\n${formatRows(
-      [
-        ["Branch", plan.branch],
-        ["Backend env", plan.backendEnv],
-        ["Account", plan.awsAccountId],
-        ["Region", plan.region],
-        ["Environment", plan.environmentName],
-        ["CNAME", plan.domainName],
-        ["Cognito client", plan.environmentName],
-        ["Client secret", plan.secretName],
-      ],
-    )}\n`,
+    `About to destroy a frontend, and everything it owns that is left:\n\n${describeFrontendDestroy(plan)}\n`,
   );
-  const question =
-    plan.backendEnv === "production"
-      ? io.alert(
-          'Destroy this frontend of the PRODUCTION backend? Type "yes" or "y" to continue: ',
-        )
-      : 'Destroy? Type "yes" or "y" to continue: ';
+  const question = isProductionEnv(plan.backendEnv)
+    ? io.alert(
+        'Destroy this frontend of the PRODUCTION backend? Type "yes" or "y" to continue: ',
+      )
+    : 'Destroy? Type "yes" or "y" to continue: ';
   if (!(await confirm(io, yes, question))) {
     io.log("Not destroyed.");
     return 1;
@@ -154,6 +119,41 @@ export async function frontendDestroy(
 
   destroyFrontend(plan, run, io.log);
   return 0;
+}
+
+/** Whether `--yes` was passed, refusing it outside CI. */
+function checkYes(yes: boolean | undefined, ci: string | undefined): boolean {
+  if (yes) {
+    checkYesInCi(ci);
+  }
+  return yes ?? false;
+}
+
+/**
+ * The frontend plan for the parsed arguments, and the runner for its
+ * backend's region and the chosen profile.
+ */
+function planWithRunner(
+  values: {
+    readonly "backend-env"?: string;
+    readonly branch?: string;
+    readonly production?: boolean;
+    readonly certificate?: string;
+    readonly profile?: string;
+  },
+  io: FrontendIO,
+): { plan: FrontendPlan; run: CommandRunner } {
+  const backend = requireBackend(values["backend-env"]);
+  const run = io.runner({ region: backend.region, profile: values.profile });
+  const plan = planFrontend({
+    backendEnv: backend.name,
+    branch: values.branch ?? currentBranch(run),
+    production: values.production,
+    certificate: values.certificate,
+    awsAccountId: awsJson(run, ["sts", "get-caller-identity"])
+      .Account as string,
+  });
+  return { plan, run };
 }
 
 /** True when `--yes` (already checked to be in CI) or the answer confirms. */
@@ -169,6 +169,7 @@ async function confirm(
   return isConfirmed(await io.ask(question));
 }
 
+/** The git branch checked out, refusing a detached HEAD. */
 function currentBranch(run: CommandRunner): string {
   const branch = run("git", ["branch", "--show-current"]).trim();
   if (!branch) {
@@ -194,6 +195,21 @@ export function describeFrontendPlan(plan: FrontendPlan): string {
   ]);
 }
 
+/** The confirmation text shown before destroying a frontend. */
+export function describeFrontendDestroy(plan: FrontendPlan): string {
+  return formatRows([
+    ["Branch", plan.branch],
+    ["Backend env", plan.backendEnv],
+    ["Account", plan.awsAccountId],
+    ["Region", plan.region],
+    ["Environment", plan.environmentName],
+    ["CNAME", plan.domainName],
+    ["Cognito client", plan.environmentName],
+    ["Client secret", plan.secretName],
+  ]);
+}
+
+/** Label-value rows, with the values lined up. */
 function formatRows(rows: [string, string][]): string {
   const width = Math.max(...rows.map(([label]) => label.length));
   return rows

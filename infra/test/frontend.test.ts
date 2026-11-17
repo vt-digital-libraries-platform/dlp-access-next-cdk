@@ -125,6 +125,7 @@ describe("frontendDeploy", () => {
     status = "",
     clients = [] as { ClientId: string; ClientName: string }[],
     secretExists = false,
+    secretDeleting = false,
     versionExists = false,
     environmentExists = false,
     launchingWaits = 0,
@@ -232,7 +233,15 @@ describe("frontendDeploy", () => {
                     Name: "dlpnext/whunter-feature/cognito-client-secret",
                   },
                 ]
-              : [],
+              : secretDeleting && args.includes("--include-planned-deletion")
+                ? [
+                    {
+                      ARN: secretArn,
+                      Name: "dlpnext/whunter-feature/cognito-client-secret",
+                      DeletedDate: "2026-11-17T12:00:00Z",
+                    },
+                  ]
+                : [],
           });
         case "secretsmanager create-secret":
         case "secretsmanager put-secret-value": {
@@ -691,6 +700,17 @@ describe("frontendDeploy", () => {
       expect(writes(run.commands)).toEqual([]);
     });
 
+    test("refuses before changing anything while the secret is scheduled for deletion, e.g. just after a destroy", async () => {
+      const { run, io } = setup({ secretDeleting: true });
+
+      await expect(
+        frontendDeploy(["--backend-env", "dev"], undefined, io),
+      ).rejects.toThrow(
+        /dlpnext\/whunter-feature\/cognito-client-secret is scheduled for deletion/,
+      );
+      expect(writes(run.commands)).toEqual([]);
+    });
+
     test("updates an existing secret, and reuses an existing version, e.g. after a failed first run", async () => {
       const { run, io, secretStrings } = setup({
         secretExists: true,
@@ -1114,6 +1134,7 @@ describe("frontendDestroy", () => {
     clients = [otherClient, frontendClient],
     secretExists = true,
     failOnce = undefined as string | undefined,
+    userPoolIdParameter = true,
   } = {}) {
     const state = {
       environment,
@@ -1142,6 +1163,9 @@ describe("frontendDestroy", () => {
           expect(flagValue(args, "--name")).toBe(
             "/dlp-access-next/dev/user-pool-id",
           );
+          if (!userPoolIdParameter) {
+            throw new CommandError("aws", 254, "ParameterNotFound");
+          }
           return json({ Parameter: { Value: userPoolId } });
         case "elasticbeanstalk describe-environments":
           expect(args).toContain("--no-include-deleted");
@@ -1173,6 +1197,11 @@ describe("frontendDestroy", () => {
           state.environment = "Terminating";
           return "{}";
         case "elasticbeanstalk wait":
+          if (args[2] !== "environment-terminated") {
+            // A launch or update in progress finishes.
+            state.environment = "Ready";
+            return "";
+          }
           if (waitsLeft > 0) {
             waitsLeft--;
             throw new CommandError(
@@ -1444,6 +1473,50 @@ describe("frontendDestroy", () => {
       "wait",
     ]);
     expect(state.secretExists).toBe(true);
+  });
+
+  test("a re-run after giving up on the wait finishes the teardown", async () => {
+    const { io, state } = setup({ terminatingWaits: 4 });
+
+    await expect(
+      frontendDestroy(["--backend-env", "dev"], undefined, io),
+    ).rejects.toThrow(/did not terminate/);
+    expect(state.environment).toBe("Terminating");
+
+    expect(await frontendDestroy(["--backend-env", "dev"], undefined, io)).toBe(
+      0,
+    );
+    expect(state).toEqual(gone);
+  });
+
+  test.each([
+    ["Launching", "environment-exists"],
+    ["Updating", "environment-updated"],
+  ])(
+    "waits for an environment that is %s to settle, then terminates it",
+    async (environment, waiter) => {
+      const { run, io, state } = setup({ environment });
+
+      expect(
+        await frontendDestroy(["--backend-env", "dev"], undefined, io),
+      ).toBe(0);
+      expect(
+        teardown(run.commands)
+          .slice(0, 3)
+          .map(({ args }) => (args[1] === "wait" ? args[2] : args[1])),
+      ).toEqual([waiter, "terminate-environment", "environment-terminated"]);
+      expect(state).toEqual(gone);
+    },
+  );
+
+  test("removes the environment and CNAME even when the backend's user pool parameter is gone", async () => {
+    const { io, state } = setup({ userPoolIdParameter: false });
+
+    await expect(
+      frontendDestroy(["--backend-env", "dev"], undefined, io),
+    ).rejects.toThrow(/ParameterNotFound/);
+    expect(state.environment).toBeUndefined();
+    expect(state.recordExists).toBe(false);
   });
 
   test("refuses, changing nothing, an environment tagged for another backend", async () => {

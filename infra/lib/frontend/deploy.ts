@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { awsJson, CommandError, CommandRunner } from "../command-runner";
+import { awsJson, CommandRunner } from "../command-runner";
 import {
   ebInstanceProfileName,
   ebServiceRoleArnParameterName,
@@ -12,19 +12,20 @@ import {
 import {
   CALLBACK_PATH,
   FRONTEND_APPLICATION,
-  HOSTED_ZONE,
   LOCAL_ORIGIN,
   SOLUTION_STACK,
 } from "../config/web";
+import {
+  BACKEND_ENV_TAG,
+  BRANCH_TAG,
+  describeEnvironment,
+  Environment,
+  LAUNCHED,
+  readTags,
+  waitForEnvironment,
+} from "./environment";
 import { ensureApplication, FrontendPlan, initEbProject } from "./frontend";
-
-/** The environment tag recording the full branch name the frontend is for. */
-export const BRANCH_TAG = "dlpnext:branch";
-/** The environment tag recording the backend environment the frontend uses. */
-export const BACKEND_ENV_TAG = "dlpnext:backend-env";
-
-/** Times `aws elasticbeanstalk wait environment-exists` (about 7 minutes each) is tried. */
-const MAX_WAITS = 4;
+import { findHostedZone, findSecret, readParameter } from "./lookups";
 
 /** What the frontend needs from its backend, read from the backend's SSM parameters. */
 interface Backend {
@@ -60,6 +61,7 @@ export function deployFrontend(
   const backend = readBackend(plan, run);
   const clientId = findClient(plan, backend, run);
   const hostedZoneId = findHostedZone(run);
+  const secretExists = checkSecret(plan, run);
 
   ensureApplication(plan, run);
   let client: Client;
@@ -73,14 +75,18 @@ export function deployFrontend(
 
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "dlpnext-deploy-"));
   try {
-    const secretArn = writeSecret(plan, client, workDir, run);
+    const secretArn = writeSecret(plan, client, secretExists, workDir, run);
     const label = ensureVersion(plan, commit, workDir, run);
     log(`Creating ${plan.environmentName} from ${label}...`);
     createEnvironment(plan, backend, client, secretArn, label, run);
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
-  const environment = waitForEnvironment(plan, run);
+  waitForEnvironment(plan, LAUNCHED, run);
+  const environment = describeEnvironment(plan, run);
+  if (!environment) {
+    throw new Error(`${plan.environmentName} disappeared while launching`);
+  }
   upsertRecord(plan, hostedZoneId, environment.CNAME, run);
   log(
     `${plan.environmentName} is ${environment.Status} (health ${environment.Health}) at ${environment.CNAME}.\n` +
@@ -91,17 +97,6 @@ export function deployFrontend(
 /** The version label for a commit, `<slug>-<short SHA>`. */
 export function versionLabel(plan: FrontendPlan, commit: string): string {
   return `${plan.slug}-${commit.slice(0, 7)}`;
-}
-
-/** The fields of a Beanstalk environment the tooling reads. */
-export interface Environment {
-  readonly EnvironmentArn: string;
-  readonly Status: string;
-  readonly Health: string;
-  /** The Beanstalk endpoint, `<CNAME prefix>.<region>.elasticbeanstalk.com`. */
-  readonly CNAME: string;
-  /** The application version running, absent while none is. */
-  readonly VersionLabel?: string;
 }
 
 /**
@@ -177,52 +172,13 @@ function checkTags(
   }
 }
 
-/** The environment's tags, by key. */
-export function readTags(
-  environment: Environment,
-  run: CommandRunner,
-): Map<string, string> {
-  return new Map(
-    (
-      awsJson(run, [
-        "elasticbeanstalk",
-        "list-tags-for-resource",
-        "--resource-arn",
-        environment.EnvironmentArn,
-      ]).ResourceTags as { Key: string; Value: string }[]
-    ).map(({ Key, Value }) => [Key, Value]),
-  );
-}
-
-/** The plan's environment, leaving out terminated ones with its name. */
-export function describeEnvironment(
-  plan: FrontendPlan,
-  run: CommandRunner,
-): Environment | undefined {
-  const [environment] = awsJson(run, [
-    "elasticbeanstalk",
-    "describe-environments",
-    "--application-name",
-    FRONTEND_APPLICATION,
-    "--environment-names",
-    plan.environmentName,
-    "--no-include-deleted",
-  ]).Environments;
-  return environment;
-}
-
-export function parameter(run: CommandRunner, name: string): string {
-  return awsJson(run, ["ssm", "get-parameter", "--name", name]).Parameter
-    .Value as string;
-}
-
 function readBackend(plan: FrontendPlan, run: CommandRunner): Backend {
   const env = plan.backendEnv;
   return {
-    apiUrl: parameter(run, graphqlApiUrlParameterName(env)),
-    userPoolId: parameter(run, userPoolIdParameterName(env)),
-    identityProvider: parameter(run, identityProviderParameterName(env)),
-    serviceRoleArn: parameter(run, ebServiceRoleArnParameterName(env)),
+    apiUrl: readParameter(run, graphqlApiUrlParameterName(env)),
+    userPoolId: readParameter(run, userPoolIdParameterName(env)),
+    identityProvider: readParameter(run, identityProviderParameterName(env)),
+    serviceRoleArn: readParameter(run, ebServiceRoleArnParameterName(env)),
     // A fixed name, owned by the backend's Api stack.
     instanceProfile: ebInstanceProfileName(env),
   };
@@ -237,13 +193,13 @@ function findClient(
   backend: Backend,
   run: CommandRunner,
 ): string | undefined {
+  // No --max-results: passing it turns off the CLI's pagination, and every
+  // page is needed to spot a duplicate.
   const matches = (
     awsJson(run, [
       "cognito-idp",
       "list-user-pool-clients",
       "--user-pool-id",
-      // No --max-results: passing it turns off the CLI's pagination, and
-      // every page is needed to spot a duplicate.
       backend.userPoolId,
     ]).UserPoolClients as { ClientId: string; ClientName: string }[]
   ).filter(({ ClientName }) => ClientName === plan.environmentName);
@@ -254,30 +210,6 @@ function findClient(
     );
   }
   return matches[0]?.ClientId;
-}
-
-/** The ID of the public hosted zone the branch's record goes in. */
-export function findHostedZone(run: CommandRunner): string {
-  const zones = (
-    awsJson(run, [
-      "route53",
-      "list-hosted-zones-by-name",
-      "--dns-name",
-      HOSTED_ZONE,
-    ]).HostedZones as {
-      Id: string;
-      Name: string;
-      Config?: { PrivateZone?: boolean };
-    }[]
-  ).filter(
-    ({ Name, Config }) => Name === `${HOSTED_ZONE}.` && !Config?.PrivateZone,
-  );
-  if (zones.length !== 1) {
-    throw new Error(
-      `Expected one public hosted zone named ${HOSTED_ZONE}, found ${zones.length}`,
-    );
-  }
-  return zones[0].Id.replace(/^\/hostedzone\//, "");
 }
 
 /**
@@ -316,6 +248,7 @@ function createClient(
   return { clientId: ClientId, clientSecret: ClientSecret };
 }
 
+/** The existing client, with its secret. */
 function readClient(
   backend: Backend,
   clientId: string,
@@ -333,6 +266,23 @@ function readClient(
 }
 
 /**
+ * Whether the secret exists. One scheduled for deletion is refused, since it
+ * holds the name: a destroy's force-delete finishes within seconds, and
+ * anything else has to be restored or deleted by hand.
+ */
+function checkSecret(plan: FrontendPlan, run: CommandRunner): boolean {
+  const state = findSecret(plan, run);
+  if (state === "deleting") {
+    throw new Error(
+      `The secret ${plan.secretName} is scheduled for deletion, so a new one can't take its name.\n` +
+        `If frontend:destroy just deleted it, deploy again in a minute. Otherwise restore it with: ` +
+        `aws secretsmanager restore-secret --secret-id ${plan.secretName}`,
+    );
+  }
+  return state === "live";
+}
+
+/**
  * Creates or updates the secret holding the client secret, and returns its
  * ARN. The value goes through a file readable only by the user, never on a
  * command line.
@@ -340,21 +290,13 @@ function readClient(
 function writeSecret(
   plan: FrontendPlan,
   client: Client,
+  exists: boolean,
   workDir: string,
   run: CommandRunner,
 ): string {
   const valueFile = path.join(workDir, "client-secret");
   fs.writeFileSync(valueFile, client.clientSecret, { mode: 0o600 });
   const secretString = `file://${valueFile}`;
-  // The name filter matches prefixes, so the exact name is checked here.
-  const exists = (
-    awsJson(run, [
-      "secretsmanager",
-      "list-secrets",
-      "--filters",
-      `Key=name,Values=${plan.secretName}`,
-    ]).SecretList as { Name: string }[]
-  ).some(({ Name }) => Name === plan.secretName);
   try {
     return awsJson(
       run,
@@ -383,6 +325,7 @@ function writeSecret(
   }
 }
 
+/** Whether the application already has the version. */
 function versionExists(label: string, run: CommandRunner): boolean {
   return (
     awsJson(run, [
@@ -516,45 +459,6 @@ function createEnvironment(
     "--option-settings",
     JSON.stringify(dynamicSettings(plan, backend, client, secretArn)),
   ]);
-}
-
-/** Waits until the new environment is Ready and returns it. */
-function waitForEnvironment(
-  plan: FrontendPlan,
-  run: CommandRunner,
-): Environment {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      run("aws", [
-        "elasticbeanstalk",
-        "wait",
-        "environment-exists",
-        "--application-name",
-        FRONTEND_APPLICATION,
-        "--environment-names",
-        plan.environmentName,
-        // A terminated environment with the same name never becomes Ready.
-        "--no-include-deleted",
-      ]);
-      const environment = describeEnvironment(plan, run);
-      if (environment) {
-        return environment;
-      }
-      throw new Error(`${plan.environmentName} disappeared while launching`);
-    } catch (error) {
-      if (!(error instanceof CommandError)) {
-        throw error;
-      }
-      // The waiter gives up while the environment is still launching.
-      const status = describeEnvironment(plan, run)?.Status;
-      if (status !== "Launching" || attempt === MAX_WAITS) {
-        throw new Error(
-          `${plan.environmentName} did not become ready (status ${status ?? "gone"}): ${error.message}` +
-            `\nCheck its events with: eb events ${plan.environmentName}`,
-        );
-      }
-    }
-  }
 }
 
 /** Points the branch's domain name at the environment's Beanstalk endpoint. */

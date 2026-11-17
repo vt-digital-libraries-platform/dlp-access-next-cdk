@@ -1,25 +1,33 @@
-import { awsJson, CommandError, CommandRunner } from "../command-runner";
+import { awsJson, CommandRunner } from "../command-runner";
 import { userPoolIdParameterName } from "../config/environments";
-import { FRONTEND_APPLICATION } from "../config/web";
 import {
   BACKEND_ENV_TAG,
   describeEnvironment,
   Environment,
-  findHostedZone,
-  parameter,
+  LAUNCHED,
   readTags,
-} from "./deploy";
+  TERMINATED,
+  UPDATED,
+  waitForEnvironment,
+  Waiter,
+} from "./environment";
 import { FrontendPlan } from "./frontend";
+import { findHostedZone, findSecret, readParameter } from "./lookups";
 
-/** Times `aws elasticbeanstalk wait environment-terminated` (about 7 minutes each) is tried. */
-const MAX_WAITS = 4;
+/** The waiters for an environment busy with something terminating has to wait for. */
+const SETTLING: Readonly<Record<string, Waiter>> = {
+  Launching: LAUNCHED,
+  Updating: UPDATED,
+};
 
 /**
  * Removes everything the plan's frontend owns, in order: the Beanstalk
  * environment, the CNAME, the Cognito client and the secret. Each step skips
  * what is already gone, so a re-run after a failure, or on a half-created
  * frontend, finishes the job. Application versions are left to the lifecycle
- * policy; the backend and its user pool are never touched.
+ * policy; the backend and its user pool are never touched. Each step looks up
+ * what it needs only when it runs, so a step that can't, e.g. with the
+ * backend gone, leaves the steps before it done.
  */
 export function destroyFrontend(
   plan: FrontendPlan,
@@ -30,12 +38,15 @@ export function destroyFrontend(
   if (environment) {
     checkBackend(plan, environment, run);
   }
-  const hostedZoneId = findHostedZone(run);
-  const userPoolId = parameter(run, userPoolIdParameterName(plan.backendEnv));
 
   terminateEnvironment(plan, environment, run, log);
-  deleteRecord(plan, hostedZoneId, run, log);
-  deleteClients(plan, userPoolId, run, log);
+  deleteRecord(plan, findHostedZone(run), run, log);
+  deleteClients(
+    plan,
+    readParameter(run, userPoolIdParameterName(plan.backendEnv)),
+    run,
+    log,
+  );
   deleteSecret(plan, run, log);
 }
 
@@ -58,18 +69,29 @@ function checkBackend(
   }
 }
 
+/**
+ * Terminates the environment and waits until it is gone. One still launching
+ * or updating is waited for first, since Beanstalk rejects a terminate while
+ * another operation runs; a re-run while it is terminating only waits.
+ */
 function terminateEnvironment(
   plan: FrontendPlan,
-  environment: Environment | undefined,
+  found: Environment | undefined,
   run: CommandRunner,
   log: (text: string) => void,
 ): void {
+  let environment = found;
+  const settling = environment && SETTLING[environment.Status];
+  if (settling) {
+    log(`Waiting for ${plan.environmentName} to ${settling.goal}...`);
+    waitForEnvironment(plan, settling, run);
+    environment = describeEnvironment(plan, run);
+  }
   if (!environment) {
     log(`${plan.environmentName} is already gone.`);
     return;
   }
-  // A re-run while it is still terminating only waits.
-  if (environment.Status !== "Terminating") {
+  if (environment.Status !== TERMINATED.pendingStatus) {
     log(`Terminating ${plan.environmentName}...`);
     run("aws", [
       "elasticbeanstalk",
@@ -78,42 +100,8 @@ function terminateEnvironment(
       plan.environmentName,
     ]);
   }
-  waitForTermination(plan, run);
+  waitForEnvironment(plan, TERMINATED, run);
   log(`Terminated ${plan.environmentName}.`);
-}
-
-function waitForTermination(plan: FrontendPlan, run: CommandRunner): void {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      run("aws", [
-        "elasticbeanstalk",
-        "wait",
-        "environment-terminated",
-        "--application-name",
-        FRONTEND_APPLICATION,
-        "--environment-names",
-        plan.environmentName,
-        // Deleted environments stay in: the waiter needs to see this one as
-        // Terminated, and never succeeds on an empty list.
-      ]);
-      return;
-    } catch (error) {
-      if (!(error instanceof CommandError)) {
-        throw error;
-      }
-      // The waiter gives up while the environment is still terminating.
-      const status = describeEnvironment(plan, run)?.Status;
-      if (status === undefined) {
-        return;
-      }
-      if (status !== "Terminating" || attempt === MAX_WAITS) {
-        throw new Error(
-          `${plan.environmentName} did not terminate (status ${status}): ${error.message}` +
-            `\nCheck its events with: eb events ${plan.environmentName}`,
-        );
-      }
-    }
-  }
 }
 
 interface ResourceRecordSet {
@@ -121,6 +109,7 @@ interface ResourceRecordSet {
   readonly Type: string;
 }
 
+/** Deletes the CNAME pointing the branch's domain name at the environment. */
 function deleteRecord(
   plan: FrontendPlan,
   hostedZoneId: string,
@@ -169,12 +158,12 @@ function deleteClients(
   run: CommandRunner,
   log: (text: string) => void,
 ): void {
+  // No --max-results: passing it turns off the CLI's pagination.
   const clients = (
     awsJson(run, [
       "cognito-idp",
       "list-user-pool-clients",
       "--user-pool-id",
-      // No --max-results: passing it turns off the CLI's pagination.
       userPoolId,
     ]).UserPoolClients as { ClientId: string; ClientName: string }[]
   ).filter(({ ClientName }) => ClientName === plan.environmentName);
@@ -205,17 +194,7 @@ function deleteSecret(
   run: CommandRunner,
   log: (text: string) => void,
 ): void {
-  // The name filter matches prefixes, so the exact name is checked here.
-  const exists = (
-    awsJson(run, [
-      "secretsmanager",
-      "list-secrets",
-      "--include-planned-deletion",
-      "--filters",
-      `Key=name,Values=${plan.secretName}`,
-    ]).SecretList as { Name: string }[]
-  ).some(({ Name }) => Name === plan.secretName);
-  if (!exists) {
+  if (findSecret(plan, run) === "absent") {
     log(`The secret ${plan.secretName} is already gone.`);
     return;
   }
