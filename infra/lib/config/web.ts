@@ -66,8 +66,7 @@ export function webResourceName(slug: string): string {
 
 /**
  * Every frontend's secrets are named under this prefix, e.g.
- * `dlpnext/<slug>/cognito-client-secret`. Each environment's instance role
- * may read any secret under it.
+ * `dlpnext/<slug>/cognito-client-secret`.
  */
 export const FRONTEND_SECRET_PREFIX = "dlpnext/";
 

@@ -28,6 +28,11 @@ function synth(envName: string) {
   return { data: Template.fromStack(data!), api: Template.fromStack(api!) };
 }
 
+const roleLogicalId = (template: Template, roleName: string) =>
+  Object.entries(template.findResources("AWS::IAM::Role")).find(
+    ([, r]) => r.Properties.RoleName === roleName,
+  )![0];
+
 const stackNames = (app: App) =>
   app.node.children
     .filter((c): c is Stack => c instanceof Stack)
@@ -615,9 +620,7 @@ describe("API and Elastic Beanstalk access", () => {
     dev.api.hasResourceProperties("AWS::IAM::InstanceProfile", {
       InstanceProfileName: "dlp-access-next-dev-eb",
     });
-    const ebRoleId = Object.entries(
-      dev.api.findResources("AWS::IAM::Role"),
-    ).find(([, r]) => r.Properties.RoleName === "dlp-access-next-dev-eb")![0];
+    const ebRoleId = roleLogicalId(dev.api, "dlp-access-next-dev-eb");
     dev.api.hasResourceProperties("AWS::IAM::Policy", {
       Roles: [{ Ref: ebRoleId }],
       PolicyDocument: {
@@ -666,16 +669,22 @@ describe("API and Elastic Beanstalk access", () => {
   });
 
   test("instance role may read frontend client secrets named dlpnext/*, and nothing broader", () => {
-    const ebRoleId = Object.entries(
-      dev.api.findResources("AWS::IAM::Role"),
-    ).find(([, r]) => r.Properties.RoleName === "dlp-access-next-dev-eb")![0];
+    const ebRoleId = roleLogicalId(dev.api, "dlp-access-next-dev-eb");
+    const readsSecrets = (s: Record<string, unknown>) =>
+      [s.Action]
+        .flat()
+        .some((a) => a === "*" || String(a).startsWith("secretsmanager:"));
     const secretStatements = Object.values(
       dev.api.findResources("AWS::IAM::Policy"),
     ).flatMap((p) =>
       (p.Properties.PolicyDocument.Statement as Record<string, unknown>[])
-        .filter((s) => JSON.stringify(s.Action).includes("secretsmanager:"))
+        .filter(readsSecrets)
         .map((s) => ({ roles: p.Properties.Roles, ...s })),
     );
+    const roles = Object.values(dev.api.findResources("AWS::IAM::Role"));
+    for (const role of roles) {
+      expect(role.Properties.Policies).toBeUndefined();
+    }
     expect(secretStatements).toEqual([
       {
         roles: [{ Ref: ebRoleId }],
