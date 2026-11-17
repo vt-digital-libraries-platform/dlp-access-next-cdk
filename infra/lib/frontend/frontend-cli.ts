@@ -6,9 +6,9 @@ import {
   isProductionEnv,
   productionWarningFor,
 } from "../deployment/deploy-cli";
+import { FRONTEND_REGION } from "../config/web";
 import { deployFrontend } from "./deploy";
 import { destroyFrontend } from "./destroy";
-import { FRONTEND_REGION } from "../config/web";
 import {
   requireBackend,
   FrontendPlan,
@@ -19,7 +19,7 @@ import { readFrontendStatus } from "./status";
 
 /** Everything the frontend commands do outside the process. Tests replace it. */
 export interface FrontendIO {
-  /** Makes the runner for the backend's region and the chosen profile. */
+  /** Makes the runner for a region, the backend's or the frontends', and the chosen profile. */
   readonly runner: (options: RunnerOptions) => CommandRunner;
   /** Asks a question and returns the answer; an empty answer when there is none. */
   readonly ask: (question: string) => Promise<string>;
@@ -151,7 +151,7 @@ export async function frontendStatus(
   const status = readFrontendStatus(names, run);
   if (!status) {
     io.log(
-      `Branch ${JSON.stringify(names.branch)} has no frontend deployed: there is no environment ${names.environmentName}.\n` +
+      `The frontend for branch ${JSON.stringify(names.branch)} is not deployed: ${names.environmentName} isn't running.\n` +
         `Create one with: npm run frontend:deploy -- --backend-env <env> --branch ${names.branch}`,
     );
     return 1;

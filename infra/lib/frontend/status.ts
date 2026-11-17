@@ -5,6 +5,7 @@ import {
   BRANCH_TAG,
   describeEnvironment,
   readTags,
+  TERMINATED,
 } from "./environment";
 import { FrontendNames } from "./frontend";
 
@@ -38,7 +39,8 @@ export function readFrontendStatus(
   run: CommandRunner,
 ): FrontendStatus | undefined {
   const environment = describeEnvironment(names, run);
-  if (!environment) {
+  // One that is terminating is on its way out, and its settings may be gone.
+  if (!environment || environment.Status === TERMINATED.pendingStatus) {
     return undefined;
   }
   const tags = readTags(environment, run);

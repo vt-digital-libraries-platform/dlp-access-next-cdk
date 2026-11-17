@@ -8,7 +8,6 @@ import {
   checkCertificateArn,
   defaultCertificateArn,
   FRONTEND_APPLICATION,
-  FRONTEND_REGION,
   SOLUTION_STACK,
   frontendSecretName,
   validBranchSlug,
@@ -94,13 +93,6 @@ export function planFrontend(options: FrontendOptions): FrontendPlan {
   const production = options.production ?? false;
   const config = requireBackend(options.backendEnv, production);
   const names = planFrontendNames(options.branch);
-  // frontend:status finds frontends without a backend env, so they all
-  // have to be in the region it looks in.
-  if (config.region !== FRONTEND_REGION) {
-    throw new Error(
-      `Backend env ${config.name} is in ${config.region}, but frontends live in ${FRONTEND_REGION}`,
-    );
-  }
   if (options.certificate !== undefined) {
     checkCertificateArn(
       options.certificate,

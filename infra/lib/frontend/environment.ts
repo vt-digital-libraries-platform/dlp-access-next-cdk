@@ -23,7 +23,7 @@ export interface Environment {
 
 /** The plan's environment, leaving out terminated ones with its name. */
 export function describeEnvironment(
-  plan: Pick<FrontendNames, "environmentName">,
+  names: Pick<FrontendNames, "environmentName">,
   run: CommandRunner,
 ): Environment | undefined {
   const [environment] = awsJson(run, [
@@ -32,7 +32,7 @@ export function describeEnvironment(
     "--application-name",
     FRONTEND_APPLICATION,
     "--environment-names",
-    plan.environmentName,
+    names.environmentName,
     "--no-include-deleted",
   ]).Environments;
   return environment;

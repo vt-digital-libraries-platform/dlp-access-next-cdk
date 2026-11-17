@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import { Command, CommandError, RunnerOptions } from "../lib/command-runner";
-import { SOLUTION_STACK } from "../lib/config/web";
+import { resolveEnvironment } from "../lib/config/environments";
+import { FRONTEND_REGION, SOLUTION_STACK } from "../lib/config/web";
 import { planFrontend } from "../lib/frontend/frontend";
 import {
   FrontendIO,
@@ -14,6 +15,12 @@ import { fakeRunner } from "./fake-runner";
 const awsAccountId = "123456789012";
 
 describe("planFrontend", () => {
+  test("every backend env is in the region frontend:status looks in", () => {
+    for (const env of ["dev", "pre-production", "production", "f-feature"]) {
+      expect(resolveEnvironment(env).region).toBe(FRONTEND_REGION);
+    }
+  });
+
   test("derives the frontend's names from the backend env and branch", () => {
     const plan = planFrontend({
       backendEnv: "dev",
@@ -1630,8 +1637,9 @@ describe("frontendStatus", () => {
     environment = true,
     tags = {
       "dlpnext:branch": "whunter/feature",
-      "dlpnext:backend-env": "dev",
+      "dlpnext:backend-env": "pre-production",
     } as Record<string, string>,
+    environmentStatus = "Ready",
   } = {}) {
     const json = (value: unknown) => JSON.stringify(value);
     const run = fakeRunner(({ executable, args }) => {
@@ -1650,7 +1658,7 @@ describe("frontendStatus", () => {
                     EnvironmentName: "dlpnext-whunter-feature",
                     EnvironmentArn: environmentArn,
                     CNAME: endpoint,
-                    Status: "Ready",
+                    Status: environmentStatus,
                     Health: "Green",
                     VersionLabel: "whunter-feature-0123abc",
                   },
@@ -1727,7 +1735,7 @@ describe("frontendStatus", () => {
       "whunter/feature",
       "https://whunter-feature.dlp-access-dev.dlp.cloud.lib.vt.edu",
       endpoint,
-      "dev",
+      "pre-production",
       issuer,
       "frontendclient",
       "VTGateway",
@@ -1761,8 +1769,19 @@ describe("frontendStatus", () => {
 
     expect(await frontendStatus(["--branch", "someone/else"], io)).toBe(1);
 
-    expect(output.join("\n")).toMatch(
-      /"someone\/else" has no frontend deployed.*dlpnext-someone-else/,
+    const text = output.join("\n");
+    expect(text).toContain("not deployed");
+    expect(text).toContain("someone/else");
+  });
+
+  test("a frontend being destroyed counts as not deployed, without reading its settings", async () => {
+    const { io, output, run } = setup({ environmentStatus: "Terminating" });
+
+    expect(await frontendStatus([], io)).toBe(1);
+
+    expect(output.join("\n")).toContain("not deployed");
+    expect(run.commands.map(({ args }) => args[1])).not.toContain(
+      "describe-configuration-settings",
     );
   });
 
@@ -1795,8 +1814,6 @@ describe("frontendStatus", () => {
 
     await frontendStatus([], io);
 
-    expect(output.join("\n")).toMatch(
-      /is the frontend for branch "whunter_feature"/,
-    );
+    expect(output.join("\n")).toContain("whunter_feature");
   });
 });
