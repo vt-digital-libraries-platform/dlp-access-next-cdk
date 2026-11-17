@@ -50,7 +50,7 @@ All branches' environments live in one shared Beanstalk application. Settings th
 32. As a developer, I want the EB CLI's local project config set up for me, so that I can also use `eb` commands directly (logs, ssh, health) on my frontend.
 33. As a developer, I want my local EB CLI config kept out of git, so that branch-specific settings don't churn in commits.
 34. As a developer, I want to change a frontend's dynamic settings with `eb setenv` or `eb config` when I need to, so that I'm not forced to destroy and recreate for a small change.
-35. As a maintainer, I want settings shared by every frontend (load balancer type, single instance, IMDSv1 off, enhanced health, managed platform updates, log streaming, TLS policy, HTTP-to-HTTPS listener) in committed `.ebextensions` config, so that changing them is a reviewed code change that applies on the next deploy.
+35. As a maintainer, I want settings shared by every frontend (single instance, IMDSv1 off, enhanced health, managed platform updates, log streaming, TLS policy, HTTP-to-HTTPS listener) in committed `.ebextensions` config, so that changing them is a reviewed code change that applies on the next deploy.
 36. As a maintainer, I want the tooling never to set those shared settings through the API, so that the committed config is never silently overridden.
 37. As a maintainer, I want old application versions cleaned up automatically, with their source bundles deleted, so that the shared application never hits the account's version limit.
 38. As a maintainer, I want each backend to own its Beanstalk service role, so that frontends need no IAM of their own.
@@ -89,7 +89,7 @@ All branches' environments live in one shared Beanstalk application. Settings th
 
 ### Option settings
 
-- **Static settings** go in committed `.ebextensions` config: load-balanced environment with an application load balancer, ASG min and max of 1, IMDSv1 disabled, enhanced health reporting, managed actions on Sunday 09:00 with minor platform updates, CloudWatch log streaming with 7-day retention, and the HTTPS listener's TLS policy. The tooling must never set any of these through the API or EB CLI flags, because directly applied settings take precedence over `.ebextensions` and would freeze them.
+- **Static settings** go in committed `.ebextensions` config: ASG min and max of 1, IMDSv1 disabled, enhanced health reporting, managed actions on Sunday 09:00 with minor platform updates, CloudWatch log streaming with 7-day retention, and the HTTPS listener's TLS policy. The tooling must never set any of these through the API or EB CLI flags, because directly applied settings take precedence over `.ebextensions` and would freeze them. The exception is the environment type (load-balanced) and load balancer type (application): Beanstalk ignores them in `.ebextensions` when an environment is created through the API and builds a classic load balancer, so the tooling sets them at creation. Neither can change after creation, so nothing is frozen.
 - **Dynamic settings** are set by the tooling only when the environment is created:
   - the HTTPS listener's certificate ARN (built from the deploying account, the region and the certificate ID constant, or overridden by a flag)
   - the instance profile and service role for the backend

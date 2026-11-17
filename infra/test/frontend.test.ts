@@ -520,6 +520,16 @@ describe("frontendDeploy", () => {
       ]);
       expect(optionSettings(run.commands)).toEqual([
         {
+          Namespace: "aws:elasticbeanstalk:environment",
+          OptionName: "EnvironmentType",
+          Value: "LoadBalanced",
+        },
+        {
+          Namespace: "aws:elasticbeanstalk:environment",
+          OptionName: "LoadBalancerType",
+          Value: "application",
+        },
+        {
           Namespace: "aws:elbv2:listener:443",
           OptionName: "SSLCertificateArns",
           Value: `arn:aws:acm:us-east-1:${awsAccountId}:certificate/3163b25c-b6f5-4b23-8569-514064db7767`,

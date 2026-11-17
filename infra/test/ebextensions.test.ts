@@ -3,10 +3,6 @@ import { committedOptions } from "./committed-options";
 describe(".ebextensions", () => {
   test("sets exactly the settings every frontend shares", () => {
     expect(committedOptions()).toEqual({
-      "aws:elasticbeanstalk:environment": {
-        EnvironmentType: "LoadBalanced",
-        LoadBalancerType: "application",
-      },
       "aws:autoscaling:asg": { MinSize: "1", MaxSize: "1" },
       "aws:elbv2:listener:443": {
         Protocol: "HTTPS",

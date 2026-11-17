@@ -349,6 +349,11 @@ function dynamicSettings(
   secretArn: string,
 ): { Namespace: string; OptionName: string; Value: string }[] {
   const settings: [string, string, string][] = [
+    // Beanstalk picks the load balancer only from settings passed when the
+    // environment is created and ignores these in .ebextensions, defaulting
+    // to a classic load balancer. They can't change afterwards anyway.
+    ["aws:elasticbeanstalk:environment", "EnvironmentType", "LoadBalanced"],
+    ["aws:elasticbeanstalk:environment", "LoadBalancerType", "application"],
     ["aws:elbv2:listener:443", "SSLCertificateArns", plan.certificate],
     [
       "aws:autoscaling:launchconfiguration",
