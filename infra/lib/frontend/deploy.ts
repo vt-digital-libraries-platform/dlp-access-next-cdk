@@ -65,22 +65,21 @@ export function deployFrontend(
   const hostedZoneId = findHostedZone(run);
 
   ensureApplication(plan, run);
-  const client =
-    clientId === undefined
-      ? createClient(plan, backend, run)
-      : readClient(backend, clientId, run);
-  log(
-    clientId === undefined
-      ? `Created Cognito client ${client.clientId}.`
-      : `Reusing Cognito client ${client.clientId}.`,
-  );
+  let client: Client;
+  if (clientId === undefined) {
+    client = createClient(plan, backend, run);
+    log(`Created Cognito client ${client.clientId}.`);
+  } else {
+    client = readClient(backend, clientId, run);
+    log(`Reusing Cognito client ${client.clientId}.`);
+  }
 
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "dlpnext-deploy-"));
   try {
     const secretArn = writeSecret(plan, client, workDir, run);
-    const versionLabel = ensureVersion(plan, commit, workDir, run);
-    log(`Creating ${plan.environmentName} from ${versionLabel}...`);
-    createEnvironment(plan, backend, client, secretArn, versionLabel, run);
+    const label = ensureVersion(plan, commit, workDir, run);
+    log(`Creating ${plan.environmentName} from ${label}...`);
+    createEnvironment(plan, backend, client, secretArn, label, run);
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
@@ -97,8 +96,18 @@ export function versionLabel(plan: FrontendPlan, commit: string): string {
   return `${plan.slug}-${commit.slice(0, 7)}`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped JSON from the CLI
-function describeEnvironment(plan: FrontendPlan, run: CommandRunner): any {
+/** The fields of a Beanstalk environment the tooling reads. */
+interface Environment {
+  readonly Status: string;
+  readonly Health: string;
+  /** The Beanstalk endpoint, `<CNAME prefix>.<region>.elasticbeanstalk.com`. */
+  readonly CNAME: string;
+}
+
+function describeEnvironment(
+  plan: FrontendPlan,
+  run: CommandRunner,
+): Environment | undefined {
   const [environment] = awsJson(run, [
     "elasticbeanstalk",
     "describe-environments",
@@ -142,9 +151,9 @@ function findClient(
       "cognito-idp",
       "list-user-pool-clients",
       "--user-pool-id",
+      // No --max-results: passing it turns off the CLI's pagination, and
+      // every page is needed to spot a duplicate.
       backend.userPoolId,
-      "--max-results",
-      "60",
     ]).UserPoolClients as { ClientId: string; ClientName: string }[]
   ).filter(({ ClientName }) => ClientName === plan.environmentName);
   if (matches.length > 1) {
@@ -409,8 +418,10 @@ function createEnvironment(
 }
 
 /** Waits until the new environment is Ready and returns it. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped JSON from the CLI
-function waitForEnvironment(plan: FrontendPlan, run: CommandRunner): any {
+function waitForEnvironment(
+  plan: FrontendPlan,
+  run: CommandRunner,
+): Environment {
   for (let attempt = 1; ; attempt++) {
     try {
       run("aws", [
@@ -422,7 +433,11 @@ function waitForEnvironment(plan: FrontendPlan, run: CommandRunner): any {
         "--environment-names",
         plan.environmentName,
       ]);
-      return describeEnvironment(plan, run);
+      const environment = describeEnvironment(plan, run);
+      if (environment) {
+        return environment;
+      }
+      throw new Error(`${plan.environmentName} disappeared while launching`);
     } catch (error) {
       if (!(error instanceof CommandError)) {
         throw error;

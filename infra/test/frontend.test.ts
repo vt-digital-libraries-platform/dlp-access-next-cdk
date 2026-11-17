@@ -104,7 +104,7 @@ describe("frontendDeploy", () => {
   const bucket = `elasticbeanstalk-us-east-1-${awsAccountId}`;
 
   /** The value after `flag` in `args`. */
-  const flag = (args: readonly string[], name: string) =>
+  const flagValue = (args: readonly string[], name: string) =>
     args[args.indexOf(name) + 1];
 
   /**
@@ -148,7 +148,7 @@ describe("frontendDeploy", () => {
       if (executable !== "aws") {
         throw new Error(`unexpected command: ${command}`);
       }
-      const name = flag(args, "--name");
+      const name = flagValue(args, "--name");
       switch (`${args[0]} ${args[1]}`) {
         case "sts get-caller-identity":
           return json({ Account: awsAccountId });
@@ -188,7 +188,7 @@ describe("frontendDeploy", () => {
         case "cognito-idp describe-user-pool-client":
           return json({
             UserPoolClient: {
-              ClientId: flag(args, "--client-id"),
+              ClientId: flagValue(args, "--client-id"),
               ClientSecret: "existing-secret",
             },
           });
@@ -213,7 +213,7 @@ describe("frontendDeploy", () => {
         case "secretsmanager create-secret":
         case "secretsmanager put-secret-value": {
           // Read while the command runs: the file is gone afterwards.
-          const source = flag(args, "--secret-string");
+          const source = flagValue(args, "--secret-string");
           expect(source).toMatch(/^file:\/\//);
           secretStrings.push(
             fs.readFileSync(source.slice("file://".length), "utf8"),
@@ -223,7 +223,7 @@ describe("frontendDeploy", () => {
         case "elasticbeanstalk describe-application-versions":
           return json({
             ApplicationVersions: versionExists
-              ? [{ VersionLabel: flag(args, "--version-labels") }]
+              ? [{ VersionLabel: flagValue(args, "--version-labels") }]
               : [],
           });
         case "elasticbeanstalk create-storage-location":
@@ -419,7 +419,7 @@ describe("frontendDeploy", () => {
       const create = commands.find(
         ({ args }) => args[1] === "create-environment",
       );
-      return JSON.parse(flag(create!.args, "--option-settings"));
+      return JSON.parse(flagValue(create!.args, "--option-settings"));
     };
 
     test("creates the client, the secret, the environment and the DNS record", async () => {
@@ -514,7 +514,7 @@ describe("frontendDeploy", () => {
       expect(secretStrings).toEqual(["new-secret"]);
 
       const createEnvironment = created[5].args;
-      expect(JSON.parse(flag(createEnvironment, "--tags"))).toEqual([
+      expect(JSON.parse(flagValue(createEnvironment, "--tags"))).toEqual([
         { Key: "dlpnext:branch", Value: "whunter/feature" },
         { Key: "dlpnext:backend-env", Value: "dev" },
       ]);
@@ -558,7 +558,7 @@ describe("frontendDeploy", () => {
           Value: secretArn,
         },
       ]);
-      expect(JSON.parse(flag(created[6].args, "--change-batch"))).toEqual({
+      expect(JSON.parse(flagValue(created[6].args, "--change-batch"))).toEqual({
         Changes: [
           {
             Action: "UPSERT",
@@ -600,8 +600,6 @@ describe("frontendDeploy", () => {
             "list-user-pool-clients",
             "--user-pool-id",
             userPoolId,
-            "--max-results",
-            "60",
           ],
         },
         {
