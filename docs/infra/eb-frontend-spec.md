@@ -142,7 +142,7 @@ The tooling is TypeScript in the infra package, beside the existing deploy tooli
 
 ### Migration
 
-- Existing `DlpAccessNext-Web-<slug>` stacks are destroyed with `cdk destroy` and recreated with `frontend:deploy`. Nothing is adopted in place. Domain names don't change. Destroy the Web stacks before deploying the Api stack change, so the per-branch inline policies are gone before the shared grant lands.
+- Existing `DlpAccessNext-Web-<slug>` stacks are destroyed with `cdk destroy` and recreated with `frontend:deploy`. Nothing is adopted in place. Domain names don't change. Destroy them with the current code, before the Web stack is removed: once the app can no longer synthesize a Web stack, `cdk destroy -c frontend-branch=…` can't find them, and the only way left is deleting them through CloudFormation directly.
 - The deployment docs and README are rewritten: backends with `npm run deploy`, frontends with the three new commands, with the frontend section of the destroy instructions replaced.
 
 ## Testing Decisions
