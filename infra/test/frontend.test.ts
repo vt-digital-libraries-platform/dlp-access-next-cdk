@@ -124,6 +124,7 @@ describe("frontendDeploy", () => {
     environmentExists = false,
     launchingWaits = 0,
     health = "Green",
+    previouslyTerminated = false,
   } = {}) {
     let environment = environmentExists
       ? { Status: "Ready", Health: health }
@@ -249,6 +250,15 @@ describe("frontendDeploy", () => {
           environment = { Status: "Launching", Health: "Grey" };
           return "{}";
         case "elasticbeanstalk wait":
+          // A terminated namesake isn't Ready, so the waiter can't succeed
+          // unless it leaves deleted environments out.
+          if (previouslyTerminated && !args.includes("--no-include-deleted")) {
+            throw new CommandError(
+              "aws",
+              255,
+              "Waiter EnvironmentExists failed: Max attempts exceeded",
+            );
+          }
           if (waitsLeft > 0) {
             waitsLeft--;
             throw new CommandError(
@@ -778,6 +788,17 @@ describe("frontendDeploy", () => {
       expect(
         run.commands.filter(({ args }) => args[1] === "wait"),
       ).toHaveLength(3);
+      expect(writes(run.commands).at(-1)!.args[1]).toBe(
+        "change-resource-record-sets",
+      );
+    });
+
+    test("waits for the new environment, not a terminated one with the same name", async () => {
+      const { run, io } = setup({ previouslyTerminated: true });
+
+      expect(
+        await frontendDeploy(["--backend-env", "dev"], undefined, io),
+      ).toBe(0);
       expect(writes(run.commands).at(-1)!.args[1]).toBe(
         "change-resource-record-sets",
       );

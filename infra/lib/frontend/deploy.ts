@@ -437,6 +437,8 @@ function waitForEnvironment(
         FRONTEND_APPLICATION,
         "--environment-names",
         plan.environmentName,
+        // A terminated environment with the same name never becomes Ready.
+        "--no-include-deleted",
       ]);
       const environment = describeEnvironment(plan, run);
       if (environment) {
