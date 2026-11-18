@@ -1,7 +1,12 @@
 import * as fs from "fs";
+import * as path from "path";
 import { Command, CommandError, RunnerOptions } from "../lib/command-runner";
 import { resolveEnvironment } from "../lib/config/environments";
-import { FRONTEND_REGION, SOLUTION_STACK } from "../lib/config/web";
+import {
+  CALLBACK_PATH,
+  FRONTEND_REGION,
+  SOLUTION_STACK,
+} from "../lib/config/web";
 import { planFrontend } from "../lib/frontend/frontend";
 import {
   FrontendIO,
@@ -15,6 +20,29 @@ import { fakeRunner } from "./fake-runner";
 const awsAccountId = "123456789012";
 
 describe("planFrontend", () => {
+  // The root app is a separate npm project, so its auth module is read as text.
+  test("registers the app's sign-in callback route", () => {
+    const repoRoot = path.join(__dirname, "..", "..");
+    const auth = fs.readFileSync(
+      path.join(repoRoot, "src", "lib", "auth.ts"),
+      "utf8",
+    );
+    expect(auth.match(/export const CALLBACK_PATH = ["'](.*?)["']/)?.[1]).toBe(
+      CALLBACK_PATH,
+    );
+    expect(
+      fs.existsSync(
+        path.join(
+          repoRoot,
+          "src",
+          "app",
+          ...CALLBACK_PATH.split("/"),
+          "route.ts",
+        ),
+      ),
+    ).toBe(true);
+  });
+
   test("every backend env is in the region frontend:status looks in", () => {
     for (const env of ["dev", "pre-production", "production", "f-feature"]) {
       expect(resolveEnvironment(env).region).toBe(FRONTEND_REGION);

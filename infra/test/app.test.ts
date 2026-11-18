@@ -1,23 +1,24 @@
-import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { App, Stack } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
-import { booleanContext, buildApp, planApp } from "../lib/app";
+import {
+  booleanContext,
+  buildApp,
+  optionsFromContext,
+  planApp,
+} from "../lib/app";
 import {
   buildSearchMappings,
   numericSortFields,
   searchMappings,
 } from "../lib/appsync/search-mappings";
 import { resolveEnvironment } from "../lib/config/environments";
-import { CALLBACK_PATH, CERTIFICATE_ID } from "../lib/config/web";
-import { sourceCommit } from "../lib/git";
 import { ApiStack } from "../lib/stacks/api-stack";
 import { DataStack } from "../lib/stacks/data-stack";
 
 const awsAccountId = "123456789012";
 const userPoolId = "us-east-1_AbCd12345";
-const certificate = `arn:aws:acm:us-east-1:${awsAccountId}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
 
 function synth(envName: string) {
   const { data, api } = buildApp(new App(), {
@@ -44,12 +45,17 @@ const feature = synth("f-search");
 
 describe("environment selection", () => {
   test("stacks are named after the environment", () => {
-    const { data, api, auth, web } = buildApp(new App(), {
+    const app = new App();
+    const { data, api, auth } = buildApp(app, {
       backendEnv: "f-search",
       awsAccountId,
       userPoolId,
     });
-    expect(web).toBeUndefined();
+    expect(stackNames(app).sort()).toEqual([
+      "DlpAccessNext-f-search-Api",
+      "DlpAccessNext-f-search-Auth",
+      "DlpAccessNext-f-search-Data",
+    ]);
     expect(data!.stackName).toBe("DlpAccessNext-f-search-Data");
     expect(api!.stackName).toBe("DlpAccessNext-f-search-Api");
     expect(auth!.stackName).toBe("DlpAccessNext-f-search-Auth");
@@ -99,6 +105,67 @@ describe("environment selection", () => {
     expect(() =>
       buildApp(new App(), { backendEnv: "dev", awsAccountId: badAccount }),
     ).toThrow(message);
+  });
+});
+
+describe("frontend options", () => {
+  test.each([
+    ["frontendBranch", "frontend-branch", "main"],
+    ["backend", "backend", "provision"],
+    [
+      "certificate",
+      "certificate",
+      "arn:aws:acm:us-east-1:123456789012:certificate/x",
+    ],
+  ] as const)(
+    "rejects %s: the CDK app deploys only backends",
+    (field, option, value) => {
+      expect(() =>
+        planApp({
+          backendEnv: "dev",
+          awsAccountId,
+          userPoolId,
+          [field]: value,
+        }),
+      ).toThrow(new RegExp(`-c ${option} .*npm run frontend:deploy`));
+    },
+  );
+
+  test.each(["frontend-branch", "backend", "certificate"])(
+    "rejects -c %s passed as CDK context",
+    (option) => {
+      const context: Record<string, unknown> = {
+        "backend-env": "dev",
+        "aws-account-id": awsAccountId,
+        "user-pool-id": userPoolId,
+        [option]: "x",
+      };
+      expect(() => planApp(optionsFromContext((key) => context[key]))).toThrow(
+        /npm run frontend:deploy/,
+      );
+    },
+  );
+
+  test("no stack holds a frontend's Beanstalk, Cognito client or DNS resources", () => {
+    const { data, api, auth } = buildApp(new App(), {
+      backendEnv: "dev",
+      awsAccountId,
+      userPoolId,
+      identityProvider: "VT-SSO-OIDC",
+    });
+    for (const stack of [data, api, auth]) {
+      const types = Object.values(
+        Template.fromStack(stack).toJSON().Resources,
+      ).map((resource) => (resource as { Type: string }).Type);
+      expect(
+        types.filter(
+          (type) =>
+            type.startsWith("AWS::ElasticBeanstalk::") ||
+            type === "AWS::Cognito::UserPoolClient" ||
+            type.startsWith("AWS::Route53::"),
+        ),
+      ).toEqual([]);
+    }
   });
 });
 
@@ -799,484 +866,9 @@ describe("Auth stack", () => {
     ).toThrow(message);
   });
 
-  test.each([{}, { frontendBranch: "x", backend: "provision" }])(
-    "requires a user pool with %p",
-    (options) => {
-      expect(() =>
-        buildApp(new App(), { backendEnv: "dev", awsAccountId, ...options }),
-      ).toThrow(/pass -c user-pool-id=<user pool ID>/);
-    },
-  );
-});
-
-describe("Web stack", () => {
-  // The root app is a separate npm project, so its auth module is read as text.
-  test("registers the app's sign-in callback route", () => {
-    const repoRoot = path.join(__dirname, "..", "..");
-    const auth = fs.readFileSync(
-      path.join(repoRoot, "src", "lib", "auth.ts"),
-      "utf8",
-    );
-    expect(auth.match(/export const CALLBACK_PATH = ["'](.*?)["']/)?.[1]).toBe(
-      CALLBACK_PATH,
-    );
-    expect(
-      fs.existsSync(
-        path.join(
-          repoRoot,
-          "src",
-          "app",
-          ...CALLBACK_PATH.split("/"),
-          "route.ts",
-        ),
-      ),
-    ).toBe(true);
-  });
-
-  test("attach deploys only the Web stack, named after the slugified branch", () => {
-    const app = new App();
-    const { data, api, auth, web } = buildApp(app, {
-      backendEnv: "dev",
-      awsAccountId,
-      frontendBranch: "whunter/Multi_Env",
-      certificate,
-    });
-    expect(data).toBeUndefined();
-    expect(api).toBeUndefined();
-    expect(auth).toBeUndefined();
-    expect(stackNames(app)).toEqual(["DlpAccessNext-Web-whunter-multi-env"]);
-    expect(web!.dependencies).toHaveLength(0);
-  });
-
-  test("provision deploys Data, Api and Auth first", () => {
-    const app = new App();
-    const { api, auth, web } = buildApp(app, {
-      backendEnv: "f-search",
-      awsAccountId,
-      userPoolId,
-      frontendBranch: "search",
-      backend: "provision",
-      certificate,
-    });
-    expect(stackNames(app).sort()).toEqual([
-      "DlpAccessNext-Web-search",
-      "DlpAccessNext-f-search-Api",
-      "DlpAccessNext-f-search-Auth",
-      "DlpAccessNext-f-search-Data",
-    ]);
-    expect(web!.dependencies).toContain(api);
-    expect(web!.dependencies).toContain(auth);
-  });
-
-  test.each([
-    [
-      { backendEnv: "dev", backend: "attach" },
-      /only applies with -c frontend-branch/,
-    ],
-    [
-      { backendEnv: "dev", frontendBranch: "x", backend: "create" },
-      /Invalid backend "create"/,
-    ],
-    [{ backendEnv: "dev", frontendBranch: "///" }, /Invalid branch/],
-    [{ backendEnv: "dev", frontendBranch: "a".repeat(33) }, /Invalid branch/],
-    [
-      { backendEnv: "dev", frontendBranch: "main\x1b[2K" },
-      /Invalid frontend-branch "main\\u001b\[2K": a git branch name has no control characters/,
-    ],
-    [
-      { backendEnv: "dev", frontendBranch: "x", userPoolId },
-      /-c user-pool-id only applies/,
-    ],
-    [
-      {
-        backendEnv: "dev",
-        frontendBranch: "x",
-        identityProvider: "VT-SSO-OIDC",
-      },
-      /-c identity-provider only applies/,
-    ],
-    [
-      { backendEnv: "dev", userPoolId, certificate },
-      /-c certificate only applies with -c frontend-branch/,
-    ],
-    [
-      { backendEnv: "dev", frontendBranch: "x", certificate: "not-an-arn" },
-      /Invalid certificate/,
-    ],
-    [
-      {
-        backendEnv: "dev",
-        frontendBranch: "x",
-        certificate: certificate.replace("us-east-1", "us-west-2"),
-      },
-      /must be in account .* and us-east-1/,
-    ],
-    [
-      {
-        backendEnv: "dev",
-        frontendBranch: "x",
-        certificate: certificate.replace(awsAccountId, "210987654321"),
-      },
-      /must be in account 123456789012/,
-    ],
-  ])("rejects %p", (options, message) => {
+  test("requires a user pool", () => {
     expect(() =>
-      buildApp(new App(), { awsAccountId, certificate, ...options }),
-    ).toThrow(message);
-  });
-
-  test("defaults the certificate to CERTIFICATE_ID in the deploy account and environment region", () => {
-    expect(
-      planApp({ backendEnv: "dev", awsAccountId, frontendBranch: "x" }).frontend
-        ?.certificate,
-    ).toBe(
-      `arn:aws:acm:us-east-1:${awsAccountId}:certificate/${CERTIFICATE_ID}`,
-    );
-    expect(
-      planApp({
-        backendEnv: "dev",
-        awsAccountId,
-        frontendBranch: "x",
-        certificate,
-      }).frontend?.certificate,
-    ).toBe(certificate);
-    expect(
-      planApp({ backendEnv: "dev", awsAccountId, userPoolId }).frontend,
-    ).toBeUndefined();
-  });
-
-  const attached = buildApp(new App(), {
-    backendEnv: "pre-production",
-    awsAccountId,
-    frontendBranch: "feature/search",
-    certificate,
-  }).web!;
-  const web = Template.fromStack(attached);
-  const option = (namespace: string, optionName: string, value: unknown) =>
-    Match.objectLike({
-      Namespace: namespace,
-      OptionName: optionName,
-      Value: value,
-    });
-
-  test("Node.js environment named after the branch, with one instance behind a load balancer", () => {
-    web.hasResourceProperties("AWS::ElasticBeanstalk::Application", {
-      ApplicationName: "dlpnext-feature-search",
-    });
-    web.hasResourceProperties("AWS::ElasticBeanstalk::Environment", {
-      ApplicationName: "dlpnext-feature-search",
-      EnvironmentName: "dlpnext-feature-search",
-      SolutionStackName: Match.stringLikeRegexp(
-        "Amazon Linux 2023 .* running Node.js 24",
-      ),
-      OptionSettings: Match.arrayWith([
-        option(
-          "aws:elasticbeanstalk:environment",
-          "EnvironmentType",
-          "LoadBalanced",
-        ),
-        option(
-          "aws:elasticbeanstalk:environment",
-          "LoadBalancerType",
-          "application",
-        ),
-        option("aws:autoscaling:asg", "MinSize", "1"),
-        option("aws:autoscaling:asg", "MaxSize", "1"),
-        option("aws:autoscaling:launchconfiguration", "DisableIMDSv1", "true"),
-        option("aws:ec2:instances", "InstanceTypes", "t3.small"),
-      ]),
-    });
-  });
-
-  test("uses the environment instance profile and the API URL from SSM, not cross-stack exports", () => {
-    web.hasResourceProperties("AWS::ElasticBeanstalk::Environment", {
-      OptionSettings: Match.arrayWith([
-        option(
-          "aws:autoscaling:launchconfiguration",
-          "IamInstanceProfile",
-          "dlp-access-next-pre-production-eb",
-        ),
-        option(
-          "aws:elasticbeanstalk:application:environment",
-          "APPSYNC_API_URL",
-          { Ref: Match.anyValue() },
-        ),
-      ]),
-    });
-    web.hasParameter("*", {
-      Type: "AWS::SSM::Parameter::Value<String>",
-      Default: "/dlp-access-next/pre-production/graphql-api-url",
-    });
-    expect(JSON.stringify(web.toJSON())).not.toMatch(/Fn::ImportValue/);
-  });
-
-  test("has its own confidential app client on the environment user pool from SSM", () => {
-    web.hasParameter("*", {
-      Type: "AWS::SSM::Parameter::Value<String>",
-      Default: "/dlp-access-next/pre-production/user-pool-id",
-    });
-    web.hasResourceProperties("AWS::Cognito::UserPoolClient", {
-      ClientName: "dlpnext-feature-search",
-      UserPoolId: { Ref: Match.anyValue() },
-      GenerateSecret: true,
-      AllowedOAuthFlows: ["code"],
-      AllowedOAuthScopes: ["openid", "email"],
-      CallbackURLs: [
-        "https://feature-search.dlp-access-dev.dlp.cloud.lib.vt.edu/authorize",
-        "http://localhost:3000/authorize",
-      ],
-      LogoutURLs: [
-        "https://feature-search.dlp-access-dev.dlp.cloud.lib.vt.edu/",
-        "http://localhost:3000/",
-      ],
-      SupportedIdentityProviders: [{ Ref: Match.anyValue() }],
-    });
-    web.hasParameter("*", {
-      Type: "AWS::SSM::Parameter::Value<String>",
-      Default: "/dlp-access-next/pre-production/identity-provider",
-    });
-    // No custom resource (and so no Lambda) to read the client secret.
-    web.resourceCountIs("AWS::Lambda::Function", 0);
-    const setting = (name: string, value: unknown) =>
-      option("aws:elasticbeanstalk:application:environment", name, value);
-    web.hasResourceProperties("AWS::ElasticBeanstalk::Environment", {
-      OptionSettings: Match.arrayWith([
-        setting("COGNITO_ISSUER", {
-          "Fn::Join": [
-            "",
-            [
-              "https://cognito-idp.us-east-1.amazonaws.com/",
-              { Ref: Match.anyValue() },
-            ],
-          ],
-        }),
-        setting("COGNITO_CLIENT_ID", {
-          Ref: Match.stringLikeRegexp("^AppClient"),
-        }),
-        setting("COGNITO_IDENTITY_PROVIDER", { Ref: Match.anyValue() }),
-      ]),
-    });
-  });
-
-  const secretId = Object.keys(
-    web.findResources("AWS::SecretsManager::Secret"),
-  )[0];
-  const environment = Object.values(
-    web.findResources("AWS::ElasticBeanstalk::Environment"),
-  )[0];
-
-  test("keeps the client secret in Secrets Manager, not in plain-text environment properties", () => {
-    web.hasResourceProperties("AWS::SecretsManager::Secret", {
-      SecretString: {
-        "Fn::GetAtt": [Match.stringLikeRegexp("^AppClient"), "ClientSecret"],
-      },
-    });
-    web.hasResource("AWS::SecretsManager::Secret", {
-      DeletionPolicy: "Delete",
-    });
-    web.hasResourceProperties("AWS::ElasticBeanstalk::Environment", {
-      OptionSettings: Match.arrayWith([
-        option(
-          "aws:elasticbeanstalk:application:environmentsecrets",
-          "COGNITO_CLIENT_SECRET",
-          { Ref: secretId },
-        ),
-      ]),
-    });
-    const settings: { Namespace: string; OptionName: string }[] =
-      environment.Properties.OptionSettings;
-    expect(settings).not.toContainEqual(
-      expect.objectContaining({
-        Namespace: "aws:elasticbeanstalk:application:environment",
-        OptionName: "COGNITO_CLIENT_SECRET",
-      }),
-    );
-    // The secret value only reaches the template as the secret's own property.
-    const secretValueRefs =
-      JSON.stringify(web.toJSON()).match(
-        /"Fn::GetAtt":\["AppClient[^"]*","ClientSecret"\]/g,
-      ) ?? [];
-    expect(secretValueRefs).toHaveLength(1);
-    web.hasOutput("CognitoClientSecretArn", { Value: { Ref: secretId } });
-  });
-
-  test("only the environment instance role can read the client secret, before the environment starts", () => {
-    const readers = Object.entries(
-      web.findResources("AWS::IAM::Policy"),
-    ).filter(([, p]) =>
-      JSON.stringify(p.Properties.PolicyDocument).includes(secretId),
-    );
-    expect(readers).toHaveLength(1);
-    const [[policyId, policy]] = readers;
-    expect(policy.Properties.Roles).toEqual([
-      "dlp-access-next-pre-production-eb",
-    ]);
-    // Inline policy names are unique per role, which the environment's branches share.
-    expect(policy.Properties.PolicyName).toBe(
-      "dlpnext-feature-search-client-secret",
-    );
-    expect(policy.Properties.PolicyDocument.Statement).toEqual([
-      expect.objectContaining({
-        Effect: "Allow",
-        Action: expect.arrayContaining(["secretsmanager:GetSecretValue"]),
-        Resource: { Ref: secretId },
-      }),
-    ]);
-    expect(environment.DependsOn).toContain(policyId);
-  });
-
-  test("serves the branch over HTTPS at its own domain name", () => {
-    web.hasResourceProperties("AWS::ElasticBeanstalk::Environment", {
-      OptionSettings: Match.arrayWith([
-        option("aws:elbv2:listener:443", "Protocol", "HTTPS"),
-        option("aws:elbv2:listener:443", "SSLCertificateArns", certificate),
-        option(
-          "aws:elbv2:listener:443",
-          "SSLPolicy",
-          Match.stringLikeRegexp("^ELBSecurityPolicy-TLS13"),
-        ),
-        option(
-          "aws:elasticbeanstalk:application:environment",
-          "APP_BASE_URL",
-          "https://feature-search.dlp-access-dev.dlp.cloud.lib.vt.edu",
-        ),
-      ]),
-    });
-    const environmentId = Object.keys(
-      web.findResources("AWS::ElasticBeanstalk::Environment"),
-    )[0];
-    web.hasResourceProperties("AWS::Route53::RecordSet", {
-      Name: "feature-search.dlp-access-dev.dlp.cloud.lib.vt.edu.",
-      Type: "CNAME",
-      ResourceRecords: [{ "Fn::GetAtt": [environmentId, "EndpointURL"] }],
-    });
-    web.hasOutput("AppUrl", {
-      Value: "https://feature-search.dlp-access-dev.dlp.cloud.lib.vt.edu",
-    });
-    web.hasOutput("Branch", { Value: "feature/search" });
-  });
-
-  test("nginx redirects HTTP to HTTPS behind the load balancer", () => {
-    const conf = fs.readFileSync(
-      path.join(
-        __dirname,
-        "..",
-        "..",
-        ".platform",
-        "nginx",
-        "conf.d",
-        "elasticbeanstalk",
-        "https-redirect.conf",
-      ),
-      "utf8",
-    );
-    expect(conf).toMatch(
-      /if \(\$http_x_forwarded_proto = "http"\)\s*{\s*return 301 https:\/\/\$host\$request_uri;/,
-    );
-  });
-
-  test("the production flag uses a larger instance", () => {
-    const { web: prod } = buildApp(new App(), {
-      backendEnv: "production",
-      awsAccountId,
-      production: true,
-      frontendBranch: "main",
-      certificate,
-    });
-    Template.fromStack(prod!).hasResourceProperties(
-      "AWS::ElasticBeanstalk::Environment",
-      {
-        OptionSettings: Match.arrayWith([
-          option("aws:ec2:instances", "InstanceTypes", "t3.medium"),
-        ]),
-      },
-    );
-  });
-
-  test("service role carries the default Beanstalk service role policies, at their real ARNs", () => {
-    const arns = JSON.stringify(
-      Object.values(web.findResources("AWS::IAM::Role")).map(
-        (r) => r.Properties.ManagedPolicyArns,
-      ),
-    );
-    expect(arns).toContain(
-      ":iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth",
-    );
-    expect(arns).toContain(
-      ":iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy",
-    );
-  });
-
-  test("source bundle is the app source without dependencies, infra or build output", () => {
-    const staged = path.join(
-      (attached.node.root as App).outdir,
-      attached.sourceBundle.assetPath,
-    );
-    const entries = fs.readdirSync(staged);
-    expect(entries).toEqual(
-      expect.arrayContaining([
-        "package.json",
-        "package-lock.json",
-        "src",
-        ".platform",
-      ]),
-    );
-    for (const excluded of [
-      "node_modules",
-      ".next",
-      ".git",
-      "infra",
-      ".elasticbeanstalk",
-      ".scratch",
-      "docs",
-      "CLAUDE.md",
-    ]) {
-      expect(entries).not.toContain(excluded);
-    }
-    expect(entries.filter((e) => e.startsWith(".env"))).toEqual([]);
-    const hook = fs.statSync(
-      path.join(staged, ".platform", "hooks", "prebuild", "01_build.sh"),
-    );
-    expect(hook.mode & 0o111).not.toBe(0);
-  });
-
-  test("source bundle is the commit at HEAD, without uncommitted changes", () => {
-    const repo = path.join(__dirname, "..", "..");
-    const untracked = path.join(repo, "src", "uncommitted-test-file.ts");
-    const packageJson = path.join(repo, "package.json");
-    const local = fs.readFileSync(packageJson, "utf8");
-    const committed = execFileSync("git", ["show", "HEAD:package.json"], {
-      cwd: repo,
-      encoding: "utf8",
-    });
-    fs.writeFileSync(untracked, "export {};\n");
-    fs.writeFileSync(packageJson, `${local}\n`);
-    try {
-      const stack = buildApp(new App(), {
-        backendEnv: "dev",
-        awsAccountId,
-        frontendBranch: "main",
-        certificate,
-      }).web!;
-      const staged = path.join(
-        (stack.node.root as App).outdir,
-        stack.sourceBundle.assetPath,
-      );
-      expect(
-        fs.existsSync(path.join(staged, "src", "uncommitted-test-file.ts")),
-      ).toBe(false);
-      expect(fs.readFileSync(path.join(staged, "package.json"), "utf8")).toBe(
-        committed,
-      );
-    } finally {
-      fs.rmSync(untracked, { force: true });
-      fs.writeFileSync(packageJson, local);
-    }
-  });
-
-  test("application version records the deployed commit", () => {
-    web.hasResourceProperties("AWS::ElasticBeanstalk::ApplicationVersion", {
-      Description: `commit ${sourceCommit()}`,
-    });
+      buildApp(new App(), { backendEnv: "dev", awsAccountId }),
+    ).toThrow(/pass -c user-pool-id=<user pool ID>/);
   });
 });

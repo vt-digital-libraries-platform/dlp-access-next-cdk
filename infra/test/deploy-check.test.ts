@@ -8,19 +8,12 @@ import { FakeRunner, fakeRunner } from "./fake-runner";
 
 const awsAccountId = "123456789012";
 const userPoolId = "us-east-1_AbCd12345";
-const certificate = `arn:aws:acm:us-east-1:${awsAccountId}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
 
-const provision = planApp({
+const backend = planApp({
   backendEnv: "dev",
   awsAccountId,
   userPoolId,
   identityProvider: "VT-SSO-OIDC",
-});
-const attach = planApp({
-  backendEnv: "dev",
-  awsAccountId,
-  frontendBranch: "whunter/Multi_Env",
-  certificate,
 });
 
 /** A failed `aws` command: the CLI exits 254 when the service returns an error. */
@@ -92,14 +85,14 @@ const deployedBackend = {
 };
 
 const check = (
-  plan: typeof provision,
+  plan: typeof backend,
   resources: Record<string, unknown>,
   caller?: string,
 ) => checkDeploy(plan, lookupDeployedState(plan, fakeAws(resources, caller)));
 
 describe("checkDeploy", () => {
   test("a new backend is created, with nothing to warn about", () => {
-    expect(check(provision, {})).toEqual({
+    expect(check(backend, {})).toEqual({
       stacks: [
         "DlpAccessNext-dev-Data: create",
         "DlpAccessNext-dev-Api: create",
@@ -110,7 +103,7 @@ describe("checkDeploy", () => {
   });
 
   test("a redeploy with the same settings is an update, with nothing to warn about", () => {
-    const { stacks, warnings } = check(provision, deployedBackend);
+    const { stacks, warnings } = check(backend, deployedBackend);
     expect(stacks).toEqual([
       "DlpAccessNext-dev-Data: update (now UPDATE_COMPLETE)",
       "DlpAccessNext-dev-Api: update (now UPDATE_COMPLETE)",
@@ -120,7 +113,7 @@ describe("checkDeploy", () => {
   });
 
   test("warns about tables and a search domain left outside a Data stack being created", () => {
-    const { stacks, warnings } = check(provision, {
+    const { stacks, warnings } = check(backend, {
       "cloudformation describe-stacks DlpAccessNext-dev-Data":
         stack("REVIEW_IN_PROGRESS"),
       "dynamodb list-tables": {
@@ -178,68 +171,22 @@ describe("checkDeploy", () => {
     ]);
   });
 
-  test("warns when a frontend moves to another environment", () => {
-    const { stacks, warnings } = check(attach, {
-      "cloudformation describe-stacks DlpAccessNext-Web-whunter-multi-env":
-        stack("UPDATE_COMPLETE", {
-          Branch: "whunter/Multi_Env",
-        }),
-      "elasticbeanstalk describe-applications dlpnext-whunter-multi-env": {
-        Applications: [
-          {
-            Description:
-              "dlp-access-next frontend whunter-multi-env, using the f-search environment",
-          },
-        ],
-      },
-    });
-    expect(stacks).toEqual([
-      "DlpAccessNext-Web-whunter-multi-env: update (now UPDATE_COMPLETE)",
-    ]);
-    expect(warnings).toEqual([
-      expect.stringMatching(
-        /^Moves the frontend .* from the f-search environment to dev/,
-      ),
-    ]);
-  });
-
-  test("warns when another branch name with the same slug owns the frontend", () => {
-    const { warnings } = check(attach, {
-      "cloudformation describe-stacks DlpAccessNext-Web-whunter-multi-env":
-        stack("UPDATE_COMPLETE", {
-          Branch: "whunter-multi-env",
-        }),
-      "elasticbeanstalk describe-applications dlpnext-whunter-multi-env": {
-        Applications: [
-          {
-            Description:
-              "dlp-access-next frontend whunter-multi-env, using the dev environment",
-          },
-        ],
-      },
-    });
-    expect(warnings).toEqual([
-      expect.stringMatching(
-        /deployed from the branch whunter-multi-env, not whunter\/Multi_Env/,
-      ),
-    ]);
-  });
-
   test("warns about a stack with an operation in progress", () => {
-    const { stacks, warnings } = check(attach, {
-      "cloudformation describe-stacks DlpAccessNext-Web-whunter-multi-env":
+    const { stacks, warnings } = check(backend, {
+      ...deployedBackend,
+      "cloudformation describe-stacks DlpAccessNext-dev-Api":
         stack("UPDATE_IN_PROGRESS"),
     });
-    expect(stacks).toEqual([
-      "DlpAccessNext-Web-whunter-multi-env: busy (now UPDATE_IN_PROGRESS)",
-    ]);
+    expect(stacks).toContain(
+      "DlpAccessNext-dev-Api: busy (now UPDATE_IN_PROGRESS)",
+    );
     expect(warnings).toEqual([
       expect.stringMatching(/is UPDATE_IN_PROGRESS: the deploy will fail/),
     ]);
   });
 
   test("stops at credentials for another account", () => {
-    expect(check(provision, deployedBackend, "210987654321")).toEqual({
+    expect(check(backend, deployedBackend, "210987654321")).toEqual({
       stacks: [],
       warnings: [
         expect.stringMatching(
@@ -250,7 +197,7 @@ describe("checkDeploy", () => {
   });
 
   test("reports lookups that fail for reasons other than not found", () => {
-    const { stacks, warnings } = check(provision, {
+    const { stacks, warnings } = check(backend, {
       ...deployedBackend,
       "cloudformation describe-stacks DlpAccessNext-dev-Api": awsError(
         "AccessDenied: not authorized",

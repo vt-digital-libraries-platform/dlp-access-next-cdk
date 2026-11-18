@@ -2,7 +2,6 @@ import { AppPlan } from "../app";
 import { awsJson, CommandError, CommandRunner } from "../command-runner";
 import { COGNITO_DIRECTORY } from "../config/environments";
 import { MODELS, tableName } from "../config/models";
-import { webResourceName } from "../config/web";
 
 /*
  * Checks the app plan before deployment
@@ -28,8 +27,6 @@ export interface DeployedState {
     readonly instanceType: string;
     readonly dataNodes: number;
   };
-  /** The environment the branch's frontend uses now, when it exists. */
-  readonly webEnvironment?: string;
   /** Lookups that failed for a reason other than "not found". */
   readonly errors: readonly string[];
 }
@@ -68,8 +65,7 @@ export function lookupDeployedState(
     plan.dataStackName,
     plan.apiStackName,
     plan.authStackName,
-    plan.frontend?.stackName,
-  ].filter((name): name is string => name !== undefined);
+  ];
   const stacks: Record<string, StackState | undefined> = {};
   for (const name of stackNames) {
     stacks[name] = find(`stack ${name}`, () => {
@@ -89,53 +85,29 @@ export function lookupDeployedState(
 
   const env = plan.config.name;
   let existingTables: string[] = [];
-  let search: DeployedState["search"];
-  if (plan.dataStackName) {
-    if (willCreate(stacks[plan.dataStackName])) {
-      // One call for every table: each aws command takes about a second to start.
-      const tables = new Set<string>(
-        find("tables", () => aws(["dynamodb", "list-tables"]).TableNames) ?? [],
-      );
-      existingTables = MODELS.map((model) => tableName(model, env)).filter(
-        (table) => tables.has(table),
-      );
-    }
-    search = find(`search domain dlpnext-${env}`, () => {
-      const cluster = aws([
-        "opensearch",
-        "describe-domain",
-        "--domain-name",
-        `dlpnext-${env}`,
-      ]).DomainStatus.ClusterConfig;
-      return {
-        instanceType: cluster.InstanceType as string,
-        dataNodes: cluster.InstanceCount as number,
-      };
-    });
+  if (willCreate(stacks[plan.dataStackName])) {
+    // One call for every table: each aws command takes about a second to start.
+    const tables = new Set<string>(
+      find("tables", () => aws(["dynamodb", "list-tables"]).TableNames) ?? [],
+    );
+    existingTables = MODELS.map((model) => tableName(model, env)).filter(
+      (table) => tables.has(table),
+    );
   }
+  const search = find(`search domain dlpnext-${env}`, () => {
+    const cluster = aws([
+      "opensearch",
+      "describe-domain",
+      "--domain-name",
+      `dlpnext-${env}`,
+    ]).DomainStatus.ClusterConfig;
+    return {
+      instanceType: cluster.InstanceType as string,
+      dataNodes: cluster.InstanceCount as number,
+    };
+  });
 
-  let webEnvironment: string | undefined;
-  if (plan.frontend && !willCreate(stacks[plan.frontend.stackName])) {
-    const application = webResourceName(plan.frontend.slug);
-    webEnvironment = find(`application ${application}`, () => {
-      const [app] = aws([
-        "elasticbeanstalk",
-        "describe-applications",
-        "--application-names",
-        application,
-      ]).Applications;
-      return /using the (\S+) environment$/.exec(app?.Description ?? "")?.[1];
-    });
-  }
-
-  return {
-    callerAccount,
-    stacks,
-    existingTables,
-    search,
-    webEnvironment,
-    errors,
-  };
+  return { callerAccount, stacks, existingTables, search, errors };
 }
 
 /** A stack that doesn't exist, or whose last create never ran, is created. */
@@ -197,10 +169,8 @@ export function checkDeploy(plan: AppPlan, state: DeployedState): DeployCheck {
   }
 
   const search = plan.config.search;
-  const data = plan.dataStackName
-    ? state.stacks[plan.dataStackName]
-    : undefined;
-  if (state.search && plan.dataStackName) {
+  const data = state.stacks[plan.dataStackName];
+  if (state.search) {
     const current = `${state.search.dataNodes} x ${state.search.instanceType}`;
     const planned = `${search.dataNodes} x ${search.instanceType}`;
     if (willCreate(data)) {
@@ -217,9 +187,7 @@ export function checkDeploy(plan: AppPlan, state: DeployedState): DeployCheck {
     }
   }
 
-  const auth = plan.authStackName
-    ? state.stacks[plan.authStackName]
-    : undefined;
+  const auth = state.stacks[plan.authStackName];
   if (auth && !willCreate(auth)) {
     const pool = auth.outputs.UserPoolId;
     if (pool !== undefined && pool !== plan.userPoolId) {
@@ -243,28 +211,7 @@ export function checkDeploy(plan: AppPlan, state: DeployedState): DeployCheck {
       (provider !== undefined && provider !== plannedProvider)
     ) {
       warnings.push(
-        "The environment's frontends pick up a sign-in change only when each is redeployed.",
-      );
-    }
-  }
-
-  const { frontend } = plan;
-  const web = frontend ? state.stacks[frontend.stackName] : undefined;
-  if (frontend && web && !willCreate(web)) {
-    if (
-      state.webEnvironment !== undefined &&
-      state.webEnvironment !== plan.config.name
-    ) {
-      warnings.push(
-        `Moves the frontend ${frontend.stackName} from the ${state.webEnvironment} environment to ${plan.config.name}, ` +
-          "including its sign-in client, which moves to that environment's user pool.",
-      );
-    }
-    const deployedBranch = web.outputs.Branch;
-    if (deployedBranch !== undefined && deployedBranch !== frontend.branch) {
-      warnings.push(
-        `${frontend.stackName} was deployed from the branch ${deployedBranch}, not ${frontend.branch}: ` +
-          "the two names have the same slug, so this replaces that branch's frontend.",
+        "The environment's frontends pick up a sign-in change only when each is redeployed with frontend:deploy.",
       );
     }
   }

@@ -100,36 +100,24 @@ export function checkYesInCi(ci: string | undefined): void {
 export function describePlan(plan: AppPlan): string {
   const { config } = plan;
   const search = config.search;
-  const stacks = [
-    plan.dataStackName,
-    plan.apiStackName,
-    plan.authStackName,
-    plan.frontend?.stackName,
-  ].filter(Boolean);
-  // Without an Auth stack, the Web stack uses whichever pool and provider the environment already has.
-  const attached = "(the environment's)";
-  const userPool = plan.userPoolId ?? attached;
-  const identityProvider = !plan.authStackName
-    ? attached
-    : plan.identityProvider
-      ? `${plan.identityProvider} (must already be on the user pool before a Web stack deploys)`
-      : "(none: the pool's own users)";
+  const identityProvider = plan.identityProvider
+    ? `${plan.identityProvider} (must already be on the user pool before a frontend deploys)`
+    : "(none: the pool's own users)";
   const rows: [string, string][] = [
     ["Environment", config.name],
     ["Account", plan.awsAccountId],
     ["Region", config.region],
     [
       "Production",
-      `${plan.production} (search: ${search.dataNodes} x ${search.instanceType} across ${search.availabilityZones} AZ; web: ${config.web.instanceType})`,
+      `${plan.production} (search: ${search.dataNodes} x ${search.instanceType} across ${search.availabilityZones} AZ)`,
     ],
-    ["Branch", plan.frontend?.branch ?? "(none)"],
-    ["Backend", plan.frontend?.backend ?? "(none)"],
-    ["User pool", userPool],
+    ["User pool", plan.userPoolId],
     ["Identity provider", identityProvider],
-    ["App URL", plan.frontend?.appUrl ?? "(none)"],
-    ["Certificate", plan.frontend?.certificate ?? "(none)"],
     ["Data on destroy", String(config.removalPolicy).toLowerCase()],
-    ["Stacks", stacks.join(", ")],
+    [
+      "Stacks",
+      [plan.dataStackName, plan.apiStackName, plan.authStackName].join(", "),
+    ],
   ];
   const width = Math.max(...rows.map(([label]) => label.length));
   return rows

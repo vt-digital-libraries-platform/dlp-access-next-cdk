@@ -10,7 +10,6 @@ import {
 
 const awsAccountId = "123456789012";
 const userPoolId = "us-east-1_AbCd12345";
-const certificate = `arn:aws:acm:us-east-1:${awsAccountId}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
 
 describe("contextFromArgs", () => {
   test("reads -c, --context and --context= forms and ignores other flags", () => {
@@ -20,14 +19,14 @@ describe("contextFromArgs", () => {
         "backend-env=dev",
         "--context",
         "aws-account-id=123456789012",
-        "--context=frontend-branch=whunter/a=b",
+        "--context=identity-provider=a=b",
         "--require-approval",
         "never",
       ]),
     ).toEqual({
       "backend-env": "dev",
       "aws-account-id": "123456789012",
-      "frontend-branch": "whunter/a=b",
+      "identity-provider": "a=b",
     });
   });
 
@@ -120,11 +119,6 @@ describe("optionsFromContext", () => {
       backendEnv: "dev",
       awsAccountId,
       production: true,
-      frontendBranch: undefined,
-      backend: undefined,
-      userPoolId: undefined,
-      identityProvider: undefined,
-      certificate: undefined,
     });
   });
 });
@@ -132,38 +126,24 @@ describe("optionsFromContext", () => {
 describe("describePlan", () => {
   test("lists every option, with defaults applied, and the stacks", () => {
     const text = describePlan(
-      planApp({
-        backendEnv: "f-search",
-        awsAccountId,
-        userPoolId,
-        frontendBranch: "whunter/Multi_Env",
-        backend: "provision",
-        certificate,
-      }),
+      planApp({ backendEnv: "f-search", awsAccountId, userPoolId }),
     );
     expect(text).toMatch(/Environment\s+f-search/);
     expect(text).toMatch(/Account\s+123456789012/);
     expect(text).toMatch(/Region\s+us-east-1/);
     expect(text).toMatch(
-      /Production\s+false \(search: 1 x t3\.small\.search across 1 AZ; web: t3\.small\)/,
+      /Production\s+false \(search: 1 x t3\.small\.search across 1 AZ\)$/m,
     );
-    expect(text).toMatch(/Branch\s+whunter\/Multi_Env/);
-    expect(text).toMatch(/Backend\s+provision/);
     expect(text).toMatch(/User pool\s+us-east-1_AbCd12345/);
     expect(text).toMatch(/Identity provider\s+\(none: the pool's own users\)/);
-    expect(text).toMatch(
-      /App URL\s+https:\/\/whunter-multi-env\.dlp-access-dev\.dlp\.cloud\.lib\.vt\.edu$/m,
-    );
-    expect(text).toMatch(
-      /Certificate\s+arn:aws:acm:us-east-1:123456789012:certificate\//,
-    );
     expect(text).toMatch(/Data on destroy\s+destroy/);
     expect(text).toMatch(
-      /Stacks\s+DlpAccessNext-f-search-Data, DlpAccessNext-f-search-Api, DlpAccessNext-f-search-Auth, DlpAccessNext-Web-whunter-multi-env/,
+      /Stacks\s+DlpAccessNext-f-search-Data, DlpAccessNext-f-search-Api, DlpAccessNext-f-search-Auth$/m,
     );
+    expect(text).not.toMatch(/Branch|Backend|App URL|Certificate/);
   });
 
-  test("shows production sizing, and no branch or backend for an environment deploy", () => {
+  test("shows production sizing", () => {
     const text = describePlan(
       planApp({
         backendEnv: "production",
@@ -173,31 +153,9 @@ describe("describePlan", () => {
       }),
     );
     expect(text).toMatch(
-      /Production\s+true \(search: 3 x m7g\.medium\.search across 3 AZ; web: t3\.medium\)/,
+      /Production\s+true \(search: 3 x m7g\.medium\.search across 3 AZ\)$/m,
     );
-    expect(text).toMatch(/Branch\s+\(none\)/);
-    expect(text).toMatch(/Backend\s+\(none\)/);
-    expect(text).toMatch(/App URL\s+\(none\)/);
-    expect(text).toMatch(/Certificate\s+\(none\)/);
     expect(text).toMatch(/Data on destroy\s+retain/);
-    expect(text).toMatch(
-      /Stacks\s+DlpAccessNext-production-Data, DlpAccessNext-production-Api, DlpAccessNext-production-Auth$/m,
-    );
-  });
-
-  test("attach deploys only the Web stack", () => {
-    const text = describePlan(
-      planApp({
-        backendEnv: "dev",
-        awsAccountId,
-        frontendBranch: "main",
-        certificate,
-      }),
-    );
-    expect(text).toMatch(/Backend\s+attach/);
-    expect(text).toMatch(/User pool\s+\(the environment's\)/);
-    expect(text).toMatch(/Identity provider\s+\(the environment's\)/);
-    expect(text).toMatch(/Stacks\s+DlpAccessNext-Web-main$/m);
   });
 
   test("shows the user pool and its identity provider", () => {
@@ -205,11 +163,8 @@ describe("describePlan", () => {
       planApp({
         backendEnv: "dev",
         awsAccountId,
-        frontendBranch: "main",
-        backend: "provision",
         userPoolId,
         identityProvider: "VT-SSO-OIDC",
-        certificate,
       }),
     );
     expect(text).toMatch(/User pool\s+us-east-1_AbCd12345/);

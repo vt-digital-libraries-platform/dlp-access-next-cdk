@@ -123,8 +123,8 @@ export function resolveEnvironment(
   };
 }
 
-// Names that stacks deployed separately use to find each other. A Web stack
-// can attach to an environment whose Api stack is not in the same CDK app,
+// Names that stacks and tools deployed separately use to find each other.
+// frontend:deploy attaches a frontend to an environment from outside the CDK app,
 // so these are fixed names rather than cross-stack references.
 
 /** The environment's Elastic Beanstalk instance role and profile. */

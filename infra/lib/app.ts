@@ -3,29 +3,12 @@ import { ApiStack } from "./stacks/api-stack";
 import { AuthStack } from "./stacks/auth-stack";
 import { DataStack } from "./stacks/data-stack";
 import { EnvironmentConfig, resolveEnvironment } from "./config/environments";
-import {
-  checkCertificateArn,
-  defaultCertificateArn,
-  validBranchSlug,
-  webDomainName,
-} from "./config/web";
-import { WebStack } from "./stacks/web-stack";
 
 export interface AppOptions {
   readonly backendEnv?: string;
   readonly awsAccountId?: string;
-  /**
-   * Production sizing: three OpenSearch nodes instead of one, and a larger
-   * Beanstalk instance. Defaults to false.
-   */
+  /** Production sizing: three OpenSearch nodes instead of one. Defaults to false. */
   readonly production?: boolean;
-  /** dlp-access-next Git branch to deploy. Omit to deploy only the environment. */
-  readonly frontendBranch?: string;
-  /**
-   * `attach` | `provision`
-   * Specifies whether a new backend should be created OR frontend should be attached to existing backend
-   */
-  readonly backend?: string;
   readonly userPoolId?: string;
   /**
    * Name of the federated identity provider in the Cognito user pool that users sign
@@ -33,8 +16,11 @@ export interface AppOptions {
    */
   readonly identityProvider?: string;
   /**
-   * ARN of the existing ACM certificate
+   * Options that once deployed a frontend from the CDK app. Read only so
+   * `planApp` can point anyone passing them at `frontend:deploy`.
    */
+  readonly frontendBranch?: string;
+  readonly backend?: string;
   readonly certificate?: string;
 }
 
@@ -43,31 +29,25 @@ export interface AppPlan {
   readonly config: EnvironmentConfig;
   readonly awsAccountId: string;
   readonly production: boolean;
-  readonly frontend?: FrontendPlan;
-  readonly userPoolId?: string;
+  readonly userPoolId: string;
   readonly identityProvider?: string;
-  readonly dataStackName?: string;
-  readonly apiStackName?: string;
-  readonly authStackName?: string;
-}
-
-export interface FrontendPlan {
-  readonly branch: string;
-  readonly slug: string;
-  readonly backend: string;
-  readonly appUrl: string;
-  readonly certificate: string;
-  readonly stackName: string;
+  readonly dataStackName: string;
+  readonly apiStackName: string;
+  readonly authStackName: string;
 }
 
 export interface AppStacks {
-  readonly data?: DataStack;
-  readonly api?: ApiStack;
-  readonly auth?: AuthStack;
-  readonly web?: WebStack;
+  readonly data: DataStack;
+  readonly api: ApiStack;
+  readonly auth: AuthStack;
 }
 
-const BACKENDS = ["attach", "provision"];
+// Frontends deploy with `npm run frontend:deploy`, not the CDK app.
+const FRONTEND_OPTIONS = [
+  ["frontendBranch", "frontend-branch"],
+  ["backend", "backend"],
+  ["certificate", "certificate"],
+] as const;
 const ACCOUNT_PATTERN = /^\d{12}$/;
 // <region>_<id>, e.g. us-east-1_AbCd12345
 const USER_POOL_ID_PATTERN = /^([a-z0-9-]+)_[0-9a-zA-Z]+$/;
@@ -111,13 +91,16 @@ export function optionsFromContext(
   };
 }
 
-/**
- * Validates the options and works out which stacks they produce:
- * - no branch: the environment's Data, Api and Auth stacks
- * - branch, backend=attach: the branch's Web stack only
- * - branch, backend=provision: Data, Api, Auth and Web
- */
+/** Validates the options and names the environment's Data, Api and Auth stacks. */
 export function planApp(options: AppOptions): AppPlan {
+  for (const [field, option] of FRONTEND_OPTIONS) {
+    if (options[field] !== undefined) {
+      throw new Error(
+        `-c ${option} is no longer supported: the CDK app deploys only backends. ` +
+          "Deploy a frontend with npm run frontend:deploy -- --backend-env <env> --branch <branch>",
+      );
+    }
+  }
   const production = options.production ?? false;
   const config = resolveEnvironment(options.backendEnv, production);
   if (options.awsAccountId === undefined) {
@@ -130,44 +113,6 @@ export function planApp(options: AppOptions): AppPlan {
       `Invalid aws-account-id "${options.awsAccountId}": use a 12-digit AWS account ID`,
     );
   }
-
-  if (options.frontendBranch === undefined && options.backend !== undefined) {
-    throw new Error(
-      "-c backend only applies with -c frontend-branch=<git branch>",
-    );
-  }
-  const backend = options.backend ?? "attach";
-  if (!BACKENDS.includes(backend)) {
-    throw new Error(
-      `Invalid backend "${backend}": use ${BACKENDS.join(" or ")}`,
-    );
-  }
-
-  const prefix = `DlpAccessNext-${config.name}`;
-  const provision =
-    options.frontendBranch === undefined || backend === "provision";
-  const branch =
-    options.frontendBranch === undefined
-      ? undefined
-      : {
-          branch: options.frontendBranch,
-          slug: validBranchSlug(
-            options.frontendBranch,
-            "frontend-branch",
-            "-c frontend-branch=<name>",
-          ),
-        };
-
-  for (const [field, option] of [
-    ["userPoolId", "user-pool-id"],
-    ["identityProvider", "identity-provider"],
-  ] as const) {
-    if (options[field] !== undefined && !provision) {
-      throw new Error(
-        `-c ${option} only applies when the environment's stacks are deployed: drop -c frontend-branch, or add -c backend=provision`,
-      );
-    }
-  }
   if (
     options.identityProvider !== undefined &&
     !IDENTITY_PROVIDER_PATTERN.test(options.identityProvider)
@@ -176,54 +121,32 @@ export function planApp(options: AppOptions): AppPlan {
       `Invalid identity-provider "${options.identityProvider}": use the name of an identity provider on the user pool, such as VT-SSO-OIDC`,
     );
   }
-  if (provision && options.userPoolId === undefined) {
+  if (options.userPoolId === undefined) {
     throw new Error(
       "Missing CDK context: pass -c user-pool-id=<user pool ID>, the existing Cognito user pool for the environment's users",
     );
   }
-  if (options.userPoolId !== undefined) {
-    const region = USER_POOL_ID_PATTERN.exec(options.userPoolId)?.[1];
-    if (region === undefined) {
-      throw new Error(
-        `Invalid user-pool-id "${options.userPoolId}": use a Cognito user pool ID, such as us-east-1_AbCd12345`,
-      );
-    }
-    if (region !== config.region) {
-      throw new Error(
-        `Invalid user-pool-id "${options.userPoolId}": the pool must be in ${config.region}, the environment's region`,
-      );
-    }
-  }
-  if (options.certificate !== undefined && !branch) {
+  const region = USER_POOL_ID_PATTERN.exec(options.userPoolId)?.[1];
+  if (region === undefined) {
     throw new Error(
-      "-c certificate only applies with -c frontend-branch=<git branch>",
+      `Invalid user-pool-id "${options.userPoolId}": use a Cognito user pool ID, such as us-east-1_AbCd12345`,
     );
   }
-  if (options.certificate !== undefined) {
-    checkCertificateArn(
-      options.certificate,
-      config.region,
-      options.awsAccountId,
+  if (region !== config.region) {
+    throw new Error(
+      `Invalid user-pool-id "${options.userPoolId}": the pool must be in ${config.region}, the environment's region`,
     );
   }
+  const prefix = `DlpAccessNext-${config.name}`;
   return {
     config,
     awsAccountId: options.awsAccountId,
     production,
-    frontend: branch && {
-      ...branch,
-      backend,
-      appUrl: `https://${webDomainName(branch.slug)}`,
-      certificate:
-        options.certificate ??
-        defaultCertificateArn(config.region, options.awsAccountId),
-      stackName: `DlpAccessNext-Web-${branch.slug}`,
-    },
     userPoolId: options.userPoolId,
     identityProvider: options.identityProvider,
-    dataStackName: provision ? `${prefix}-Data` : undefined,
-    apiStackName: provision ? `${prefix}-Api` : undefined,
-    authStackName: provision ? `${prefix}-Auth` : undefined,
+    dataStackName: `${prefix}-Data`,
+    apiStackName: `${prefix}-Api`,
+    authStackName: `${prefix}-Auth`,
   };
 }
 
@@ -232,46 +155,18 @@ export function buildApp(app: App, options: AppOptions): AppStacks {
   const plan = planApp(options);
   const { config } = plan;
   const env = { account: plan.awsAccountId, region: config.region };
-
-  let data: DataStack | undefined;
-  let api: ApiStack | undefined;
-  if (plan.dataStackName && plan.apiStackName) {
-    data = new DataStack(app, plan.dataStackName, { env, config });
-    api = new ApiStack(app, plan.apiStackName, {
-      env,
-      config,
-      tables: data.tables,
-      searchDomain: data.searchDomain,
-    });
-  }
-
-  let auth: AuthStack | undefined;
-  if (plan.authStackName && plan.userPoolId) {
-    auth = new AuthStack(app, plan.authStackName, {
-      env,
-      config,
-      userPoolId: plan.userPoolId,
-      identityProvider: plan.identityProvider,
-    });
-  }
-
-  let web: WebStack | undefined;
-  if (plan.frontend) {
-    web = new WebStack(app, plan.frontend.stackName, {
-      env,
-      config,
-      frontendBranch: plan.frontend.branch,
-      frontendBranchSlug: plan.frontend.slug,
-      certificateArn: plan.frontend.certificate,
-    });
-    // The Web stack reads the API URL and the sign-in settings from the SSM
-    // parameters the Api and Auth stacks write, so it must deploy after them.
-    for (const stack of [api, auth]) {
-      if (stack) {
-        web.addStackDependency(stack);
-      }
-    }
-  }
-
-  return { data, api, auth, web };
+  const data = new DataStack(app, plan.dataStackName, { env, config });
+  const api = new ApiStack(app, plan.apiStackName, {
+    env,
+    config,
+    tables: data.tables,
+    searchDomain: data.searchDomain,
+  });
+  const auth = new AuthStack(app, plan.authStackName, {
+    env,
+    config,
+    userPoolId: plan.userPoolId,
+    identityProvider: plan.identityProvider,
+  });
+  return { data, api, auth };
 }

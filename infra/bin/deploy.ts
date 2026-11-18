@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Deploys with `cdk deploy --all`
 // Takes the same arguments as `cdk deploy`:
-//   npm run deploy -- -c backend-env=dev -c aws-account-id=$ACCOUNT [-c frontend-branch=...] [other cdk flags]
+//   npm run deploy -- -c backend-env=dev -c aws-account-id=$ACCOUNT -c user-pool-id=<pool> [other cdk flags]
+// Frontends deploy separately, with `npm run frontend:deploy`.
 // In CI (CI=true), --yes skips the confirmation;
 import { spawnSync } from "child_process";
 import * as fs from "fs";
@@ -21,7 +22,6 @@ import {
   lookupDeployedState,
 } from "../lib/deployment/deploy-check";
 import { alert, ask } from "../lib/deployment/terminal";
-import { sourceCommit, uncommittedChanges } from "../lib/git";
 
 const INFRA_DIR = path.join(__dirname, "..");
 
@@ -47,16 +47,6 @@ async function main(): Promise<number> {
     console.log(`${alert(warning)}\n`);
   }
   console.log(`About to deploy to AWS:\n\n${describePlan(plan)}\n`);
-  if (plan.frontend) {
-    // The Web stack deploys HEAD, so local edits are left out.
-    console.log(`App source: commit ${sourceCommit()}\n`);
-    const changes = uncommittedChanges();
-    if (changes.length > 0) {
-      console.log(
-        `${alert("Uncommitted changes are not deployed:")}\n${changes.map((line) => `  ${line}`).join("\n")}\n`,
-      );
-    }
-  }
 
   // inspect plan, raise warnings
   let warned = false;

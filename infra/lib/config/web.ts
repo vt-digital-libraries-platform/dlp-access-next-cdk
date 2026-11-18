@@ -1,6 +1,6 @@
 /**
- * Settings for each frontend branch's Web stack, and the rules that name and
- * address a branch.
+ * Settings for each frontend, and the rules that name and address a branch's
+ * frontend. `frontend:deploy` and the backend's secret grant use them.
  */
 
 /**
@@ -20,27 +20,12 @@ export const CALLBACK_PATH = "/authorize";
 export const APP_DOMAIN = "dlp-access-dev.dlp.cloud.lib.vt.edu";
 // The ACM certificate covering *.<APP_DOMAIN>, by ID only: the ARN is built
 // from the deploy's account and the environment's region, so no account ID
-// is stored here. `-c certificate=<ARN>` overrides it.
+// is stored here. `frontend:deploy --certificate <ARN>` overrides it.
 export const CERTIFICATE_ID = "3163b25c-b6f5-4b23-8569-514064db7767";
 export const HOSTED_ZONE = "dlp.cloud.lib.vt.edu";
-export const TLS_POLICY = "ELBSecurityPolicy-TLS13-1-2-2021-06";
-
-// Committed files that the Next.js server doesn't need, as git pathspecs
-// (`*` also matches `/`, so `*.md` is every Markdown file). `.env*` stays
-// out even if one is committed.
-export const BUNDLE_EXCLUDES = [
-  ".github",
-  ".claude",
-  ".scratch",
-  ".elasticbeanstalk",
-  "infra",
-  "docs",
-  "*.md",
-  ".env*",
-];
 
 /**
- * Turns a git branch name into the slug that names a Web stack, e.g.
+ * Turns a git branch name into the slug that names a frontend, e.g.
  * `user/Multi_Env` becomes `user-multi-env`.
  */
 export function branchSlug(branch: string): string {
@@ -54,9 +39,9 @@ export function branchSlug(branch: string): string {
 const WEB_PREFIX = "dlpnext-";
 const MAX_SLUG_LENGTH = 40 - WEB_PREFIX.length;
 
-/** Name of the branch's Beanstalk application and environment. */
+/** Name of the branch's Beanstalk environment. */
 export function webResourceName(slug: string): string {
-  checkSlugLength(slug, slug, "-c frontend-branch=<name>");
+  checkSlugLength(slug, slug, "--branch <name>");
   return `${WEB_PREFIX}${slug}`;
 }
 
@@ -74,7 +59,7 @@ const CONTROL_CHARACTERS = /[\x00-\x1f\x7f]/;
 
 /**
  * Checks a branch name and returns its slug. `option` names the option in
- * errors, e.g. `frontend-branch`, and `flag` shows how to pass it.
+ * errors, e.g. `branch`, and `flag` shows how to pass it.
  */
 export function validBranchSlug(
   branch: string,

@@ -215,8 +215,7 @@ function findClient(
 /**
  * A confidential client for the authorization code flow, as src/lib/auth.ts
  * expects, signing in only through the backend's identity provider. No
- * explicit auth flows are passed, as the CDK Web stack did, so Cognito
- * applies its defaults.
+ * explicit auth flows are passed, so Cognito applies its defaults.
  */
 function createClient(
   plan: FrontendPlan,

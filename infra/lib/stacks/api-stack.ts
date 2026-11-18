@@ -1,11 +1,5 @@
 import * as path from "path";
-import {
-  ArnFormat,
-  CfnOutput,
-  Duration,
-  Stack,
-  StackProps,
-} from "aws-cdk-lib";
+import { ArnFormat, CfnOutput, Duration, Stack, StackProps } from "aws-cdk-lib";
 import * as appsync from "aws-cdk-lib/aws-appsync";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
@@ -441,7 +435,7 @@ export class ApiStack extends Stack {
       stringValue: ebServiceRole.roleArn,
     });
 
-    // Web stacks read the URL from here, so they can attach to an
+    // frontend:deploy reads the URL from here, so a frontend can attach to an
     // environment without a cross-stack reference to this stack.
     new ssm.StringParameter(this, "GraphQLApiUrlParameter", {
       parameterName: graphqlApiUrlParameterName(config.name),
