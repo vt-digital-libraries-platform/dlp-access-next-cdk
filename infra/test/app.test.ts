@@ -779,7 +779,7 @@ describe("API and Elastic Beanstalk access", () => {
     ]);
   });
 
-  test("publishes the API URL to SSM for Web stacks", () => {
+  test("publishes the API URL to SSM for frontend:deploy", () => {
     const apiId = Object.keys(
       dev.api.findResources("AWS::AppSync::GraphQLApi"),
     )[0];

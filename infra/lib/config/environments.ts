@@ -3,8 +3,9 @@ import { RemovalPolicy } from "aws-cdk-lib";
 /**
  * Per-environment settings. Everything that differs between environments
  * lives here so the differences can be reviewed in one place. Sizing
- * (`search`, `web`) comes from the `production` flag rather than the
- * environment name.
+ * comes from the production flag rather than the environment name: `search`
+ * from the backend's `-c production=true`, `web` (the frontend's instance)
+ * from `frontend:deploy --production`.
  */
 export interface EnvironmentConfig {
   /** Environment name as passed with `-c backend-env=<name>`. */

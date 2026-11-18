@@ -21,9 +21,9 @@ export interface AuthStackProps extends StackProps {
 
 /**
  * Points the environment at its Cognito user pool and the identity provider
- * its users sign in through. Both go into SSM parameters, which is where Web
- * stacks find them. The pool and its provider are made outside CDK and are
- * not changed here.
+ * its users sign in through. Both go into SSM parameters, which is where
+ * frontend:deploy finds them. The pool and its provider are made outside CDK
+ * and are not changed here.
  */
 export class AuthStack extends Stack {
   constructor(scope: Construct, id: string, props: AuthStackProps) {

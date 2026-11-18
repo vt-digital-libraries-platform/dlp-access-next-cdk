@@ -93,7 +93,7 @@ Notes:
 
 ### Update a frontend
 
-Run the same command. When the branch's frontend exists, `frontend:deploy` only ships HEAD to it. It refuses if the frontend was created for another branch name with the same slug, or for another backend. Settings made at creation (certificate, instance size, environment variables) aren't changed; change them with `eb setenv` / `eb config`, or destroy and redeploy the frontend.
+Run the same command. When the branch's frontend exists, `frontend:deploy` only ships HEAD to it. It refuses if the frontend was created for another branch name with the same slug, or for another backend, or if its environment lacks the branch and backend tags (it was made some other way). Settings made at creation (certificate, instance size, environment variables) aren't changed; change them with `eb setenv` / `eb config`, or destroy and redeploy the frontend.
 
 ### New backend and new frontend together
 
@@ -149,6 +149,17 @@ Notes:
 
 - `frontend:destroy` asks before each frontend. Run in CI with `--yes` to skip the prompts, after checking the list.
 - Beanstalk environments made outside the `frontend:*` commands, such as the PR-preview workflow's environments, aren't tagged and aren't found this way. If they use this backend's instance profile, delete them separately.
+
+### A leftover `DlpAccessNext-Web-<slug>` stack
+
+Frontends used to be CDK Web stacks. The CDK app can no longer synthesize one, so `cdk destroy` can't remove a leftover. Delete it with CloudFormation; this removes its Beanstalk application and environment, Cognito client, secret and DNS record:
+
+```bash
+aws cloudformation delete-stack --region us-east-1 --stack-name DlpAccessNext-Web-<slug>
+aws cloudformation wait stack-delete-complete --region us-east-1 --stack-name DlpAccessNext-Web-<slug>
+```
+
+Then recreate it with `npm run frontend:deploy` if it's still wanted; its URL is unchanged. To find any left: `aws cloudformation list-stacks --region us-east-1 --query "StackSummaries[?starts_with(StackName,'DlpAccessNext-Web-') && StackStatus!='DELETE_COMPLETE'].StackName"`.
 
 ### A backend
 

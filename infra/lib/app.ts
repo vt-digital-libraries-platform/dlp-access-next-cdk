@@ -7,7 +7,11 @@ import { EnvironmentConfig, resolveEnvironment } from "./config/environments";
 export interface AppOptions {
   readonly backendEnv?: string;
   readonly awsAccountId?: string;
-  /** Production sizing: three OpenSearch nodes instead of one. Defaults to false. */
+  /**
+   * Production sizing for the backend: three OpenSearch nodes across three
+   * AZs instead of one. Defaults to false. Frontends size themselves with
+   * `frontend:deploy --production`.
+   */
   readonly production?: boolean;
   readonly userPoolId?: string;
   /**
