@@ -209,10 +209,10 @@ function planWithRunner(
   },
   io: FrontendIO,
 ): { plan: FrontendPlan; run: CommandRunner } {
-  const backend = requireBackend(values["backend-env"]);
+  const backend = requireBackend(values["backend-env"], values.production);
   const run = io.runner({ region: backend.region, profile: values.profile });
   const plan = planFrontend({
-    backendEnv: backend.name,
+    backend,
     branch: values.branch ?? currentBranch(run),
     production: values.production,
     certificate: values.certificate,

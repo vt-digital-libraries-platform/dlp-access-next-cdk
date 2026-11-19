@@ -10,7 +10,11 @@ import {
   FRONTEND_REGION,
   latestSolutionStack,
 } from "../lib/config/web";
-import { checkFrontendRegion, planFrontend } from "../lib/frontend/frontend";
+import {
+  checkFrontendRegion,
+  planFrontend,
+  requireBackend,
+} from "../lib/frontend/frontend";
 import {
   FrontendIO,
   frontendDeploy,
@@ -95,7 +99,7 @@ describe("planFrontend", () => {
 
   test("derives the frontend's names from the backend env and branch", () => {
     const plan = planFrontend({
-      backendEnv: "dev",
+      backend: requireBackend("dev"),
       branch: "whunter/Multi_Env",
       awsAccountId,
     });
@@ -119,7 +123,7 @@ describe("planFrontend", () => {
   test("--production picks the larger instance type", () => {
     expect(
       planFrontend({
-        backendEnv: "dev",
+        backend: requireBackend("dev", true),
         branch: "main",
         awsAccountId,
         production: true,
@@ -131,7 +135,7 @@ describe("planFrontend", () => {
     const certificate = `arn:aws:acm:us-east-1:${awsAccountId}:certificate/0f1e2d3c-4b5a-6978-8091-a2b3c4d5e6f7`;
     expect(
       planFrontend({
-        backendEnv: "f-search",
+        backend: requireBackend("f-search"),
         branch: "main",
         awsAccountId,
         certificate,
@@ -140,9 +144,14 @@ describe("planFrontend", () => {
   });
 
   test.each([
-    [{ backendEnv: undefined }, /Missing .*backend-env/],
-    [{ backendEnv: "staging" }, /Unknown environment "staging"/],
-    [{ backendEnv: "Dev" }, /Invalid environment name "Dev"/],
+    [undefined, /Missing .*backend-env/],
+    ["staging", /Unknown environment "staging"/],
+    ["Dev", /Invalid environment name "Dev"/],
+  ])("requireBackend rejects %p", (backendEnv, error) => {
+    expect(() => requireBackend(backendEnv)).toThrow(error);
+  });
+
+  test.each([
     [{ branch: "///" }, /Invalid branch "\/\/\/".*--branch/],
     [{ branch: "a".repeat(33) }, /Invalid branch "a{33}".*1 to 32 characters/],
     [
@@ -171,7 +180,7 @@ describe("planFrontend", () => {
   ])("rejects %p", (override, error) => {
     expect(() =>
       planFrontend({
-        backendEnv: "dev",
+        backend: requireBackend("dev"),
         branch: "main",
         awsAccountId,
         ...override,

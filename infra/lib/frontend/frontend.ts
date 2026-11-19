@@ -17,8 +17,11 @@ import {
 } from "../config/web";
 
 export interface FrontendOptions {
-  /** The backend environment the frontend attaches to. */
-  readonly backendEnv?: string;
+  /**
+   * The backend environment the frontend attaches to, from `requireBackend`
+   * with the same `production` flag.
+   */
+  readonly backend: EnvironmentConfig;
   /** The git branch the frontend is for. */
   readonly branch: string;
   /** The larger instance type. Defaults to false. */
@@ -108,7 +111,7 @@ export function checkFrontendRegion(
 /** Validates the options and works out the frontend's names. */
 export function planFrontend(options: FrontendOptions): FrontendPlan {
   const production = options.production ?? false;
-  const config = requireBackend(options.backendEnv, production);
+  const config = options.backend;
   checkFrontendRegion(config);
   const names = planFrontendNames(options.branch);
   if (options.certificate !== undefined) {
