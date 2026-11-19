@@ -9,6 +9,7 @@ import {
   checkCertificateArn,
   defaultCertificateArn,
   FRONTEND_APPLICATION,
+  FRONTEND_REGION,
   frontendSecretName,
   validBranchSlug,
   webDomainName,
@@ -88,10 +89,27 @@ export function planFrontendNames(branch: string): FrontendNames {
   };
 }
 
+/**
+ * Refuses a backend outside FRONTEND_REGION: the shared Beanstalk application
+ * lives there, and `frontend:status`, which has no backend env, looks only
+ * there.
+ */
+export function checkFrontendRegion(
+  backend: Pick<EnvironmentConfig, "name" | "region">,
+): void {
+  if (backend.region !== FRONTEND_REGION) {
+    throw new Error(
+      `Backend env "${backend.name}" is in ${backend.region}, but frontends can only attach to a backend in ${FRONTEND_REGION}, ` +
+        `where the shared ${FRONTEND_APPLICATION} Beanstalk application is (FRONTEND_REGION in infra/lib/config/web.ts)`,
+    );
+  }
+}
+
 /** Validates the options and works out the frontend's names. */
 export function planFrontend(options: FrontendOptions): FrontendPlan {
   const production = options.production ?? false;
   const config = requireBackend(options.backendEnv, production);
+  checkFrontendRegion(config);
   const names = planFrontendNames(options.branch);
   if (options.certificate !== undefined) {
     checkCertificateArn(

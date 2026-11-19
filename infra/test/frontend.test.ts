@@ -10,7 +10,7 @@ import {
   FRONTEND_REGION,
   latestSolutionStack,
 } from "../lib/config/web";
-import { planFrontend } from "../lib/frontend/frontend";
+import { checkFrontendRegion, planFrontend } from "../lib/frontend/frontend";
 import {
   FrontendIO,
   frontendDeploy,
@@ -80,6 +80,17 @@ describe("planFrontend", () => {
     for (const env of ["dev", "pre-production", "production", "f-feature"]) {
       expect(resolveEnvironment(env).region).toBe(FRONTEND_REGION);
     }
+  });
+
+  test("refuses a backend outside the frontends' region", () => {
+    expect(() =>
+      checkFrontendRegion({ name: "f-west", region: "us-west-2" }),
+    ).toThrow(
+      /Backend env "f-west" is in us-west-2, but frontends can only attach to a backend in us-east-1/,
+    );
+    expect(() =>
+      checkFrontendRegion({ name: "dev", region: FRONTEND_REGION }),
+    ).not.toThrow();
   });
 
   test("derives the frontend's names from the backend env and branch", () => {
