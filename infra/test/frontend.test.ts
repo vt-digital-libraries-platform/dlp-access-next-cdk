@@ -1271,8 +1271,8 @@ describe("frontendDeploy", () => {
     );
   });
 
-  test("--branch overrides the current git branch", async () => {
-    const { run, io, output } = setup();
+  test("--branch names the frontend on a detached HEAD", async () => {
+    const { io, output } = setup({ branch: "" });
 
     await frontendDeploy(
       ["--backend-env", "dev", "--branch", "other/Thing"],
@@ -1280,11 +1280,38 @@ describe("frontendDeploy", () => {
       io,
     );
 
+    expect(output.join("\n")).toMatch(/dlpnext-other-thing/);
+  });
+
+  test("--branch matching the checked-out branch deploys", async () => {
+    const { io } = setup({ appExists: true });
+
+    expect(
+      await frontendDeploy(
+        ["--backend-env", "dev", "--branch", "whunter/feature"],
+        undefined,
+        io,
+      ),
+    ).toBe(0);
+  });
+
+  test("refuses --branch naming another branch than the checked-out one, before changing anything", async () => {
+    const { run, io } = setup();
+
+    await expect(
+      frontendDeploy(
+        ["--backend-env", "dev", "--branch", "other/Thing"],
+        undefined,
+        io,
+      ),
+    ).rejects.toThrow(
+      /--branch "other\/Thing" doesn't match the checked-out branch "whunter\/feature"/,
+    );
+    expect(writes(run.commands)).toEqual([]);
     expect(run.commands).not.toContainEqual({
       executable: "git",
-      args: ["branch", "--show-current"],
+      args: ["rev-parse", "--verify", "HEAD"],
     });
-    expect(output.join("\n")).toMatch(/dlpnext-other-thing/);
   });
 
   test("refuses a detached HEAD without --branch, before changing anything", async () => {

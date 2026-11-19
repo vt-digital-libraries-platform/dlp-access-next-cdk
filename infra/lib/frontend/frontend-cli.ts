@@ -52,6 +52,9 @@ export async function frontendDeploy(
   });
   const yes = checkYes(values.yes, ci);
   const { plan, run } = planWithRunner(values, io);
+  if (values.branch !== undefined) {
+    checkHeadIsOn(plan.branch, run);
+  }
 
   const { alert } = io;
   const warning = productionWarningFor(
@@ -241,6 +244,22 @@ function currentBranch(run: CommandRunner): string {
     );
   }
   return branch;
+}
+
+/**
+ * Refuses to deploy HEAD as `branch` while another branch is checked out:
+ * the version label, its description and the environment's branch tag would
+ * all name `branch` for a commit that isn't on it. A detached HEAD, as in CI,
+ * is what `--branch` is for, so it passes.
+ */
+function checkHeadIsOn(branch: string, run: CommandRunner): void {
+  const checkedOut = run("git", ["branch", "--show-current"]).trim();
+  if (checkedOut && checkedOut !== branch) {
+    throw new Error(
+      `--branch ${JSON.stringify(branch)} doesn't match the checked-out branch ${JSON.stringify(checkedOut)}, ` +
+        `whose HEAD is what would be deployed. Check out ${branch} (or detach HEAD at the commit to deploy) and deploy again.`,
+    );
+  }
 }
 
 /** The confirmation text shown before deploying a frontend. */

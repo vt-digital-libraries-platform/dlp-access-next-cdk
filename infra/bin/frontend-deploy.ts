@@ -2,7 +2,8 @@
 // Deploys a branch's frontend to the shared dlpnext Beanstalk application:
 //   npm run frontend:deploy -- --backend-env <env> [--branch <name>]
 //     [--production] [--certificate <arn>] [--profile <profile>] [--yes]
-// --branch defaults to the current git branch. In CI (CI=true), --yes skips
+// --branch defaults to the current git branch; when given, it must match the
+// checked-out branch or HEAD must be detached. In CI (CI=true), --yes skips
 // the confirmation.
 import { spawnRunner } from "../lib/command-runner";
 import { alert, ask } from "../lib/deployment/terminal";

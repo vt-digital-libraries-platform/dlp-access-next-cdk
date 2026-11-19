@@ -89,7 +89,7 @@ With the `production` backend, both print a red warning banner first, which also
 ### Frontend options (`npm run frontend:deploy`)
 
 - `--backend-env <env>` is required: the backend the frontend calls and signs in through. It must already be deployed. A frontend stays on its backend; to move it, destroy it and deploy it again.
-- `--branch <name>` defaults to the current git branch. Branch names become slugs (`whunter/Multi_Env` becomes `whunter-multi-env`) of at most 32 characters.
+- `--branch <name>` defaults to the current git branch. When given, it must match the checked-out branch, or HEAD must be detached (as in CI), since HEAD is what is deployed. Branch names become slugs (`whunter/Multi_Env` becomes `whunter-multi-env`) of at most 32 characters.
 - The deploy ships the commit at HEAD, not the working tree.
 - `--production` uses a `t3.medium` instance instead of `t3.small`. `--certificate <ARN>` overrides the default certificate, `CERTIFICATE_ID` in `infra/lib/config/web.ts`, in the deploy's account and region. Both, like the rest of the environment's settings, apply only when the frontend is created.
 - `--profile <profile>` picks the AWS credentials.
