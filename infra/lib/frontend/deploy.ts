@@ -30,7 +30,7 @@ import {
   findHostedZone,
   findSecret,
   findSolutionStack,
-  readParameter,
+  readParameters,
 } from "./lookups";
 
 /** What the frontend needs from its backend, read from the backend's SSM parameters. */
@@ -231,13 +231,24 @@ function checkTags(
   }
 }
 
+/** What the backend publishes in SSM for its frontends, read in one call. */
 function readBackend(plan: FrontendPlan, run: CommandRunner): Backend {
   const env = plan.backendEnv;
+  const [apiUrl, userPoolId, identityProvider, serviceRoleArn] = readParameters(
+    run,
+    [
+      graphqlApiUrlParameterName(env),
+      userPoolIdParameterName(env),
+      identityProviderParameterName(env),
+      ebServiceRoleArnParameterName(env),
+    ],
+    `Is backend env ${JSON.stringify(env)} deployed? Deploy it with npm run deploy, then deploy the frontend again.`,
+  );
   return {
-    apiUrl: readParameter(run, graphqlApiUrlParameterName(env)),
-    userPoolId: readParameter(run, userPoolIdParameterName(env)),
-    identityProvider: readParameter(run, identityProviderParameterName(env)),
-    serviceRoleArn: readParameter(run, ebServiceRoleArnParameterName(env)),
+    apiUrl,
+    userPoolId,
+    identityProvider,
+    serviceRoleArn,
     // A fixed name, owned by the backend's Api stack.
     instanceProfile: ebInstanceProfileName(env),
   };

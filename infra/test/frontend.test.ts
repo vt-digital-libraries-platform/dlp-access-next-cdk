@@ -202,6 +202,7 @@ describe("frontendDeploy", () => {
     hasPolicy = true,
     policyRole = serviceRoleArn,
     otherParameters = {} as Record<string, string>,
+    missingParameters = [] as string[],
     answer = "yes",
     branch = "whunter/feature",
     status = "",
@@ -236,6 +237,9 @@ describe("frontendDeploy", () => {
       "/dlp-access-next/dev/user-pool-id": userPoolId,
       "/dlp-access-next/dev/identity-provider": "VTGateway",
     };
+    for (const name of missingParameters) {
+      delete parameters[name];
+    }
     const json = (value: unknown) => JSON.stringify(value);
     const run = fakeRunner(({ executable, args }) => {
       const command = [executable, ...args].join(" ");
@@ -269,9 +273,11 @@ describe("frontendDeploy", () => {
         case "ssm get-parameters": {
           const names = args.slice(args.indexOf("--names") + 1);
           return json({
+            // The API doesn't promise the order of names.
             Parameters: names
               .filter((n) => n in parameters)
-              .map((n) => ({ Name: n, Value: parameters[n] })),
+              .map((n) => ({ Name: n, Value: parameters[n] }))
+              .reverse(),
             InvalidParameters: names.filter((n) => !(n in parameters)),
           });
         }
@@ -597,9 +603,10 @@ describe("frontendDeploy", () => {
       ).toBe(0);
 
       expect(lifecycleRoles(run.commands)).toEqual([]);
+      // Only readBackend's read: no lookup of the role's backend.
       expect(
         run.commands.filter(({ args }) => args[1] === "get-parameters"),
-      ).toEqual([]);
+      ).toHaveLength(1);
     });
   });
 
@@ -651,6 +658,48 @@ describe("frontendDeploy", () => {
       );
       return JSON.parse(flagValue(create!.args, "--option-settings"));
     };
+
+    test("reads the backend's parameters in one call", async () => {
+      const { run, io } = setup();
+
+      await frontendDeploy(["--backend-env", "dev"], undefined, io);
+
+      const reads = run.commands.filter(
+        ({ args }) =>
+          args[0] === "ssm" &&
+          args.includes("/dlp-access-next/dev/user-pool-id"),
+      );
+      expect(reads).toEqual([
+        {
+          executable: "aws",
+          args: [
+            "ssm",
+            "get-parameters",
+            "--names",
+            "/dlp-access-next/dev/graphql-api-url",
+            "/dlp-access-next/dev/user-pool-id",
+            "/dlp-access-next/dev/identity-provider",
+            "/dlp-access-next/dev/eb-service-role-arn",
+          ],
+        },
+      ]);
+    });
+
+    test("refuses, changing nothing, a backend whose parameters are missing", async () => {
+      const { run, io } = setup({
+        missingParameters: [
+          "/dlp-access-next/dev/user-pool-id",
+          "/dlp-access-next/dev/identity-provider",
+        ],
+      });
+
+      await expect(
+        frontendDeploy(["--backend-env", "dev"], undefined, io),
+      ).rejects.toThrow(
+        /SSM parameters not found: \/dlp-access-next\/dev\/user-pool-id, \/dlp-access-next\/dev\/identity-provider\. Is backend env "dev" deployed\?/,
+      );
+      expect(writes(run.commands)).toEqual([]);
+    });
 
     test("creates the client, the secret, the environment and the DNS record", async () => {
       const { run, io, secretStrings } = setup();

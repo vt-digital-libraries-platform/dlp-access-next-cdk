@@ -8,6 +8,30 @@ export function readParameter(run: CommandRunner, name: string): string {
     .Value as string;
 }
 
+/**
+ * The values of several SSM parameters, in the order of `names`, from one
+ * `get-parameters` call (at most 10 names). Throws naming every missing one.
+ */
+export function readParameters(
+  run: CommandRunner,
+  names: readonly string[],
+  missingHint: string,
+): string[] {
+  const result = awsJson(run, ["ssm", "get-parameters", "--names", ...names]);
+  const values = new Map(
+    (result.Parameters as { Name: string; Value: string }[]).map(
+      ({ Name, Value }) => [Name, Value],
+    ),
+  );
+  const missing = names.filter((name) => !values.has(name));
+  if (missing.length > 0) {
+    throw new Error(
+      `SSM parameter${missing.length > 1 ? "s" : ""} not found: ${missing.join(", ")}. ${missingHint}`,
+    );
+  }
+  return names.map((name) => values.get(name)!);
+}
+
 /** The solution stack new frontends are created on: the platform branch's newest. */
 export function findSolutionStack(run: CommandRunner): string {
   return latestSolutionStack(
