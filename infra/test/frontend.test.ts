@@ -164,6 +164,7 @@ describe("frontendDeploy", () => {
     secretDeleting = false,
     versionExists = false,
     environmentExists = false,
+    environmentStatus = "Ready",
     launchingWaits = 0,
     health = "Green",
     previouslyTerminated = false,
@@ -174,7 +175,7 @@ describe("frontendDeploy", () => {
   } = {}) {
     let environment: Record<string, string> | undefined = environmentExists
       ? {
-          Status: "Ready",
+          Status: environmentStatus,
           Health: health,
           VersionLabel: "whunter-feature-fedcba9",
         }
@@ -911,7 +912,7 @@ describe("frontendDeploy", () => {
   });
 
   describe("a later deploy", () => {
-    test("checks the tags, then only runs eb deploy of HEAD with the version label", async () => {
+    test("checks the tags, upserts the DNS record, then runs eb deploy of HEAD with the version label", async () => {
       // No lifecycle policy: a redeploy still leaves the application alone.
       const { run, io, output } = setup({
         appExists: true,
@@ -938,6 +939,17 @@ describe("frontendDeploy", () => {
       ]);
       expect(writes(run.commands)).toEqual([
         {
+          executable: "aws",
+          args: [
+            "route53",
+            "change-resource-record-sets",
+            "--hosted-zone-id",
+            "Z0123456789",
+            "--change-batch",
+            expect.any(String),
+          ],
+        },
+        {
           executable: "eb",
           args: ["init", "dlpnext", "--platform", SOLUTION_STACK],
         },
@@ -956,6 +968,72 @@ describe("frontendDeploy", () => {
       );
     });
 
+    test.each(["Launching", "Updating"])(
+      "waits for an environment that is %s, e.g. after a first deploy cut short, then writes its DNS record and deploys",
+      async (environmentStatus) => {
+        const { run, io } = setup({
+          appExists: true,
+          environmentExists: true,
+          environmentStatus,
+        });
+
+        expect(
+          await frontendDeploy(["--backend-env", "dev"], undefined, io),
+        ).toBe(0);
+
+        const steps = run.commands
+          .map(({ executable, args }) =>
+            executable === "eb" ? `eb ${args[0]}` : `${args[0]} ${args[1]}`,
+          )
+          .filter((step) =>
+            /^(eb deploy|elasticbeanstalk wait|route53 change-resource-record-sets)$/.test(
+              step,
+            ),
+          );
+        expect(steps).toEqual([
+          "elasticbeanstalk wait",
+          "route53 change-resource-record-sets",
+          "eb deploy",
+        ]);
+        const wait = run.commands.find(({ args }) => args[1] === "wait")!;
+        expect(wait.args[2]).toBe(
+          environmentStatus === "Launching"
+            ? "environment-exists"
+            : "environment-updated",
+        );
+        const record = run.commands.find(
+          ({ args }) => args[1] === "change-resource-record-sets",
+        )!;
+        expect(JSON.parse(record.args[5]).Changes[0].ResourceRecordSet).toEqual(
+          {
+            Name: "whunter-feature.dlp-access-dev.dlp.cloud.lib.vt.edu",
+            Type: "CNAME",
+            TTL: 300,
+            ResourceRecords: [
+              {
+                Value: "dlpnext-whunter-feature.us-east-1.elasticbeanstalk.com",
+              },
+            ],
+          },
+        );
+      },
+    );
+
+    test("refuses, changing nothing, an environment that is terminating", async () => {
+      const { run, io } = setup({
+        appExists: true,
+        environmentExists: true,
+        environmentStatus: "Terminating",
+      });
+
+      await expect(
+        frontendDeploy(["--backend-env", "dev"], undefined, io),
+      ).rejects.toThrow(
+        /dlpnext-whunter-feature is Terminating, so it can't take a deploy/,
+      );
+      expect(writes(run.commands)).toEqual([]);
+    });
+
     test("redeploying a commit already deployed deploys its existing version", async () => {
       const { run, io } = setup({
         appExists: true,
@@ -968,6 +1046,17 @@ describe("frontendDeploy", () => {
       ).toBe(0);
 
       expect(writes(run.commands)).toEqual([
+        {
+          executable: "aws",
+          args: [
+            "route53",
+            "change-resource-record-sets",
+            "--hosted-zone-id",
+            "Z0123456789",
+            "--change-batch",
+            expect.any(String),
+          ],
+        },
         {
           executable: "eb",
           args: ["init", "dlpnext", "--platform", SOLUTION_STACK],

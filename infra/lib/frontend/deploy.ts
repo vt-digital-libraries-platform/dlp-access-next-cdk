@@ -22,6 +22,8 @@ import {
   Environment,
   LAUNCHED,
   readTags,
+  UPDATED,
+  Waiter,
   waitForEnvironment,
 } from "./environment";
 import { ensureApplication, FrontendPlan, initEbProject } from "./frontend";
@@ -101,17 +103,21 @@ export function versionLabel(plan: FrontendPlan, commit: string): string {
 
 /**
  * Pushes the commit to the branch's existing frontend with `eb deploy`, which
- * ships the committed HEAD. Nothing else changes: not the settings, the
- * Cognito client, the secret or DNS.
+ * ships the committed HEAD. The settings, Cognito client and secret stay as
+ * they are. The DNS record is upserted again, since a first deploy cut short
+ * after creating the environment never wrote it.
  */
 function redeploy(
   plan: FrontendPlan,
-  environment: Environment,
+  existing: Environment,
   commit: string,
   run: CommandRunner,
   log: (text: string) => void,
 ): void {
-  checkTags(plan, environment, run);
+  checkTags(plan, existing, run);
+  const hostedZoneId = findHostedZone(run);
+  const environment = waitUntilReady(plan, existing, run, log);
+  upsertRecord(plan, hostedZoneId, environment.CNAME, run);
   // The application exists with its lifecycle policy, made by the first
   // deploy, so only the local EB CLI config may be missing, e.g. in a clone.
   initEbProject(run);
@@ -135,6 +141,44 @@ function redeploy(
   log(
     `${plan.environmentName} is running ${deployed.VersionLabel ?? "no version"} (${deployed.Status}, health ${deployed.Health}) at ${plan.appUrl}.`,
   );
+}
+
+/** What a redeploy waits through before the environment can take a deploy. */
+const PENDING: Record<string, Waiter> = {
+  [LAUNCHED.pendingStatus]: LAUNCHED,
+  [UPDATED.pendingStatus]: UPDATED,
+};
+
+/**
+ * The environment once it is Ready, waiting first if it is still launching,
+ * e.g. after a first deploy cut short, or updating. Any other status, such as
+ * Terminating, is refused: `eb deploy` would fail on it.
+ */
+function waitUntilReady(
+  plan: FrontendPlan,
+  environment: Environment,
+  run: CommandRunner,
+  log: (text: string) => void,
+): Environment {
+  let current: Environment | undefined = environment;
+  const waiter = PENDING[current.Status];
+  if (waiter) {
+    log(`${plan.environmentName} is ${current.Status}; waiting for it...`);
+    waitForEnvironment(plan, waiter, run);
+    current = describeEnvironment(plan, run);
+  }
+  if (!current) {
+    throw new Error(
+      `${plan.environmentName} disappeared while ${environment.Status.toLowerCase()}: deploy again to create it`,
+    );
+  }
+  if (current.Status !== "Ready") {
+    throw new Error(
+      `${plan.environmentName} is ${current.Status}, so it can't take a deploy. ` +
+        `Wait for it to settle and deploy again; check its events with: eb events ${plan.environmentName}`,
+    );
+  }
+  return current;
 }
 
 /**
