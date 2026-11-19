@@ -133,9 +133,32 @@ export function ebInstanceProfileName(envName: string): string {
   return `dlp-access-next-${envName}-eb`;
 }
 
+const EB_SERVICE_ROLE_PREFIX = "dlp-access-next-";
+const EB_SERVICE_ROLE_SUFFIX = "-eb-service";
+
 /** The environment's Elastic Beanstalk service role. */
 export function ebServiceRoleName(envName: string): string {
-  return `dlp-access-next-${envName}-eb-service`;
+  return `${EB_SERVICE_ROLE_PREFIX}${envName}${EB_SERVICE_ROLE_SUFFIX}`;
+}
+
+/**
+ * The environment whose Beanstalk service role the ARN names, or undefined
+ * for a role not named by `ebServiceRoleName`.
+ */
+export function ebServiceRoleEnv(roleArn: string): string | undefined {
+  const name = roleArn.slice(roleArn.lastIndexOf("/") + 1);
+  if (
+    !roleArn.includes(":role/") ||
+    !name.startsWith(EB_SERVICE_ROLE_PREFIX) ||
+    !name.endsWith(EB_SERVICE_ROLE_SUFFIX)
+  ) {
+    return undefined;
+  }
+  const env = name.slice(
+    EB_SERVICE_ROLE_PREFIX.length,
+    -EB_SERVICE_ROLE_SUFFIX.length,
+  );
+  return env === "" ? undefined : env;
 }
 
 /** SSM parameter holding the ARN of the environment's Beanstalk service role. */

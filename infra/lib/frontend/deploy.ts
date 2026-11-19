@@ -65,7 +65,7 @@ export function deployFrontend(
   const hostedZoneId = findHostedZone(run);
   const secretExists = checkSecret(plan, run);
 
-  ensureApplication(plan, run);
+  ensureApplication(backend.serviceRoleArn, run);
   let client: Client;
   if (clientId === undefined) {
     client = createClient(plan, backend, run);

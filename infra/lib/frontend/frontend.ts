@@ -2,6 +2,7 @@ import { awsJson, CommandRunner } from "../command-runner";
 import {
   EnvironmentConfig,
   ebServiceRoleArnParameterName,
+  ebServiceRoleEnv,
   resolveEnvironment,
 } from "../config/environments";
 import {
@@ -128,12 +129,15 @@ const MAX_APPLICATION_VERSIONS = 200;
 /**
  * Makes sure the shared Beanstalk application and the local EB CLI project
  * config (`.elasticbeanstalk/config.yml`, gitignored) exist. `eb init` creates
- * the application when it is missing. An application without the version
- * lifecycle policy gets it: a new one, or one whose first run failed after
- * `eb init`. Setting the policy needs a service role: the backend's.
+ * the application when it is missing. The version lifecycle policy runs as
+ * one backend's service role, so it is set to `serviceRoleArn`, the plan's
+ * backend's role, when it is missing (a new application, or one whose first
+ * run failed after `eb init`) or when its role's backend is gone, e.g. a
+ * destroyed feature backend. A role whose backend still exists is kept, so
+ * frontends on different backends don't take the policy from each other.
  */
 export function ensureApplication(
-  plan: FrontendPlan,
+  serviceRoleArn: string,
   run: CommandRunner,
 ): void {
   const [application] = awsJson(run, [
@@ -142,21 +146,17 @@ export function ensureApplication(
     "--application-names",
     FRONTEND_APPLICATION,
   ]).Applications;
-  const hasPolicy =
-    application?.ResourceLifecycleConfig?.VersionLifecycleConfig?.MaxCountRule
-      ?.Enabled === true;
-  // Read before anything is created, so a backend without a service role
-  // fails cleanly.
-  const serviceRole = hasPolicy
-    ? undefined
-    : (awsJson(run, [
-        "ssm",
-        "get-parameter",
-        "--name",
-        ebServiceRoleArnParameterName(plan.backendEnv),
-      ]).Parameter.Value as string);
+  const lifecycle = application?.ResourceLifecycleConfig;
+  const current: string | undefined =
+    lifecycle?.VersionLifecycleConfig?.MaxCountRule?.Enabled === true
+      ? lifecycle.ServiceRole
+      : undefined;
+  // Read before anything is created.
+  const setPolicy =
+    current === undefined ||
+    (current !== serviceRoleArn && !serviceRoleInUse(current, run));
   initEbProject(run);
-  if (serviceRole !== undefined) {
+  if (setPolicy) {
     run("aws", [
       "elasticbeanstalk",
       "update-application-resource-lifecycle",
@@ -164,7 +164,7 @@ export function ensureApplication(
       FRONTEND_APPLICATION,
       "--resource-lifecycle-config",
       JSON.stringify({
-        ServiceRole: serviceRole,
+        ServiceRole: serviceRoleArn,
         VersionLifecycleConfig: {
           MaxCountRule: {
             Enabled: true,
@@ -175,4 +175,24 @@ export function ensureApplication(
       }),
     ]);
   }
+}
+
+/**
+ * Whether the service role still belongs to a deployed backend: its backend
+ * publishes the role's ARN in SSM until the backend is destroyed. A role not
+ * named for a backend, e.g. one set by hand, is left alone.
+ */
+function serviceRoleInUse(roleArn: string, run: CommandRunner): boolean {
+  const env = ebServiceRoleEnv(roleArn);
+  if (env === undefined) {
+    return true;
+  }
+  // get-parameters lists a missing name instead of failing on it.
+  const [parameter] = awsJson(run, [
+    "ssm",
+    "get-parameters",
+    "--names",
+    ebServiceRoleArnParameterName(env),
+  ]).Parameters as { Value: string }[];
+  return parameter?.Value === roleArn;
 }

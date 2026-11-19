@@ -1,7 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Command, CommandError, RunnerOptions } from "../lib/command-runner";
-import { resolveEnvironment } from "../lib/config/environments";
+import {
+  ebServiceRoleEnv,
+  resolveEnvironment,
+} from "../lib/config/environments";
 import {
   CALLBACK_PATH,
   FRONTEND_REGION,
@@ -156,6 +159,8 @@ describe("frontendDeploy", () => {
   function setup({
     appExists = false,
     hasPolicy = true,
+    policyRole = serviceRoleArn,
+    otherParameters = {} as Record<string, string>,
     answer = "yes",
     branch = "whunter/feature",
     status = "",
@@ -183,6 +188,7 @@ describe("frontendDeploy", () => {
     let waitsLeft = launchingWaits;
     const secretStrings: string[] = [];
     const parameters: Record<string, string> = {
+      ...otherParameters,
       "/dlp-access-next/dev/eb-service-role-arn": serviceRoleArn,
       "/dlp-access-next/dev/graphql-api-url":
         "https://abc.appsync-api.us-east-1.amazonaws.com/graphql",
@@ -219,6 +225,15 @@ describe("frontendDeploy", () => {
             throw new CommandError("aws", 254, "ParameterNotFound");
           }
           return json({ Parameter: { Value: parameters[name] } });
+        case "ssm get-parameters": {
+          const names = args.slice(args.indexOf("--names") + 1);
+          return json({
+            Parameters: names
+              .filter((n) => n in parameters)
+              .map((n) => ({ Name: n, Value: parameters[n] })),
+            InvalidParameters: names.filter((n) => !(n in parameters)),
+          });
+        }
         case "elasticbeanstalk describe-applications":
           return json({
             Applications: appExists
@@ -226,6 +241,7 @@ describe("frontendDeploy", () => {
                   {
                     ApplicationName: "dlpnext",
                     ResourceLifecycleConfig: {
+                      ServiceRole: policyRole,
                       VersionLifecycleConfig: {
                         MaxCountRule: {
                           Enabled: hasPolicy,
@@ -476,6 +492,88 @@ describe("frontendDeploy", () => {
     expect(
       applicationSetup(run.commands).map(({ args }) => args[1] ?? args[0]),
     ).toEqual(["dlpnext", "update-application-resource-lifecycle"]);
+  });
+
+  describe("an existing lifecycle policy on another role", () => {
+    const roleOf = (env: string) =>
+      `arn:aws:iam::${awsAccountId}:role/dlp-access-next-${env}-eb-service`;
+    const lifecycleRoles = (commands: Command[]) =>
+      applicationSetup(commands)
+        .filter(
+          ({ args }) => args[1] === "update-application-resource-lifecycle",
+        )
+        .map(({ args }) => JSON.parse(args[5]).ServiceRole);
+
+    test("moves to this backend's role when the role's backend is destroyed", async () => {
+      const { run, io } = setup({
+        appExists: true,
+        policyRole: roleOf("f-gone"),
+      });
+
+      expect(
+        await frontendDeploy(["--backend-env", "dev"], undefined, io),
+      ).toBe(0);
+
+      expect(run.commands).toContainEqual({
+        executable: "aws",
+        args: [
+          "ssm",
+          "get-parameters",
+          "--names",
+          "/dlp-access-next/f-gone/eb-service-role-arn",
+        ],
+      });
+      expect(lifecycleRoles(run.commands)).toEqual([serviceRoleArn]);
+    });
+
+    test("stays on a role whose backend still exists", async () => {
+      const { run, io } = setup({
+        appExists: true,
+        policyRole: roleOf("pre-production"),
+        otherParameters: {
+          "/dlp-access-next/pre-production/eb-service-role-arn":
+            roleOf("pre-production"),
+        },
+      });
+
+      expect(
+        await frontendDeploy(["--backend-env", "dev"], undefined, io),
+      ).toBe(0);
+
+      expect(lifecycleRoles(run.commands)).toEqual([]);
+    });
+
+    test("stays on a role not named for a backend, e.g. one set by hand", async () => {
+      const { run, io } = setup({
+        appExists: true,
+        policyRole: `arn:aws:iam::${awsAccountId}:role/aws-elasticbeanstalk-service-role`,
+      });
+
+      expect(
+        await frontendDeploy(["--backend-env", "dev"], undefined, io),
+      ).toBe(0);
+
+      expect(lifecycleRoles(run.commands)).toEqual([]);
+      expect(
+        run.commands.filter(({ args }) => args[1] === "get-parameters"),
+      ).toEqual([]);
+    });
+  });
+
+  test.each([
+    [
+      `arn:aws:iam::123456789012:role/dlp-access-next-f-foo-eb-service`,
+      "f-foo",
+    ],
+    [`arn:aws:iam::123456789012:role/dlp-access-next-dev-eb-service`, "dev"],
+    [`arn:aws:iam::123456789012:role/dlp-access-next-dev-eb`, undefined],
+    [`arn:aws:iam::123456789012:role/dlp-access-next--eb-service`, undefined],
+    [
+      `arn:aws:iam::123456789012:role/aws-elasticbeanstalk-service-role`,
+      undefined,
+    ],
+  ])("ebServiceRoleEnv(%p) is %p", (arn, env) => {
+    expect(ebServiceRoleEnv(arn)).toBe(env);
   });
 
   describe("a first deploy", () => {
