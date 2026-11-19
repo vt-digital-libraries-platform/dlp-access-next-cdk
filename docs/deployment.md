@@ -84,7 +84,7 @@ npm run frontend:deploy -- --backend-env <env>
 Notes:
 
 - The backend's Api and Auth stacks must already be deployed: the frontend reads the API URL, user pool and identity provider from the backend's SSM parameters.
-- `--branch <name>` deploys another branch than the current one.
+- `--branch <name>` names the branch being deployed. It must match the checked-out branch, or HEAD must be detached (as in CI), since HEAD is what is deployed.
 - **The deploy ships the commit at HEAD, not your working tree.** Commit what you want deployed first. Uncommitted and untracked changes are left out, and listed before the prompt.
 - The certificate defaults to the stored wildcard certificate for `*.dlp-access-dev.dlp.cloud.lib.vt.edu`. Pass `--certificate <ACM certificate ARN>` only to use a different one, which must be in the same account and region.
 - Add `--production` for a production-sized instance.

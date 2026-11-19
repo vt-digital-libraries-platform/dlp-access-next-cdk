@@ -20,7 +20,7 @@ All branches' environments live in one shared Beanstalk application. Settings th
 2. As a developer, I want a code-only deploy to touch only the Beanstalk application version, so that it is as fast as Beanstalk allows.
 3. As a developer, I want the first deploy of a branch to create its frontend end to end (Cognito client, secret, Beanstalk environment, DNS record), so that I don't have to run separate setup steps.
 4. As a developer, I want the deploy command to default to my current git branch, so that I don't have to type the branch name.
-5. As a developer, I want to deploy a branch other than the one checked out with a flag, so that I can redeploy or rebuild someone else's frontend.
+5. As a developer, I want to name the branch with a flag when HEAD is detached (as in CI), and to be refused when the flag names a branch other than the one checked out, so that a version label and branch tag always name the branch the deployed commit came from. To redeploy someone else's frontend I check out their branch, or detach HEAD at the commit, first.
 6. As a developer, I want to choose which backend environment (`dev`, `pre-production`, `production`, or a feature environment) the frontend attaches to, so that I can test against the data I need.
 7. As a developer, I want only committed files deployed, so that a deploy always corresponds to a commit and stray local edits never reach AWS.
 8. As a developer, I want to be warned when I have uncommitted changes, so that I know they won't be in the deploy.
@@ -62,7 +62,7 @@ All branches' environments live in one shared Beanstalk application. Settings th
 44. As a maintainer, I want the existing `DlpAccessNext-Web-<slug>` stacks destroyed and their frontends recreated with the new commands, so that every frontend is managed the same way.
 45. As a maintainer, I want the slug, naming and validation rules shared between the backend and frontend tooling, so that the rules live in one place.
 46. As a maintainer, I want the frontend tooling's behaviour covered by unit tests against a fake AWS/EB CLI, so that I can change it without deploying to find out what broke.
-47. As a CI job, I want `CI=true` or `--yes` to skip the confirmation prompt, so that frontend deploys can be automated later.
+47. As a CI job, I want `--yes` to skip the confirmation prompt when `CI` is `true` or `1`, and to be refused anywhere else, so that frontend deploys can be automated later while a developer's own deploys always ask.
 48. As a teammate reviewing a PR, I want to know which commit a frontend is running from its version label, so that I know whether I'm looking at the latest change.
 
 ## Implementation Decisions
@@ -114,9 +114,9 @@ All branches' environments live in one shared Beanstalk application. Settings th
 
 ### Commands
 
-The tooling is TypeScript in the infra package, beside the existing deploy tooling, and reuses its slug, naming and environment-resolution helpers and its confirmation behaviour (prompt, red production warning, `CI=true` / `--yes` skips the prompt).
+The tooling is TypeScript in the infra package, beside the existing deploy tooling, and reuses its slug, naming and environment-resolution helpers and its confirmation behaviour (prompt, red production warning, `--yes` skips the prompt and is accepted only when `CI` is `true` or `1`).
 
-- **`frontend:deploy`**: `--backend-env <env>` (required), `--branch <name>` (defaults to the current git branch), `--production`, `--certificate <arn>`, `--profile <profile>`, `--yes`.
+- **`frontend:deploy`**: `--backend-env <env>` (required), `--branch <name>` (defaults to the current git branch; when given, it must match the checked-out branch or HEAD must be detached, since HEAD is what is deployed), `--production`, `--certificate <arn>`, `--profile <profile>`, `--yes`.
   - Before confirming, it prints what it is about to do, the commit being deployed, and any uncommitted changes that will be left out.
   - **When the environment doesn't exist:**
     1. Make sure the application and EB CLI config exist.
@@ -125,7 +125,14 @@ The tooling is TypeScript in the infra package, beside the existing deploy tooli
     4. Create the environment with the dynamic settings and tags.
     5. Wait for it.
     6. UPSERT a CNAME from the branch's domain name to the environment's endpoint in the hosted zone.
-  - **When the environment exists:** check the tags, then run `eb deploy` of HEAD with the version label, or of the existing version if the label exists.
+  - **When the environment exists:**
+    1. Check the tags.
+    2. Wait for the environment to be ready.
+    3. UPSERT the CNAME again, since a first deploy cut short after creating the environment never wrote it.
+    4. Run `eb init` again, since the local EB CLI config may be missing (e.g. in a fresh clone). It uses the newest solution stack, because `eb init` refuses a platform version Beanstalk no longer offers; `eb deploy` leaves the environment's platform alone.
+    5. Run `eb deploy` of HEAD with the version label, or of the existing version if the label exists.
+
+    No option settings are changed.
 - **`frontend:destroy`**: `--backend-env <env>`, `--branch <name>`, `--profile`, `--yes`. Steps run in this order, and each one skips what is already gone, so the command can be re-run:
   1. Terminate the environment and wait.
   2. Delete the CNAME if present.
@@ -160,7 +167,7 @@ The tooling is TypeScript in the infra package, beside the existing deploy tooli
   - first deploy: application and config ensured; client created with the expected settings; secret written; environment created with only dynamic settings, the CNAME prefix and both tags; DNS record upserted
   - first deploy when a client with the name already exists: reused, not duplicated
   - more than one client with the name: refused before anything is created
-  - later deploy: only `eb deploy` with the `<slug>-<sha>` label; no settings changed
+  - later deploy: DNS record upserted, EB CLI config ensured, and `eb deploy` with the `<slug>-<sha>` label; no option settings changed
   - later deploy of an already-deployed commit: deploys the existing version
   - branch tag mismatch (slug collision) and backend tag mismatch: refused, nothing changed
   - no command ever sets a static `.ebextensions` setting
