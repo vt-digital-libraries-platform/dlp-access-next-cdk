@@ -4,12 +4,51 @@
  */
 
 /**
- * The Node platform the app runs on, matching the hand-made
- * `appsync-stack` environment. Managed updates apply minor platform
- * versions in place, so this only needs bumping for a major change.
+ * The Node platform branch the app runs on, matching the hand-made
+ * `appsync-stack` environment. Only the branch is pinned: a frontend is
+ * created on the branch's newest platform version, since Beanstalk drops old
+ * versions from the ones it creates environments on, and managed updates
+ * keep it current from then on. Bump it to move to a new Node.js or OS.
  */
-export const SOLUTION_STACK =
-  "64bit Amazon Linux 2023 v6.11.8 running Node.js 24";
+export const PLATFORM_BRANCH = {
+  os: "64bit Amazon Linux 2023",
+  runtime: "Node.js 24",
+};
+
+/**
+ * The newest of the platform branch's solution stacks, e.g.
+ * `64bit Amazon Linux 2023 v6.12.3 running Node.js 24`, from the names
+ * `list-available-solution-stacks` returns.
+ */
+export function latestSolutionStack(stacks: readonly string[]): string {
+  const prefix = `${PLATFORM_BRANCH.os} v`;
+  const suffix = ` running ${PLATFORM_BRANCH.runtime}`;
+  const versions = stacks
+    .filter((stack) => stack.startsWith(prefix) && stack.endsWith(suffix))
+    .map((stack) => ({
+      stack,
+      version: stack.slice(prefix.length, -suffix.length).split("."),
+    }))
+    .filter(({ version }) => version.every((part) => /^\d+$/.test(part)))
+    .map(({ stack, version }) => ({ stack, version: version.map(Number) }));
+  if (versions.length === 0) {
+    throw new Error(
+      `Beanstalk has no solution stack for ${PLATFORM_BRANCH.runtime} on ${PLATFORM_BRANCH.os}: ` +
+        `the platform branch may be retired, so update PLATFORM_BRANCH in infra/lib/config/web.ts`,
+    );
+  }
+  const newer = (a: number[], b: number[]): boolean => {
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if ((a[i] ?? 0) !== (b[i] ?? 0)) {
+        return (a[i] ?? 0) > (b[i] ?? 0);
+      }
+    }
+    return false;
+  };
+  return versions.reduce((latest, candidate) =>
+    newer(candidate.version, latest.version) ? candidate : latest,
+  ).stack;
+}
 
 export const LOCAL_ORIGIN = "http://localhost:3000";
 export const CALLBACK_PATH = "/authorize";

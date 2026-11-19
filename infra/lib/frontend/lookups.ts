@@ -1,11 +1,19 @@
 import { awsJson, CommandRunner } from "../command-runner";
-import { HOSTED_ZONE } from "../config/web";
+import { HOSTED_ZONE, latestSolutionStack } from "../config/web";
 import { FrontendPlan } from "./frontend";
 
 /** The value of an SSM parameter, e.g. one the backend publishes. */
 export function readParameter(run: CommandRunner, name: string): string {
   return awsJson(run, ["ssm", "get-parameter", "--name", name]).Parameter
     .Value as string;
+}
+
+/** The solution stack new frontends are created on: the platform branch's newest. */
+export function findSolutionStack(run: CommandRunner): string {
+  return latestSolutionStack(
+    awsJson(run, ["elasticbeanstalk", "list-available-solution-stacks"])
+      .SolutionStacks as string[],
+  );
 }
 
 /** The ID of the public hosted zone the branch's record goes in. */

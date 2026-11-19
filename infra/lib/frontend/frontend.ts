@@ -9,7 +9,6 @@ import {
   checkCertificateArn,
   defaultCertificateArn,
   FRONTEND_APPLICATION,
-  SOLUTION_STACK,
   frontendSecretName,
   validBranchSlug,
   webDomainName,
@@ -119,8 +118,8 @@ export function planFrontend(options: FrontendOptions): FrontendPlan {
  * (gitignored), that `eb deploy` needs, creating the application if it is
  * missing.
  */
-export function initEbProject(run: CommandRunner): void {
-  run("eb", ["init", FRONTEND_APPLICATION, "--platform", SOLUTION_STACK]);
+export function initEbProject(solutionStack: string, run: CommandRunner): void {
+  run("eb", ["init", FRONTEND_APPLICATION, "--platform", solutionStack]);
 }
 
 /** Application versions kept before the oldest are deleted. */
@@ -138,6 +137,7 @@ const MAX_APPLICATION_VERSIONS = 200;
  */
 export function ensureApplication(
   serviceRoleArn: string,
+  solutionStack: string,
   run: CommandRunner,
 ): void {
   const [application] = awsJson(run, [
@@ -155,7 +155,7 @@ export function ensureApplication(
   const setPolicy =
     current === undefined ||
     (current !== serviceRoleArn && !serviceRoleInUse(current, run));
-  initEbProject(run);
+  initEbProject(solutionStack, run);
   if (setPolicy) {
     run("aws", [
       "elasticbeanstalk",

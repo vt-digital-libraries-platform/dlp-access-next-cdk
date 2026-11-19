@@ -8,7 +8,7 @@ import {
 import {
   CALLBACK_PATH,
   FRONTEND_REGION,
-  SOLUTION_STACK,
+  latestSolutionStack,
 } from "../lib/config/web";
 import { planFrontend } from "../lib/frontend/frontend";
 import {
@@ -21,6 +21,36 @@ import { committedOptions } from "./committed-options";
 import { fakeRunner } from "./fake-runner";
 
 const awsAccountId = "123456789012";
+
+/** The newest of the fake's solution stacks for the pinned platform branch. */
+const SOLUTION_STACK = "64bit Amazon Linux 2023 v6.12.3 running Node.js 24";
+
+/** What the fake's list-available-solution-stacks returns. */
+const AVAILABLE_STACKS = [
+  "64bit Amazon Linux 2023 v6.9.10 running Node.js 24",
+  SOLUTION_STACK,
+  "64bit Amazon Linux 2023 v6.11.8 running Node.js 24",
+  "64bit Amazon Linux 2023 v6.13.0 running Node.js 22",
+  "64bit Amazon Linux 2 v5.99.0 running Node.js 24",
+  "64bit Amazon Linux 2023 v4.7.0 running Docker",
+];
+
+describe("latestSolutionStack", () => {
+  test("picks the platform branch's highest version, comparing numerically", () => {
+    expect(latestSolutionStack(AVAILABLE_STACKS)).toBe(SOLUTION_STACK);
+  });
+
+  test("refuses when the platform branch has no stack, e.g. once it is retired", () => {
+    expect(() =>
+      latestSolutionStack([
+        "64bit Amazon Linux 2023 v6.13.0 running Node.js 22",
+        "64bit Amazon Linux 2023 vbeta running Node.js 24",
+      ]),
+    ).toThrow(
+      /no solution stack for Node\.js 24 on 64bit Amazon Linux 2023.*PLATFORM_BRANCH/,
+    );
+  });
+});
 
 describe("planFrontend", () => {
   // The root app is a separate npm project, so its auth module is read as text.
@@ -312,6 +342,8 @@ describe("frontendDeploy", () => {
               ? [{ VersionLabel: flagValue(args, "--version-labels") }]
               : [],
           });
+        case "elasticbeanstalk list-available-solution-stacks":
+          return json({ SolutionStacks: AVAILABLE_STACKS });
         case "elasticbeanstalk create-storage-location":
           return json({ S3Bucket: bucket });
         case "s3 cp":

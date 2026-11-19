@@ -13,7 +13,6 @@ import {
   CALLBACK_PATH,
   FRONTEND_APPLICATION,
   LOCAL_ORIGIN,
-  SOLUTION_STACK,
 } from "../config/web";
 import {
   BACKEND_ENV_TAG,
@@ -27,7 +26,12 @@ import {
   waitForEnvironment,
 } from "./environment";
 import { ensureApplication, FrontendPlan, initEbProject } from "./frontend";
-import { findHostedZone, findSecret, readParameter } from "./lookups";
+import {
+  findHostedZone,
+  findSecret,
+  findSolutionStack,
+  readParameter,
+} from "./lookups";
 
 /** What the frontend needs from its backend, read from the backend's SSM parameters. */
 interface Backend {
@@ -64,8 +68,9 @@ export function deployFrontend(
   const clientId = findClient(plan, backend, run);
   const hostedZoneId = findHostedZone(run);
   const secretExists = checkSecret(plan, run);
+  const solutionStack = findSolutionStack(run);
 
-  ensureApplication(backend.serviceRoleArn, run);
+  ensureApplication(backend.serviceRoleArn, solutionStack, run);
   let client: Client;
   if (clientId === undefined) {
     client = createClient(plan, backend, run);
@@ -80,7 +85,15 @@ export function deployFrontend(
     const secretArn = writeSecret(plan, client, secretExists, workDir, run);
     const label = ensureVersion(plan, commit, workDir, run);
     log(`Creating ${plan.environmentName} from ${label}...`);
-    createEnvironment(plan, backend, client, secretArn, label, run);
+    createEnvironment(
+      plan,
+      backend,
+      client,
+      secretArn,
+      label,
+      solutionStack,
+      run,
+    );
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
@@ -120,7 +133,9 @@ function redeploy(
   upsertRecord(plan, hostedZoneId, environment.CNAME, run);
   // The application exists with its lifecycle policy, made by the first
   // deploy, so only the local EB CLI config may be missing, e.g. in a clone.
-  initEbProject(run);
+  // eb init refuses a platform version Beanstalk no longer offers, so it gets
+  // the newest, though eb deploy leaves the environment's platform alone.
+  initEbProject(findSolutionStack(run), run);
   const label = versionLabel(plan, commit);
   // A new label makes eb deploy create the version from HEAD; an existing
   // one, e.g. a commit deployed before, would fail as a duplicate.
@@ -478,6 +493,7 @@ function createEnvironment(
   client: Client,
   secretArn: string,
   label: string,
+  solutionStack: string,
   run: CommandRunner,
 ): void {
   run("aws", [
@@ -493,7 +509,7 @@ function createEnvironment(
     "--version-label",
     label,
     "--solution-stack-name",
-    SOLUTION_STACK,
+    solutionStack,
     "--tags",
     JSON.stringify([
       { Key: BRANCH_TAG, Value: plan.branch },
